@@ -12,7 +12,7 @@ i18n.py — переводы интерфейса. ru / uk / en.
 
 import streamlit as st
 
-DEFAULT_LANG = "en"
+DEFAULT_LANG = "ru"
 
 LANGS: dict[str, dict[str, str]] = {
     "en": {
@@ -31,6 +31,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.keys": "Keys & Connections",
         "sidebar.deadline": "title deadline: **:red[{days} d.]**  \n75-char limit from 27.07.2026",
         "sidebar.deadline_passed": "**75-char** limit is live",
+        "sidebar.next_run": "next run: daily 13:00 Kyiv",
         "common.no_data": "No data yet — run batch_fetch first",
         "common.our": "ours",
         "common.competitor": "competitor",
@@ -58,6 +59,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.keys": "Ключи и подключения",
         "sidebar.deadline": "дедлайн тайтлов: **:red[{days} дн.]**  \nлимит 75 симв. с 27.07.2026",
         "sidebar.deadline_passed": "лимит **75 симв.** действует",
+        "sidebar.next_run": "след. прогон: ежедневно 13:00 Kyiv",
         "common.no_data": "Данных ещё нет — сначала прогони batch_fetch",
         "common.our": "наш",
         "common.competitor": "конкурент",
@@ -85,6 +87,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.keys": "Ключі та підключення",
         "sidebar.deadline": "дедлайн тайтлів: **:red[{days} дн.]**  \nліміт 75 симв. з 27.07.2026",
         "sidebar.deadline_passed": "ліміт **75 симв.** діє",
+        "sidebar.next_run": "наст. прогін: щодня 13:00 Kyiv",
         "common.no_data": "Даних ще немає — спочатку прожени batch_fetch",
         "common.our": "наш",
         "common.competitor": "конкурент",
@@ -98,7 +101,8 @@ LANGS: dict[str, dict[str, str]] = {
     },
 }
 
-LANG_LABELS = {"en": "EN", "ru": "RU", "uk": "UA"}
+LANG_LABELS = {"ru": "РУ", "uk": "УКР", "en": "EN"}
+LANG_TITLE = {"ru": "Смена языка", "uk": "Зміна мови", "en": "Language"}
 
 
 def current_lang() -> str:
@@ -113,15 +117,23 @@ def t(key: str, **kwargs) -> str:
 
 
 def lang_selector() -> None:
-    """Переключатель языка для сайдбара."""
-    codes = list(LANGS.keys())
+    """Пилюли смены языка — как в Кабинете (активная красная)."""
     cur = current_lang()
-    idx = codes.index(cur) if cur in codes else 0
-    choice = st.radio(
-        "language", codes, index=idx, horizontal=True,
-        format_func=lambda c: LANG_LABELS.get(c, c.upper()),
-        label_visibility="collapsed", key="lang_radio",
-    )
-    if choice != cur:
+    st.caption(LANG_TITLE.get(cur, "Language"))
+    codes = ["ru", "uk", "en"]
+    try:
+        choice = st.segmented_control(
+            "lang", codes, default=cur if cur in codes else DEFAULT_LANG,
+            format_func=lambda c: LANG_LABELS.get(c, c.upper()),
+            label_visibility="collapsed", key="lang_seg",
+        )
+    except AttributeError:  # фолбэк для старого Streamlit без segmented_control
+        idx = codes.index(cur) if cur in codes else 0
+        choice = st.radio(
+            "lang", codes, index=idx, horizontal=True,
+            format_func=lambda c: LANG_LABELS.get(c, c.upper()),
+            label_visibility="collapsed", key="lang_seg",
+        )
+    if choice and choice != cur:
         st.session_state["lang"] = choice
         st.rerun()
