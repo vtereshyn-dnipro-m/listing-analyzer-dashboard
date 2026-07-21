@@ -2,7 +2,7 @@
 streamlit>=1.37
 psycopg2-binary>=2.9
 requests>=2.31
-
+databricks-sdk>=0.30
 # --- секреты: чтение .streamlit/secrets.toml из cron-скриптов
 # (py3.11+ имеет tomllib в стандартной библиотеке; toml — фолбэк для 3.10)
 toml>=0.10
