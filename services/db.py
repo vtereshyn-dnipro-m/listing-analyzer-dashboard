@@ -268,4 +268,4 @@ def parse_asin_lines(text: str) -> list[tuple[str, str, str, bool]]:
             if len(parts) > 3:
                 comp = parts[3].strip().lower() in ("1", "true", "comp", "competitor", "конкурент")
         out.append((sku or asin, asin, mp, comp))
-    return out
+    return out 
