@@ -1,10 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-pages/dashboard.py — Шаг 6. Главная: Диагноз.
+pages/dashboard.py — Главная: Диагноз.
 
-Читает ТОЛЬКО готовые view (diagnosis_latest, analysis_latest) — никакой
-логики и никакого DDL здесь нет (правило: миграции делает пайплайн).
-Кэш st.cache_data, как в Кабинете. Нет данных -> честные пустые состояния.
+Читает diagnosis (последняя запись на каждую пару asin+rule) — никакой
+логики и никакого DDL здесь нет. Кэш st.cache_data, как в Кабинете.
+Нет данных -> честные пустые состояния.
 """
 
 from __future__ import annotations
@@ -12,18 +12,26 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from config import TITLE_LIMIT, HIGHLIGHTS_LIMIT, days_to_deadline
+from config import TITLE_LIMIT, days_to_deadline
 from i18n import t
 from services.db import get_conn
 
-SEV_ICON = {3: "🔴", 2: "🟠", 1: "🟡"}
+SEV_ICON = {"red": "🔴", "amber": "🟠", "yellow": "🟡"}
+SEV_ORDER = {"red": 0, "amber": 1, "yellow": 2}
 
 
 @st.cache_data(ttl=300)
 def load_diagnosis() -> pd.DataFrame:
     try:
         conn = get_conn()
-        df = pd.read_sql("SELECT * FROM diagnosis_latest", conn)
+        df = pd.read_sql(
+            """
+            SELECT DISTINCT ON (d.asin, d.marketplace, d.rule_id) d.*
+            FROM diagnosis d
+            ORDER BY d.asin, d.marketplace, d.rule_id, d.created_at DESC
+            """,
+            conn,
+        )
         conn.close()
         return df
     except Exception:
@@ -35,8 +43,14 @@ def load_analysis() -> pd.DataFrame:
     try:
         conn = get_conn()
         df = pd.read_sql(
-            "SELECT asin, marketplace, sku_group, title_len, split_required "
-            "FROM analysis_latest WHERE is_competitor = FALSE", conn)
+            """
+            SELECT DISTINCT ON (a.asin, a.marketplace)
+                   a.asin, a.marketplace, a.title_len, a.title_over
+            FROM listing_analysis a
+            ORDER BY a.asin, a.marketplace, a.analyzed_at DESC
+            """,
+            conn,
+        )
         conn.close()
         return df
     except Exception:
@@ -55,15 +69,15 @@ ana = load_analysis()
 
 d = days_to_deadline()
 run_label = ""
-if not diag.empty and "run_at" in diag.columns:
-    run_label = pd.to_datetime(diag["run_at"].iloc[0]).strftime("%d.%m %H:%M")
+if not diag.empty and "created_at" in diag.columns:
+    run_label = pd.to_datetime(diag["created_at"].max()).strftime("%d.%m %H:%M")
 
 st.caption(f"{t('nav.dashboard').lower()} · {run_label or '—'}")
 
-n_over = int(ana["split_required"].sum()) if not ana.empty else 0
+n_over = int((ana["title_over"] > 0).sum()) if not ana.empty else 0
 money_at_risk = None
-if not diag.empty:
-    m = diag.loc[diag["pain_code"] == "TITLE_OVER_75", "money_eur"].dropna()
+if not diag.empty and "money_impact" in diag.columns:
+    m = diag.loc[diag["rule_id"] == "title_over_limit", "money_impact"].dropna()
     money_at_risk = float(m.sum()) if len(m) else None
 
 if n_over > 0:
@@ -95,39 +109,39 @@ if diag.empty:
     st.caption(t("dash.no_diagnosis"))
     st.stop()
 
-view = diag.sort_values("priority", ascending=False)
-if top10_only:
-    top_asins = (view.groupby("asin")["money_eur"].sum()
+diag["_sev_order"] = diag["severity"].map(SEV_ORDER).fillna(9)
+view = diag.sort_values(["_sev_order", "created_at"], ascending=[True, False])
+
+if top10_only and "money_impact" in view.columns:
+    top_asins = (view.groupby("asin")["money_impact"].sum()
                  .sort_values(ascending=False).head(10).index)
     view = view[view["asin"].isin(top_asins)]
 
-s3 = int((view["severity"] == 3).sum())
-s2 = int((view["severity"] == 2).sum())
-s1 = int((view["severity"] == 1).sum())
+s_red = int((view["severity"] == "red").sum())
+s_amber = int((view["severity"] == "amber").sum())
+s_yellow = int((view["severity"] == "yellow").sum())
 m1, m2, m3, m4 = st.columns(4)
-m1.metric("🔴 критично", s3)
-m2.metric("🟠 важно", s2)
-m3.metric("🟡 план", s1)
+m1.metric("🔴 критично", s_red)
+m2.metric("🟠 важно", s_amber)
+m3.metric("🟡 план", s_yellow)
 m4.metric("ASIN с болями", view["asin"].nunique())
 
 for _, r in view.head(50).iterrows():
-    sev = SEV_ICON.get(int(r["severity"]), "·")
-    fix = t("pain.fix_now") if r["fix_type"] == "fix_now" else t("pain.test")
-    money = money_fmt(r["money_eur"]) + "/мес" if pd.notna(r.get("money_eur")) \
-        else f"~{r['money_pct']:.0f}% revenue"
+    sev = SEV_ICON.get(str(r["severity"]), "·")
+    fix = t("pain.fix_now") if r.get("fix_mode") == "fix_now" else t("pain.test")
+    money = (money_fmt(r["money_impact"]) + "/мес"
+             if pd.notna(r.get("money_impact")) else "не оценено")
     with st.container(border=True):
         st.markdown(
-            f"{sev} **{r['pain_ru']}**  \n"
+            f"{sev} **{r['pain']}**  \n"
             f"`{r['asin']}` · {r['marketplace']}"
             + (f" · {r['sku_group']}" if r.get("sku_group") else "")
         )
         st.markdown(
-            f"Причина: {r['cause_ru']}  \n"
-            f"Действие: **{r['action_ru']}**  \n"
+            f"Причина: {r['cause']}  \n"
+            f"Действие: **{r['action']}**  \n"
             f"Цена бездействия: **{money}** · {fix}"
         )
-        with st.expander("обоснование цифры"):
-            st.caption(r["money_basis"])
 
 if len(view) > 50:
     st.caption(f"Показаны первые 50 из {len(view)} — полный список в CSV")
