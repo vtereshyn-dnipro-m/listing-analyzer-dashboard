@@ -56,7 +56,24 @@ def _load_secrets() -> dict:
 
 
 def cfg(name: str, default: Optional[str] = None) -> Optional[str]:
-    return os.environ.get(name) or _load_secrets().get(name) or default
+    """Читает секрет: env -> secrets.toml на диске -> st.secrets (Streamlit Cloud) -> default.
+    Третий шаг нужен, потому что на Streamlit Cloud секреты не всегда доступны
+    как обычный файл на диске — только через встроенный st.secrets."""
+    if name in os.environ:
+        return os.environ[name]
+
+    val = _load_secrets().get(name)
+    if val is not None:
+        return val
+
+    try:
+        import streamlit as st
+        if name in st.secrets:
+            return st.secrets[name]
+    except Exception:
+        pass
+
+    return default
 
 
 # ---------------------------------------------------------------- подключение
