@@ -1,150 +1,179 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
-INK = "#1A1815"
-BG = "#FAFAF8"
-ACCENT = "#E8590C"
-ACCENT_BG = "#FCE8DC"
-OK_BG = "#DCEEE0"
-OK_TEXT = "#2F6B3A"
-AMBER = "#EF9F27"
-AMBER_TEXT = "#854F0B"
-MUTED = "#8A8578"
-BORDER = "#E7E4DD"
-CARD = "#FFFFFF"
-TRACK = "#F0EFEA"
-MONO = "'JetBrains Mono','SFMono-Regular',Consolas,monospace"
+from config import TITLE_LIMIT, days_to_deadline
+from i18n import t
+from services.db import get_conn
+from components.ui import (
+    inject_fonts, verdict, chips_row, limit_ruler_html, pain_card,
+)
 
-SEV_EDGE = {"red": "#A32D2D", "amber": ACCENT, "yellow": AMBER}
-SEV_LABEL = {"red": "критично", "amber": "важно", "yellow": "план"}
+MIN_REVIEWS = 50
+
+inject_fonts()
 
 
-def inject_fonts() -> None:
-    st.markdown(
-        "<link href='https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap' rel='stylesheet'>",
-        unsafe_allow_html=True,
-    )
-
-
-def eyebrow(text: str) -> str:
-    return (
-        f"<span style='font-family:{MONO};font-size:12px;letter-spacing:.06em;"
-        f"color:{MUTED};text-transform:uppercase;'>{text}</span>"
-    )
-
-
-def verdict(title: str, subtitle_html: str, meta_right: str = "") -> None:
-    right = (
-        f"<span style='font-family:{MONO};font-size:12px;color:{MUTED};'>{meta_right}</span>"
-        if meta_right else ""
-    )
-    st.markdown(
-        f"""
-        <div style="margin-bottom:16px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            {eyebrow('Диагноз · весь каталог')}{right}
-          </div>
-          <div style="font-size:27px;font-weight:700;color:{INK};line-height:1.25;margin-bottom:6px;">{title}</div>
-          <div style="font-size:14px;color:{INK};">{subtitle_html}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def chips_row(red: int, amber: int, yellow: int, extra: str = "") -> None:
-    def chip(dot: str, label: str, n: int, active: bool) -> str:
-        bg = ACCENT_BG if active else CARD
-        bd = ACCENT if active else BORDER
-        w = "600" if active else "400"
-        return (
-            f"<span style='background:{bg};border:1px solid {bd};border-radius:999px;"
-            f"padding:5px 14px;color:{INK};font-weight:{w};font-size:13px;'>"
-            f"<span style='color:{dot};'>&#9679;</span> {label} {n}</span>"
+@st.cache_data(ttl=300)
+def load_diagnosis() -> pd.DataFrame:
+    try:
+        conn = get_conn()
+        df = pd.read_sql(
+            """
+            SELECT DISTINCT ON (d.asin, d.marketplace, d.rule_id) d.*
+            FROM diagnosis d
+            ORDER BY d.asin, d.marketplace, d.rule_id, d.created_at DESC
+            """,
+            conn,
         )
-
-    extra_html = (
-        f"<span style='background:{CARD};border:1px solid {BORDER};border-radius:999px;"
-        f"padding:5px 14px;color:{MUTED};font-size:13px;'>{extra}</span>"
-        if extra else ""
-    )
-    st.markdown(
-        f"<div style='display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;'>"
-        f"{chip('#A32D2D', 'критично', red, red > 0)}"
-        f"{chip(ACCENT, 'важно', amber, amber > 0 and red == 0)}"
-        f"{chip('#BA7517', 'план', yellow, False)}"
-        f"{extra_html}</div>",
-        unsafe_allow_html=True,
-    )
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
 
 
-def limit_ruler_html(current: int, limit: int,
-                     left_label: str, right_label: str,
-                     over_style: bool = True) -> str:
-    current = max(0, int(current or 0))
-    limit = max(1, int(limit or 1))
-    over = max(0, current - limit)
-
-    if over > 0 and over_style:
-        scale_max = max(limit * 1.35, current * 1.05)
-        ok_w = (limit / scale_max) * 100
-        over_w = (over / scale_max) * 100
-        fill = (
-            f"<div style='position:absolute;left:0;top:0;height:100%;width:{ok_w:.1f}%;background:{OK_BG};'></div>"
-            f"<div style='position:absolute;left:{ok_w:.1f}%;top:0;height:100%;width:{over_w:.1f}%;"
-            f"background:repeating-linear-gradient(45deg,{ACCENT_BG},{ACCENT_BG} 6px,{ACCENT} 6px,{ACCENT} 7px);opacity:.55;'></div>"
-            f"<div style='position:absolute;left:{ok_w:.1f}%;top:0;height:100%;width:2px;background:{INK};opacity:.6;'></div>"
+@st.cache_data(ttl=300)
+def load_titles() -> pd.DataFrame:
+    try:
+        conn = get_conn()
+        df = pd.read_sql(
+            """
+            SELECT DISTINCT ON (s.asin, s.marketplace)
+                   s.asin, s.marketplace, s.title, s.review_count
+            FROM listing_snapshots s
+            WHERE s.ok = TRUE AND s.title <> ''
+            ORDER BY s.asin, s.marketplace, s.fetched_at DESC
+            """,
+            conn,
         )
-        left_color, right_color = OK_TEXT, "#993C1D"
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def money_fmt(v) -> str:
+    try:
+        return f"€{float(v):,.0f}".replace(",", " ") + "/мес"
+    except (TypeError, ValueError):
+        return "не оценено"
+
+
+diag = load_diagnosis()
+titles = load_titles()
+
+title_map: dict = {}
+if not titles.empty:
+    title_map = {
+        (r["asin"], r["marketplace"]): r["title"] for _, r in titles.iterrows()
+    }
+
+d = days_to_deadline()
+run_label = ""
+if not diag.empty and "created_at" in diag.columns:
+    run_label = pd.to_datetime(diag["created_at"].max()).strftime("%d.%m %H:%M")
+
+if diag.empty:
+    st.header(t("nav.dashboard"))
+    st.info(t("common.no_data"))
+    st.stop()
+
+n_over = int((diag["rule_id"] == "title_over_limit").sum())
+money_at_risk = diag.loc[
+    diag["rule_id"] == "title_over_limit", "money_impact"
+].dropna().sum()
+risk_html = (
+    f"<span style='color:#E8590C;font-weight:700;'>€{money_at_risk:,.0f}</span>/мес revenue"
+    if money_at_risk
+    else "<span style='color:#E8590C;font-weight:700;'>н/д</span> "
+         "<span style='color:#8A8578;'>(заполни sku_economics)</span>"
+)
+
+if n_over > 0:
+    verdict(
+        t("dash.header", n=n_over, days=d),
+        f"Лимит {TITLE_LIMIT} симв. с 27.07 · Под риском: {risk_html}",
+        meta_right=f"прогон {run_label}",
+    )
+else:
+    verdict(
+        t("nav.dashboard"),
+        f"Все тайтлы в пределах {TITLE_LIMIT} символов",
+        meta_right=f"прогон {run_label}",
+    )
+
+csv = diag.to_csv(index=False).encode("utf-8-sig")
+st.download_button(t("dash.fix_all_csv"), csv,
+                   file_name="diagnosis.csv", mime="text/csv")
+
+s_red = int((diag["severity"] == "red").sum())
+s_amber = int((diag["severity"] == "amber").sum())
+s_yellow = int((diag["severity"] == "yellow").sum())
+mp_list = " · ".join(sorted(diag["marketplace"].unique()))
+chips_row(s_red, s_amber, s_yellow,
+          extra=f"{mp_list} · {diag['asin'].nunique()} ASIN")
+
+SEV_ORDER = {"red": 0, "amber": 1, "yellow": 2}
+diag["_o"] = diag["severity"].map(SEV_ORDER).fillna(9)
+view = diag.sort_values(["_o", "created_at"], ascending=[True, False])
+
+for _, r in view.head(50).iterrows():
+    asin, mp = r["asin"], r["marketplace"]
+    product_title = title_map.get((asin, mp))
+    money = money_fmt(r.get("money_impact"))
+    rule = r.get("rule_id", "")
+
+    if rule == "title_over_limit":
+        current = len(product_title) if product_title else None
+        if current is None:
+            digits = [int(s) for s in str(r["pain"]).split() if s.isdigit()]
+            current = digits[0] if digits else TITLE_LIMIT
+        over = max(0, current - TITLE_LIMIT)
+        ruler = limit_ruler_html(
+            current, TITLE_LIMIT,
+            left_label=f"{TITLE_LIMIT} допуск",
+            right_label=f"+{over} резать",
+        )
+        headline = f"Тайтл {current} симв. — Amazon перепишет сам"
+        kind = "Тайтл"
+        money_line = f"{current} / {TITLE_LIMIT} · превышение {over}"
+    elif rule == "low_reviews":
+        digits = [int(s) for s in str(r["pain"]).split() if s.isdigit()]
+        current = digits[0] if digits else 0
+        ruler = limit_ruler_html(
+            current, MIN_REVIEWS,
+            left_label=f"{current} сейчас",
+            right_label=f"цель {MIN_REVIEWS}",
+            over_style=False,
+        )
+        headline = f"{current} отзывов при пороге доверия {MIN_REVIEWS}+"
+        kind = "Отзывы"
+        money_line = f"{current} / {MIN_REVIEWS}"
+    elif rule == "out_of_stock":
+        ruler = ""
+        headline = "Товар недоступен к покупке"
+        kind = "Сток"
+        money_line = money
     else:
-        pct = min(100.0, (current / limit) * 100)
-        bar_bg = "#FAEEDA" if not over_style else OK_BG
-        marker = AMBER if not over_style else INK
-        fill = (
-            f"<div style='position:absolute;left:0;top:0;height:100%;width:{pct:.1f}%;background:{bar_bg};'></div>"
-            f"<div style='position:absolute;left:{pct:.1f}%;top:0;height:100%;width:2px;background:{marker};opacity:.7;'></div>"
-        )
-        left_color = AMBER_TEXT if not over_style else OK_TEXT
-        right_color = MUTED
+        ruler = ""
+        headline = str(r["pain"])
+        kind = "Боль"
+        money_line = money
 
-    return (
-        f"<div style='position:relative;height:26px;width:100%;background:{TRACK};"
-        f"border-radius:6px;overflow:hidden;margin:10px 0 12px;'>"
-        f"{fill}"
-        f"<span style='position:absolute;left:8px;top:5px;font-family:{MONO};font-size:11px;color:{left_color};'>{left_label}</span>"
-        f"<span style='position:absolute;right:8px;top:5px;font-family:{MONO};font-size:11px;color:{right_color};'>{right_label}</span>"
-        f"</div>"
+    pain_card(
+        severity=str(r["severity"]),
+        kind_label=kind,
+        asin=asin,
+        marketplace=mp,
+        headline=headline,
+        product_title=product_title,
+        ruler_html=ruler,
+        cause=str(r["cause"]),
+        action=str(r["action"]),
+        money=money_line,
     )
 
-
-def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
-              headline: str, product_title: str | None,
-              ruler_html: str, cause: str, action: str, money: str) -> None:
-    edge = SEV_EDGE.get(severity, BORDER)
-    if product_title:
-        short = product_title[:130] + ("…" if len(product_title) > 130 else "")
-        title_line = (
-            f"<div style='font-size:13px;color:{MUTED};margin-bottom:10px;'>&#171;{short}&#187;</div>"
-        )
-    else:
-        title_line = ""
-    st.markdown(
-        f"""
-        <div style="background:{CARD};border:1px solid {BORDER};border-left:3px solid {edge};
-                    border-radius:0 12px 12px 0;padding:18px 22px;margin-bottom:14px;">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
-            {eyebrow(f'{kind_label} · {asin} · {marketplace}')}
-            <span style="font-family:{MONO};font-size:13px;font-weight:600;color:{edge};">{money}</span>
-          </div>
-          <div style="font-size:16px;font-weight:700;color:{INK};margin-bottom:3px;">{headline}</div>
-          {title_line}
-          {ruler_html}
-          <div style="font-size:13px;color:{MUTED};margin-bottom:12px;">Причина: {cause}</div>
-          <div style="display:inline-block;background:{INK};color:{BG};border-radius:8px;
-                      padding:8px 14px;font-size:13px;font-weight:600;">{action}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
+if len(view) > 50:
+    st.caption(f"Показаны первые 50 из {len(view)} — полный список в CSV")
