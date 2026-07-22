@@ -1,12 +1,4 @@
 # -*- coding: utf-8 -*-
-"""
-pages/dashboard.py — Главная: Диагноз. Визуальный язык макета B+C.
-
-Читает diagnosis (последняя запись на пару asin+rule_id) + тайтлы из
-listing_snapshots. Никакой логики, никакого DDL. Кэш st.cache_data.
-Нет данных -> честные пустые состояния.
-"""
-
 from __future__ import annotations
 
 import pandas as pd
@@ -44,7 +36,6 @@ def load_diagnosis() -> pd.DataFrame:
 
 @st.cache_data(ttl=300)
 def load_titles() -> pd.DataFrame:
-    """Последний живой тайтл каждого ASIN — контекст для карточек."""
     try:
         conn = get_conn()
         df = pd.read_sql(
@@ -178,3 +169,11 @@ for _, r in view.head(50).iterrows():
         marketplace=mp,
         headline=headline,
         product_title=product_title,
+        ruler_html=ruler,
+        cause=str(r["cause"]),
+        action=str(r["action"]),
+        money=money_line,
+    )
+
+if len(view) > 50:
+    st.caption(f"Показаны первые 50 из {len(view)} — полный список в CSV")
