@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-pages/dashboard.py — Главная: Диагноз.
+pages/dashboard.py — Главная: Диагноз. Визуальный язык макета B+C.
 
-Читает diagnosis (последняя запись на каждую пару asin+rule) — никакой
-логики и никакого DDL здесь нет. Кэш st.cache_data, как в Кабинете.
+Читает diagnosis (последняя запись на пару asin+rule_id) + тайтлы из
+listing_snapshots. Никакой логики, никакого DDL. Кэш st.cache_data.
 Нет данных -> честные пустые состояния.
 """
 
@@ -15,9 +15,13 @@ import streamlit as st
 from config import TITLE_LIMIT, days_to_deadline
 from i18n import t
 from services.db import get_conn
+from components.ui import (
+    inject_fonts, verdict, chips_row, limit_ruler_html, pain_card,
+)
 
-SEV_ICON = {"red": "🔴", "amber": "🟠", "yellow": "🟡"}
-SEV_ORDER = {"red": 0, "amber": 1, "yellow": 2}
+MIN_REVIEWS = 50
+
+inject_fonts()
 
 
 @st.cache_data(ttl=300)
@@ -39,15 +43,17 @@ def load_diagnosis() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=300)
-def load_analysis() -> pd.DataFrame:
+def load_titles() -> pd.DataFrame:
+    """Последний живой тайтл каждого ASIN — контекст для карточек."""
     try:
         conn = get_conn()
         df = pd.read_sql(
             """
-            SELECT DISTINCT ON (a.asin, a.marketplace)
-                   a.asin, a.marketplace, a.title_len, a.title_over
-            FROM listing_analysis a
-            ORDER BY a.asin, a.marketplace, a.analyzed_at DESC
+            SELECT DISTINCT ON (s.asin, s.marketplace)
+                   s.asin, s.marketplace, s.title, s.review_count
+            FROM listing_snapshots s
+            WHERE s.ok = TRUE AND s.title <> ''
+            ORDER BY s.asin, s.marketplace, s.fetched_at DESC
             """,
             conn,
         )
@@ -59,89 +65,116 @@ def load_analysis() -> pd.DataFrame:
 
 def money_fmt(v) -> str:
     try:
-        return f"€{float(v):,.0f}".replace(",", " ")
+        return f"€{float(v):,.0f}".replace(",", " ") + "/мес"
     except (TypeError, ValueError):
-        return "—"
+        return "не оценено"
 
 
 diag = load_diagnosis()
-ana = load_analysis()
+titles = load_titles()
+
+title_map: dict = {}
+if not titles.empty:
+    title_map = {
+        (r["asin"], r["marketplace"]): r["title"] for _, r in titles.iterrows()
+    }
 
 d = days_to_deadline()
 run_label = ""
 if not diag.empty and "created_at" in diag.columns:
     run_label = pd.to_datetime(diag["created_at"].max()).strftime("%d.%m %H:%M")
 
-st.caption(f"{t('nav.dashboard').lower()} · {run_label or '—'}")
-
-n_over = int((ana["title_over"] > 0).sum()) if not ana.empty else 0
-money_at_risk = None
-if not diag.empty and "money_impact" in diag.columns:
-    m = diag.loc[diag["rule_id"] == "title_over_limit", "money_impact"].dropna()
-    money_at_risk = float(m.sum()) if len(m) else None
-
-if n_over > 0:
-    st.header(t("dash.header", n=n_over, days=d))
-    risk_txt = money_fmt(money_at_risk) if money_at_risk else "н/д (заполни sku_economics)"
-    st.markdown(t("dash.reason", money=risk_txt))
-elif ana.empty:
+if diag.empty:
     st.header(t("nav.dashboard"))
     st.info(t("common.no_data"))
-else:
-    st.header(t("nav.dashboard"))
-    st.success(f"Все тайтлы в пределах {TITLE_LIMIT} символов")
-
-if not diag.empty:
-    c1, c2, _ = st.columns([1, 1, 2])
-    with c1:
-        csv = diag.to_csv(index=False).encode("utf-8-sig")
-        st.download_button(t("dash.fix_all_csv"), csv,
-                           file_name="diagnosis.csv", mime="text/csv",
-                           type="primary")
-    with c2:
-        top10_only = st.toggle(t("dash.top10"), value=False)
-else:
-    top10_only = False
-
-st.divider()
-
-if diag.empty:
-    st.caption(t("dash.no_diagnosis"))
     st.stop()
 
-diag["_sev_order"] = diag["severity"].map(SEV_ORDER).fillna(9)
-view = diag.sort_values(["_sev_order", "created_at"], ascending=[True, False])
+n_over = int((diag["rule_id"] == "title_over_limit").sum())
+money_at_risk = diag.loc[
+    diag["rule_id"] == "title_over_limit", "money_impact"
+].dropna().sum()
+risk_html = (
+    f"<span style='color:#E8590C;font-weight:700;'>€{money_at_risk:,.0f}</span>/мес revenue"
+    if money_at_risk
+    else "<span style='color:#E8590C;font-weight:700;'>н/д</span> "
+         "<span style='color:#8A8578;'>(заполни sku_economics)</span>"
+)
 
-if top10_only and "money_impact" in view.columns:
-    top_asins = (view.groupby("asin")["money_impact"].sum()
-                 .sort_values(ascending=False).head(10).index)
-    view = view[view["asin"].isin(top_asins)]
+if n_over > 0:
+    verdict(
+        t("dash.header", n=n_over, days=d),
+        f"Лимит {TITLE_LIMIT} симв. с 27.07 · Под риском: {risk_html}",
+        meta_right=f"прогон {run_label}",
+    )
+else:
+    verdict(
+        t("nav.dashboard"),
+        f"Все тайтлы в пределах {TITLE_LIMIT} символов",
+        meta_right=f"прогон {run_label}",
+    )
 
-s_red = int((view["severity"] == "red").sum())
-s_amber = int((view["severity"] == "amber").sum())
-s_yellow = int((view["severity"] == "yellow").sum())
-m1, m2, m3, m4 = st.columns(4)
-m1.metric("🔴 критично", s_red)
-m2.metric("🟠 важно", s_amber)
-m3.metric("🟡 план", s_yellow)
-m4.metric("ASIN с болями", view["asin"].nunique())
+csv = diag.to_csv(index=False).encode("utf-8-sig")
+st.download_button(t("dash.fix_all_csv"), csv,
+                   file_name="diagnosis.csv", mime="text/csv")
+
+s_red = int((diag["severity"] == "red").sum())
+s_amber = int((diag["severity"] == "amber").sum())
+s_yellow = int((diag["severity"] == "yellow").sum())
+mp_list = " · ".join(sorted(diag["marketplace"].unique()))
+chips_row(s_red, s_amber, s_yellow,
+          extra=f"{mp_list} · {diag['asin'].nunique()} ASIN")
+
+SEV_ORDER = {"red": 0, "amber": 1, "yellow": 2}
+diag["_o"] = diag["severity"].map(SEV_ORDER).fillna(9)
+view = diag.sort_values(["_o", "created_at"], ascending=[True, False])
 
 for _, r in view.head(50).iterrows():
-    sev = SEV_ICON.get(str(r["severity"]), "·")
-    fix = t("pain.fix_now") if r.get("fix_mode") == "fix_now" else t("pain.test")
-    money = (money_fmt(r["money_impact"]) + "/мес"
-             if pd.notna(r.get("money_impact")) else "не оценено")
-    with st.container(border=True):
-        st.markdown(
-            f"{sev} **{r['pain']}**  \n"
-            f"`{r['asin']}` · {r['marketplace']}"
-            + (f" · {r['sku_group']}" if r.get("sku_group") else "")
-        )
-        st.markdown(
-            f"Причина: {r['cause']}  \n"
-            f"Действие: **{r['action']}**  \n"
-            f"Цена бездействия: **{money}** · {fix}"
-        )
+    asin, mp = r["asin"], r["marketplace"]
+    product_title = title_map.get((asin, mp))
+    money = money_fmt(r.get("money_impact"))
+    rule = r.get("rule_id", "")
 
-if len(view) > 50:
-    st.caption(f"Показаны первые 50 из {len(view)} — полный список в CSV")
+    if rule == "title_over_limit":
+        current = len(product_title) if product_title else None
+        if current is None:
+            digits = [int(s) for s in str(r["pain"]).split() if s.isdigit()]
+            current = digits[0] if digits else TITLE_LIMIT
+        over = max(0, current - TITLE_LIMIT)
+        ruler = limit_ruler_html(
+            current, TITLE_LIMIT,
+            left_label=f"{TITLE_LIMIT} допуск",
+            right_label=f"+{over} резать",
+        )
+        headline = f"Тайтл {current} симв. — Amazon перепишет сам"
+        kind = "Тайтл"
+        money_line = f"{current} / {TITLE_LIMIT} · превышение {over}"
+    elif rule == "low_reviews":
+        digits = [int(s) for s in str(r["pain"]).split() if s.isdigit()]
+        current = digits[0] if digits else 0
+        ruler = limit_ruler_html(
+            current, MIN_REVIEWS,
+            left_label=f"{current} сейчас",
+            right_label=f"цель {MIN_REVIEWS}",
+            over_style=False,
+        )
+        headline = f"{current} отзывов при пороге доверия {MIN_REVIEWS}+"
+        kind = "Отзывы"
+        money_line = f"{current} / {MIN_REVIEWS}"
+    elif rule == "out_of_stock":
+        ruler = ""
+        headline = "Товар недоступен к покупке"
+        kind = "Сток"
+        money_line = money
+    else:
+        ruler = ""
+        headline = str(r["pain"])
+        kind = "Боль"
+        money_line = money
+
+    pain_card(
+        severity=str(r["severity"]),
+        kind_label=kind,
+        asin=asin,
+        marketplace=mp,
+        headline=headline,
+        product_title=product_title,
