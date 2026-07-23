@@ -15,7 +15,7 @@ MUTED = "#8A8578"
 BORDER = "#E7E4DD"
 CARD = "#FFFFFF"
 TRACK = "#F0EFEA"
-MONO = "'JetBrains Mono','SFMono-Regular',Consolas,monospace"
+MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace' 
 
 SEV_EDGE = {"red": "#A32D2D", "amber": ACCENT, "yellow": AMBER}
 SEV_LABEL = {"red": "критично", "amber": "важно", "yellow": "план"}
