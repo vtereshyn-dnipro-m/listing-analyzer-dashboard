@@ -80,11 +80,20 @@ def load_candidates() -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
 
+
+GEMINI_MODEL = "gemini-2.5-flash"
+GEMINI_URL = (
+    "https://generativelanguage.googleapis.com/v1beta/models/"
+    f"{GEMINI_MODEL}:generateContent"
+)
+
+
 def generate_split(title: str, marketplace: str) -> dict | None:
     api_key = cfg("GEMINI_API_KEY")
     if not api_key:
         st.error("GEMINI_API_KEY не найден в секретах — добавь его до [databricks].")
         return None
+    api_key = str(api_key).strip()
     try:
         import requests as _rq
         prompt = SYNTH_PROMPT.format(
@@ -94,7 +103,7 @@ def generate_split(title: str, marketplace: str) -> dict | None:
             title=title,
         )
         resp = _rq.post(
-            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+            GEMINI_URL,
             headers={"x-goog-api-key": api_key},
             json={
                 "contents": [{"parts": [{"text": prompt}]}],
@@ -102,7 +111,11 @@ def generate_split(title: str, marketplace: str) -> dict | None:
             },
             timeout=60,
         )
-        resp.raise_for_status()
+        if resp.status_code != 200:
+            st.error(
+                f"Gemini HTTP {resp.status_code}: {resp.text[:300]}"
+            )
+            return None
         data = resp.json()
         text = data["candidates"][0]["content"]["parts"][0]["text"]
         return json.loads(text)
@@ -126,7 +139,7 @@ def save_draft(asin: str, mp: str, original: str, result: dict) -> None:
                  result.get("title", ""),
                  result.get("highlights", ""),
                  ", ".join(result.get("dropped", [])),
-                 "claude-sonnet-4-6",
+                 GEMINI_MODEL,
                  json.dumps(result, ensure_ascii=False)),
             )
         conn.close()
