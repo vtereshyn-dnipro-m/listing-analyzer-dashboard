@@ -80,30 +80,31 @@ def load_candidates() -> pd.DataFrame:
     except Exception:
         return pd.DataFrame()
 
-
 def generate_split(title: str, marketplace: str) -> dict | None:
-    api_key = cfg("ANTHROPIC_API_KEY")
+    api_key = cfg("GEMINI_API_KEY")
     if not api_key:
-        st.error("ANTHROPIC_API_KEY не найден в секретах — добавь его до [databricks].")
+        st.error("GEMINI_API_KEY не найден в секретах — добавь его до [databricks].")
         return None
     try:
-        import anthropic
-        client = anthropic.Anthropic(api_key=api_key)
-        resp = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=600,
-            messages=[{
-                "role": "user",
-                "content": SYNTH_PROMPT.format(
-                    title_limit=TITLE_LIMIT,
-                    highlights_limit=HIGHLIGHTS_LIMIT,
-                    marketplace=marketplace,
-                    title=title,
-                ),
-            }],
+        import requests as _rq
+        prompt = SYNTH_PROMPT.format(
+            title_limit=TITLE_LIMIT,
+            highlights_limit=HIGHLIGHTS_LIMIT,
+            marketplace=marketplace,
+            title=title,
         )
-        text = "".join(b.text for b in resp.content if hasattr(b, "text"))
-        text = text.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+        resp = _rq.post(
+            "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+            params={"key": api_key},
+            json={
+                "contents": [{"parts": [{"text": prompt}]}],
+                "generationConfig": {"responseMimeType": "application/json"},
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        text = data["candidates"][0]["content"]["parts"][0]["text"]
         return json.loads(text)
     except Exception as e:
         st.error(f"Ошибка генерации: {e}")
