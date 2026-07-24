@@ -42,9 +42,12 @@ st.markdown(
 text = st.text_area(
     "ASIN пачкой",
     height=140,
-    placeholder="GS-98, B0DKFVFT29, es\nGS-98, B0XXXXXXXX, es, конкурент\nB0YYYYYYYY",
-    label_visibility="collapsed",
-)
+    placeholder=(
+    "GS-98, B0DKFVFT29, es\n"
+    "GS-98, https://www.amazon.es/dp/B0DKFVFT29\n"
+    "https://www.amazon.de/dp/B0XXXXXXXX\n"
+    "GS-98, B0XXXXXXXX, es, конкурент"
+),
 
 if st.button("Добавить в матрицу", type="primary", disabled=not text.strip()):
     rows = parse_asin_lines(text)
