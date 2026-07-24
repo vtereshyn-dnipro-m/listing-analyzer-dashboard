@@ -27,11 +27,17 @@ st.caption(
 SCOPES = {
     "common": "Общая · базовые правила для всех областей",
     "title_split": "Split тайтла 75/125 · страница Синтез",
-    # будущие области — просто добавить строку:
-    # "bullets": "Переписывание буллетов",
-    # "photo_brief": "ТЗ дизайнеру на главное фото",
-    # "ai_grade": "Критерии оценки листинга A-D",
-    # "keyword_research": "Чистка и группировка ключевых фраз",
+    "bullets": "Буллеты · переписывание 5 пунктов",
+    "highlights": "Item Highlights · отдельная доработка 125 симв.",
+    "description": "Описание товара · product description",
+    "aplus": "A+ контент · структура и тексты модулей",
+    "photo_brief": "Фото · ТЗ дизайнеру на главное фото и галерею",
+    "video_brief": "Видео · сценарий и ТЗ на product video",
+    "ai_grade": "Оценка листинга · критерии грейда A-D",
+    "keyword_research": "Ключевые фразы · чистка, группировка, must-keep",
+    "review_analysis": "Отзывы · анализ негатива и инсайты для листинга",
+    "competitor_teardown": "Конкуренты · разбор чужого листинга",
+    "ppc_negatives": "PPC · минус-слова и структура кампаний",
 }
 
 scope = st.selectbox(
@@ -157,4 +163,4 @@ if not versions.empty:
                         st.cache_data.clear()
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Откат не удался: {e}")
+                        st.error(f"Откат не удался: {e}") 
