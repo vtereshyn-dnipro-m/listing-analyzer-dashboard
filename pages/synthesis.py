@@ -229,8 +229,7 @@ def save_draft(asin: str, mp: str, original: str, result: dict, skill_version: i
 candidates = load_candidates()
 
 if candidates.empty:
-    st.info("Нет тайтлов с превышением — Синтезу нечего резать. "
-            "Прогони диагноз на странице «Матрица товаров».")
+    st.info(t("synth.no_candidates"))
     st.stop()
 
 skill_text, skill_version = load_skill()
@@ -239,12 +238,16 @@ options = {
     f"{r['asin']} · {r['marketplace']} · {len(r['title'])} симв.": i
     for i, r in candidates.iterrows()
 }
-choice = st.selectbox("Тайтл с превышением", list(options.keys()))
+choice = st.selectbox(t("synth.select_title"), list(options.keys()))
 row = candidates.loc[options[choice]]
 asin, mp, title = row["asin"], row["marketplace"], row["title"]
 
-st.markdown(eyebrow(f"Оригинал · {asin} · {mp} · методология v{skill_version}"),
-            unsafe_allow_html=True)
+st.markdown(
+    eyebrow(f"{t('synth.original')} · {asin} · {mp} · "
+            f"<a href='/methodology' target='_self' "
+            f"style='color:#8A8578;text-decoration:underline;'>{t('synth.methodology')} v{skill_version}</a>"),
+    unsafe_allow_html=True,
+)
 st.markdown(f"«{title}»")
 st.markdown(
     limit_ruler_html(len(title), TITLE_LIMIT,
@@ -254,7 +257,7 @@ st.markdown(
 )
 
 # ---- защищённые фразы
-st.markdown("**Защищённые фразы** — must-keep дословно · запрещённые не появятся")
+st.markdown(f"**{t('synth.protected')}** — {t('synth.protected_hint')}")
 kw = load_keywords(asin, mp)
 
 if not kw.empty:
@@ -278,7 +281,7 @@ new_phrase = nc1.text_input("Новая фраза", key="new-kw",
                             label_visibility="collapsed",
                             placeholder="например: taladro atornillador")
 new_type = nc2.selectbox("тип", ["keep", "forbid"], label_visibility="collapsed")
-if nc3.button("Добавить") and new_phrase.strip():
+if nc3.button(t("synth.add")) and new_phrase.strip():
     try:
         conn = get_conn()
         with conn, conn.cursor() as cur:
@@ -301,7 +304,7 @@ forbid_list = kw[kw["phrase_type"] == "forbid"]["phrase"].tolist() if not kw.emp
 
 st.divider()
 
-if st.button("Сгенерировать Split 75/125", type="primary"):
+if st.button(t("synth.generate"), type="primary"):
     with st.spinner(f"Gemini режет тайтл по методологии v{skill_version}..."):
         result = generate_split(title, mp, skill_text, keep_list, forbid_list)
     if result:
@@ -317,7 +320,7 @@ if result and saved_for and saved_for[0] == asin and saved_for[1] == mp:
     dropped = result.get("dropped", [])
 
     st.divider()
-    st.markdown(eyebrow("Результат сплита"), unsafe_allow_html=True)
+    st.markdown(eyebrow(t("synth.result")), unsafe_allow_html=True)
 
     st.markdown(f"**title** · {len(new_title)}/{TITLE_LIMIT}")
     st.code(new_title, language=None)
@@ -332,17 +335,17 @@ if result and saved_for and saved_for[0] == asin and saved_for[1] == mp:
     st.code(new_hl, language=None)
 
     if dropped:
-        st.markdown("**Выброшено — на ревью:**")
+        st.markdown(f"**{t('synth.dropped')}:**")
         st.markdown(" · ".join(f"`{w}`" for w in dropped))
 
     # ---- пост-проверки кодом
-    st.markdown("**Проверки (кодом, не ИИ):**")
+    st.markdown(f"**{t('synth.checks')}:**")
     checks = run_checks(new_title, new_hl, keep_list, forbid_list)
     failed = [msg for ok, msg in checks if not ok]
     for ok, msg in checks:
         st.markdown(("✅ " if ok else "❌ ") + msg)
 
     if failed:
-        st.warning("Есть проваленные проверки — перегенерируй или поправь текст руками.")
+        st.warning(t("synth.checks_failed"))
     else:
-        st.success("Все проверки пройдены. Черновик в synthesis_drafts.")
+        st.success(t("synth.checks_ok"))
