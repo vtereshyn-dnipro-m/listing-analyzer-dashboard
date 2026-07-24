@@ -35,11 +35,11 @@ MP_COUNTRY = {
 }
 
 st.header(t("nav.matrix"))
-st.caption("Что мониторим. Автосбор — по расписанию ниже; точечный сбор — кнопкой в строке.")
+st.caption(t("matrix.caption"))
 
 # ================================================================ ввод пачкой
 st.markdown(
-    "Формат — построчно, любой из вариантов вперемешку:  \n"
+    t("matrix.format_hint") + "  \n"
     "`SKU, ASIN, маркетплейс[, конкурент]` · `SKU, ссылка` · голый `ASIN` · ссылка amazon"
 )
 
@@ -55,16 +55,16 @@ text = st.text_area(
     label_visibility="collapsed",
 )
 
-if st.button("Добавить в матрицу", type="primary", disabled=not text.strip()):
+if st.button(t("matrix.add"), type="primary", disabled=not text.strip()):
     rows = parse_asin_lines(text)
     if not rows:
-        st.warning("Не нашёл ни одного ASIN — проверь формат")
+        st.warning(t("matrix.no_asin"))
     else:
         try:
             conn = get_conn()
             n = add_matrix_rows(conn, rows)
             conn.close()
-            st.success(f"Добавлено/обновлено: {n}")
+            st.success(f"{t('matrix.added')} {n}")
             st.cache_data.clear()
         except Exception as e:
             st.error(f"БД недоступна: {e}")
@@ -121,7 +121,7 @@ def collect_rows(rows: pd.DataFrame) -> None:
     try:
         conn = get_conn()
         cur = conn.cursor()
-        with st.status("Собираю данные...", expanded=True) as status:
+        with st.status(t("matrix.collecting"), expanded=True) as status:
             for _, row in rows.iterrows():
                 asin, mp = row["asin"], row["marketplace"]
                 sku = row["sku_group"]
@@ -216,11 +216,11 @@ def collect_rows(rows: pd.DataFrame) -> None:
                 st.write(f"   → {asin}: ok={ok}, тайтл {title_len} симв.")
 
             conn.commit()
-            status.update(label="Готово", state="complete")
+            status.update(label=t("matrix.done"), state="complete")
         cur.close()
         conn.close()
         st.cache_data.clear()
-        st.success("Сбор завершён. Открой Диагноз или Каталог.")
+        st.success(t("matrix.collected"))
         st.rerun()
     except Exception as e:
         st.error(f"Ошибка сбора: {e}")
@@ -239,7 +239,7 @@ else:
     seg = st.segmented_control(
         "Группа",
         options=["ours", "comp"],
-        format_func=lambda v: f"Наши · {ours_n}" if v == "ours" else f"Конкуренты · {comp_n}",
+        format_func=lambda v: f"{t('matrix.tab_ours')} · {ours_n}" if v == "ours" else f"{t('matrix.tab_comp')} · {comp_n}",
         default="ours",
         key=seg_key,
         label_visibility="collapsed",
@@ -249,12 +249,12 @@ else:
 
     f1, f2, f3 = st.columns([3, 2, 2])
     query = f1.text_input("Поиск", key="matrix-q", label_visibility="collapsed",
-                          placeholder="Поиск: ASIN или SKU...")
+                          placeholder=t("matrix.search_placeholder"))
     mps = sorted(data["marketplace"].unique()) if not data.empty else []
     mp_sel = f2.multiselect("MP", mps, default=[], key="matrix-mp",
-                            placeholder="Все маркетплейсы",
+                            placeholder=t("matrix.all_mp"),
                             label_visibility="collapsed")
-    only_stale = f3.checkbox("Только без свежих данных", key="matrix-stale")
+    only_stale = f3.checkbox(t("matrix.only_stale"), key="matrix-stale")
 
     view = data
     if query.strip():
@@ -270,7 +270,7 @@ else:
         lf = pd.to_datetime(view["last_fetch"], utc=True, errors="coerce")
         view = view[lf.isna() | (lf < cutoff) | (view["last_ok"] == False)]  # noqa: E712
 
-    st.caption(f"Найдено: {len(view)}")
+    st.caption(f"{t('matrix.found')} {len(view)}")
 
     pages = max(1, (len(view) + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(st.session_state.get("matrix-page", 1), pages)
@@ -287,13 +287,13 @@ else:
         edge = ERR_TEXT if (has_red or fetch_failed) else OK_TEXT
 
         title = (r["title"] or "")[:90]
-        title_line = f"«{title}…»" if title else "данные ещё не собраны"
+        title_line = f"«{title}…»" if title else t("matrix.no_data_yet")
         if pd.notna(r["last_fetch"]):
             fetch_str = pd.to_datetime(r["last_fetch"]).strftime("%d.%m %H:%M")
-            fetch_line = (f"✓ собрано {fetch_str}" if r["last_ok"]
-                          else f"✗ ошибка сбора {fetch_str}")
+            fetch_line = (f"{t('matrix.collected_at')} {fetch_str}" if r["last_ok"]
+                          else f"{t('matrix.fetch_error_at')} {fetch_str}")
         else:
-            fetch_line = "— не собирался"
+            fetch_line = t("matrix.not_collected")
         pains = " ".join(filter(None, [
             f"🔴{int(r['red'])}" if r["red"] else "",
             f"🟠{int(r['amber'])}" if r["amber"] else "",
@@ -329,31 +329,31 @@ else:
             f"{badge_txt}</span></div>",
             unsafe_allow_html=True,
         )
-        if c_btn.button("↻ Собрать", key=f"collect-{row_key}"):
+        if c_btn.button(t("matrix.collect"), key=f"collect-{row_key}"):
             collect_rows(chunk[(chunk["asin"] == asin) & (chunk["marketplace"] == mp)])
 
     # ---- пагинация
     if pages > 1:
         pc1, pc2, pc3 = st.columns([1, 2, 1])
-        if pc1.button("← Назад", disabled=page <= 1):
+        if pc1.button(t("matrix.prev"), disabled=page <= 1):
             st.session_state["matrix-page"] = page - 1
             st.rerun()
         pc2.markdown(
-            f"<div style='text-align:center;color:{MUTED};'>стр. {page} / {pages}</div>",
+            f"<div style='text-align:center;color:{MUTED};'>{t('matrix.page')} {page} / {pages}</div>",
             unsafe_allow_html=True,
         )
-        if pc3.button("Вперёд →", disabled=page >= pages):
+        if pc3.button(t("matrix.next"), disabled=page >= pages):
             st.session_state["matrix-page"] = page + 1
             st.rerun()
 
     # ---- групповые действия
     a1, a2, _ = st.columns([2, 2, 3])
-    if a1.button(f"↻ Собрать выбранные ({len(selected_keys)})",
+    if a1.button(f"{t('matrix.collect_selected')} ({len(selected_keys)})",
                  type="primary", disabled=not selected_keys):
         mask = chunk.apply(
             lambda r: (r["asin"], r["marketplace"]) in selected_keys, axis=1)
         collect_rows(chunk[mask])
-    if a2.button(f"Удалить из матрицы ({len(selected_keys)})",
+    if a2.button(f"{t('matrix.delete_selected')} ({len(selected_keys)})",
                  disabled=not selected_keys):
         try:
             conn = get_conn()
@@ -365,7 +365,7 @@ else:
                     )
             conn.close()
             st.cache_data.clear()
-            st.success(f"Удалено: {len(selected_keys)}")
+            st.success(f"{t('matrix.deleted')} {len(selected_keys)}")
             st.rerun()
         except Exception as e:
             st.error(f"Не удалилось: {e}")
@@ -388,24 +388,24 @@ def load_schedule() -> dict:
             "days": "mon,tue,wed,thu,fri,sat,sun"}
 
 
-DAY_LABELS = {"mon": "Пн", "tue": "Вт", "wed": "Ср", "thu": "Чт",
-              "fri": "Пт", "sat": "Сб", "sun": "Вс"}
+DAY_LABELS = {d: t(f"matrix.day_{d}")
+              for d in ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]}
 
 sched = load_schedule()
 sched_days = [d for d in str(sched.get("days", "")).split(",") if d in DAY_LABELS]
 status_chip = (
     f"<span style='background:{OK_BG};color:{OK_TEXT};border-radius:999px;"
-    f"padding:4px 12px;font-size:12px;font-weight:600;'>● включено</span>"
+    f"padding:4px 12px;font-size:12px;font-weight:600;'>{t('matrix.schedule_enabled')}</span>"
     if sched.get("enabled", True) else
     f"<span style='background:#F0EFEA;color:{MUTED};border-radius:999px;"
-    f"padding:4px 12px;font-size:12px;font-weight:600;'>○ выключено</span>"
+    f"padding:4px 12px;font-size:12px;font-weight:600;'>{t('matrix.schedule_disabled')}</span>"
 )
 
 st.markdown(
     f"""
     <div style="background:{CARD};border:1px solid {BORDER};border-radius:10px;
                 padding:16px 20px;margin-bottom:10px;">
-      {eyebrow('Расписание автосбора')}
+      {eyebrow(t('matrix.schedule_header'))}
       <div style="display:flex;gap:16px;align-items:center;margin-top:10px;">
         {status_chip}
         <span style="font-family:{MONO};font-size:14px;color:{INK};">
@@ -418,18 +418,18 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-with st.expander("Изменить расписание"):
+with st.expander(t("matrix.schedule_edit")):
     sc1, sc2, sc3 = st.columns([1, 2, 3])
-    enabled = sc1.toggle("Включено", value=bool(sched.get("enabled", True)))
+    enabled = sc1.toggle(t("matrix.schedule_enabled_label"), value=bool(sched.get("enabled", True)))
     run_time = sc2.time_input(
-        "Время (Kyiv)",
+        t("matrix.schedule_time"),
         value=pd.to_datetime(str(sched.get("run_time", "13:00"))).time(),
     )
     days_sel = sc3.multiselect(
-        "Дни", list(DAY_LABELS.keys()), default=sched_days,
+        t("matrix.schedule_days"), list(DAY_LABELS.keys()), default=sched_days,
         format_func=lambda d: DAY_LABELS[d],
     )
-    if st.button("Сохранить расписание", type="primary"):
+    if st.button(t("matrix.schedule_save"), type="primary"):
         try:
             conn = get_conn()
             with conn, conn.cursor() as cur:
@@ -448,7 +448,7 @@ with st.expander("Изменить расписание"):
                 )
             conn.close()
             st.cache_data.clear()
-            st.success("Расписание сохранено.")
+            st.success(t("matrix.schedule_saved"))
             st.rerun()
         except Exception as e:
-            st.error(f"Не сохранилось: {e}") 
+            st.error(f"Не сохранилось: {e}")
