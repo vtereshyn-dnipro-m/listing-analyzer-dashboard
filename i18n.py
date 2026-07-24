@@ -43,6 +43,20 @@ LANGS: dict[str, dict[str, str]] = {
         "dash.no_diagnosis": "Diagnosis not run yet — waiting for services/diagnose.py cron",
         "pain.fix_now": "fix now",
         "pain.test": "test via before/after",
+        # --- Синтез
+        "synth.select_title": "Title over limit",
+        "synth.original": "Original",
+        "synth.methodology": "methodology",
+        "synth.protected": "Protected phrases",
+        "synth.protected_hint": "must-keep verbatim · forbidden won't appear",
+        "synth.add": "Add",
+        "synth.generate": "Generate Split 75/125",
+        "synth.result": "Split result",
+        "synth.dropped": "Dropped — for review",
+        "synth.checks": "Checks (by code, not AI)",
+        "synth.checks_failed": "Some checks failed — regenerate or fix manually.",
+        "synth.checks_ok": "All checks passed. Draft saved.",
+        "synth.no_candidates": "No over-limit titles — nothing to split.",
     },
     "ru": {
         "app.tagline": "диагностика листингов",
@@ -72,6 +86,20 @@ LANGS: dict[str, dict[str, str]] = {
         "dash.no_diagnosis": "Диагноз ещё не запускался — ждёт cron services/diagnose.py",
         "pain.fix_now": "чинить сразу",
         "pain.test": "тест через до/после",
+        # --- Синтез
+        "synth.select_title": "Тайтл с превышением",
+        "synth.original": "Оригинал",
+        "synth.methodology": "методология",
+        "synth.protected": "Защищённые фразы",
+        "synth.protected_hint": "must-keep дословно · запрещённые не появятся",
+        "synth.add": "Добавить",
+        "synth.generate": "Сгенерировать Split 75/125",
+        "synth.result": "Результат сплита",
+        "synth.dropped": "Выброшено — на ревью",
+        "synth.checks": "Проверки (кодом, не ИИ)",
+        "synth.checks_failed": "Есть проваленные проверки — перегенерируй или поправь руками.",
+        "synth.checks_ok": "Все проверки пройдены. Черновик сохранён.",
+        "synth.no_candidates": "Нет тайтлов с превышением — Синтезу нечего резать.",
     },
     "uk": {
         "app.tagline": "діагностика лістингів",
@@ -101,6 +129,20 @@ LANGS: dict[str, dict[str, str]] = {
         "dash.no_diagnosis": "Діагноз ще не запускався — чекає cron services/diagnose.py",
         "pain.fix_now": "чинити одразу",
         "pain.test": "тест через до/після",
+        # --- Синтез
+        "synth.select_title": "Тайтл з перевищенням",
+        "synth.original": "Оригінал",
+        "synth.methodology": "методологія",
+        "synth.protected": "Захищені фрази",
+        "synth.protected_hint": "must-keep дослівно · заборонені не з'являться",
+        "synth.add": "Додати",
+        "synth.generate": "Згенерувати Split 75/125",
+        "synth.result": "Результат спліта",
+        "synth.dropped": "Викинуто — на рев'ю",
+        "synth.checks": "Перевірки (кодом, не ШІ)",
+        "synth.checks_failed": "Є провалені перевірки — перегенеруй або виправ вручну.",
+        "synth.checks_ok": "Всі перевірки пройдено. Чернетку збережено.",
+        "synth.no_candidates": "Немає тайтлів з перевищенням — Синтезу нічого різати.",
     },
 }
 
@@ -140,4 +182,4 @@ def lang_selector() -> None:
     if choice and choice != cur:
         st.session_state["lang"] = choice
         st.rerun()
- 
+
