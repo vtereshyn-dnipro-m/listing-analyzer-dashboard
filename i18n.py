@@ -71,6 +71,20 @@ LANGS: dict[str, dict[str, str]] = {
         "meth.rollback": "Roll back to",
         "meth.empty_scope": "No methodology for this scope yet — write the text below and save the first version.",
         "meth.no_active": "No active version — save a new one or roll back an old one below.",
+        # --- Области методологии (scopes)
+        "meth.scope.common": "Common · base rules for all scopes",
+        "meth.scope.title_split": "Title Split 75/125 · Synthesis page",
+        "meth.scope.bullets": "Bullets · rewriting 5 points",
+        "meth.scope.highlights": "Item Highlights · dedicated 125-char editing",
+        "meth.scope.description": "Product description",
+        "meth.scope.aplus": "A+ content · module structure and copy",
+        "meth.scope.photo_brief": "Photos · designer brief for main image and gallery",
+        "meth.scope.video_brief": "Video · script and brief for product video",
+        "meth.scope.ai_grade": "Listing grade · A-D criteria",
+        "meth.scope.keyword_research": "Keywords · cleaning, grouping, must-keep",
+        "meth.scope.review_analysis": "Reviews · negative analysis and listing insights",
+        "meth.scope.competitor_teardown": "Competitors · teardown of a rival listing",
+        "meth.scope.ppc_negatives": "PPC · negative keywords and campaign structure",
     },
     "ru": {
         "app.tagline": "диагностика листингов",
@@ -128,6 +142,20 @@ LANGS: dict[str, dict[str, str]] = {
         "meth.rollback": "Откатиться на",
         "meth.empty_scope": "Для этой области методологии ещё нет — напиши текст ниже и сохрани первую версию.",
         "meth.no_active": "Нет активной версии — сохрани новую или откати старую ниже.",
+        # --- Области методологии (scopes)
+        "meth.scope.common": "Общая · базовые правила для всех областей",
+        "meth.scope.title_split": "Split тайтла 75/125 · страница Синтез",
+        "meth.scope.bullets": "Буллеты · переписывание 5 пунктов",
+        "meth.scope.highlights": "Item Highlights · отдельная доработка 125 симв.",
+        "meth.scope.description": "Описание товара · product description",
+        "meth.scope.aplus": "A+ контент · структура и тексты модулей",
+        "meth.scope.photo_brief": "Фото · ТЗ дизайнеру на главное фото и галерею",
+        "meth.scope.video_brief": "Видео · сценарий и ТЗ на product video",
+        "meth.scope.ai_grade": "Оценка листинга · критерии грейда A-D",
+        "meth.scope.keyword_research": "Ключевые фразы · чистка, группировка, must-keep",
+        "meth.scope.review_analysis": "Отзывы · анализ негатива и инсайты для листинга",
+        "meth.scope.competitor_teardown": "Конкуренты · разбор чужого листинга",
+        "meth.scope.ppc_negatives": "PPC · минус-слова и структура кампаний",
     },
     "uk": {
         "app.tagline": "діагностика лістингів",
@@ -185,6 +213,20 @@ LANGS: dict[str, dict[str, str]] = {
         "meth.rollback": "Відкотитися на",
         "meth.empty_scope": "Для цієї області методології ще немає — напиши текст нижче і збережи першу версію.",
         "meth.no_active": "Немає активної версії — збережи нову або відкоти стару нижче.",
+        # --- Области методологии (scopes)
+        "meth.scope.common": "Загальна · базові правила для всіх областей",
+        "meth.scope.title_split": "Split тайтла 75/125 · сторінка Синтез",
+        "meth.scope.bullets": "Булети · переписування 5 пунктів",
+        "meth.scope.highlights": "Item Highlights · окрема доробка 125 симв.",
+        "meth.scope.description": "Опис товару · product description",
+        "meth.scope.aplus": "A+ контент · структура і тексти модулів",
+        "meth.scope.photo_brief": "Фото · ТЗ дизайнеру на головне фото і галерею",
+        "meth.scope.video_brief": "Відео · сценарій і ТЗ на product video",
+        "meth.scope.ai_grade": "Оцінка лістингу · критерії грейду A-D",
+        "meth.scope.keyword_research": "Ключові фрази · чистка, групування, must-keep",
+        "meth.scope.review_analysis": "Відгуки · аналіз негативу та інсайти для лістингу",
+        "meth.scope.competitor_teardown": "Конкуренти · розбір чужого лістингу",
+        "meth.scope.ppc_negatives": "PPC · мінус-слова і структура кампаній",
     },
 }
 
@@ -224,6 +266,7 @@ def lang_selector() -> None:
     if choice and choice != cur:
         st.session_state["lang"] = choice
         st.rerun()
+
  
 
 
