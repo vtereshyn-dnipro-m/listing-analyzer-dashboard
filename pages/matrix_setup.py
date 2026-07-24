@@ -451,4 +451,4 @@ with st.expander("Изменить расписание"):
             st.success("Расписание сохранено.")
             st.rerun()
         except Exception as e:
-            st.error(f"Не сохранилось: {e}")
+            st.error(f"Не сохранилось: {e}") 
