@@ -479,6 +479,7 @@ def lang_selector() -> None:
     if choice and choice != cur:
         st.session_state["lang"] = choice
         st.rerun()
+ 
 
 
  
