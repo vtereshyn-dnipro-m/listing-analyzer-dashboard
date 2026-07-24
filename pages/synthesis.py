@@ -82,20 +82,32 @@ def load_candidates() -> pd.DataFrame:
 
 @st.cache_data(ttl=120)
 def load_skill() -> tuple[str, int]:
-    """Активная методология: (text, version). Фолбэк — минимальные правила."""
+    """Общая методология (common) + title_split, склеенные.
+    Версия в подписи — от title_split."""
     try:
         conn = get_conn()
         df = pd.read_sql(
             """
-            SELECT skill_text, version FROM synthesis_skill
-            WHERE is_active = TRUE AND scope = 'title_split'
-            ORDER BY version DESC LIMIT 1
+            SELECT DISTINCT ON (scope) scope, skill_text, version
+            FROM synthesis_skill
+            WHERE is_active = TRUE AND scope IN ('common', 'title_split')
+            ORDER BY scope, version DESC
             """,
             conn,
         )
         conn.close()
         if not df.empty:
-            return str(df.iloc[0]["skill_text"]), int(df.iloc[0]["version"])
+            parts: list[str] = []
+            version = 0
+            common = df[df["scope"] == "common"]
+            spec = df[df["scope"] == "title_split"]
+            if not common.empty:
+                parts.append(str(common.iloc[0]["skill_text"]))
+            if not spec.empty:
+                parts.append(str(spec.iloc[0]["skill_text"]))
+                version = int(spec.iloc[0]["version"])
+            if parts:
+                return "\n\n".join(parts), version
     except Exception:
         pass
     return ("Бренд Dnipro-M первым. Язык маркетплейса. "
