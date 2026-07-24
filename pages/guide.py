@@ -25,7 +25,7 @@ MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
 def step_card(num: int, title: str, page: str, body: str, auto: bool = False) -> None:
     badge = (
         f"<span style='background:#DCEEE0;color:#2F6B3A;border-radius:999px;"
-        f"padding:2px 10px;font-size:11px;font-weight:600;'>автоматически</span>"
+        f"padding:2px 10px;font-size:11px;font-weight:600;'>{t('guide.auto_badge')}</span>"
         if auto else ""
     )
     st.markdown(
@@ -49,57 +49,18 @@ def step_card(num: int, title: str, page: str, body: str, auto: bool = False) ->
     )
 
 
-st.header("Как это работает")
-st.caption(
-    "Listing Suite находит проблемы в листингах Amazon и даёт готовые решения. "
-    "Формула каждой найденной боли: что болит → почему → что делать → цена бездействия."
-)
+st.header(t("guide.title"))
+st.caption(t("guide.caption"))
 
-st.markdown(eyebrow("Порядок работы"), unsafe_allow_html=True)
+st.markdown(eyebrow(t("guide.steps_header")), unsafe_allow_html=True)
 st.markdown("")
 
-step_card(
-    1, "Добавь товары в матрицу", "Матрица товаров",
-    "Закинь ASIN пачкой — строками, ссылками amazon или в формате "
-    "<code>SKU, ASIN, маркетплейс</code>. Конкурентов помечай словом «конкурент» "
-    "в конце строки — они мониторятся, но боли по ним не создаются. "
-    "Матрица — это список «что мы отслеживаем».",
-)
-step_card(
-    2, "Сбор данных", "Матрица товаров",
-    "Каждый день по расписанию (настраивается внизу Матрицы) система сама "
-    "снимает свежий снимок каждого листинга: тайтл, наличие, отзывы, буллеты. "
-    "Нужно срочно — кнопка «↻ Собрать» в строке товара обновит его прямо сейчас.",
-    auto=True,
-)
-step_card(
-    3, "Диагноз", "Диагноз",
-    "По собранным данным правила находят боли: тайтл длиннее 75 символов "
-    "(с 27.07 Amazon перепишет сам), товар недоступен, мало отзывов. "
-    "Каждая боль — карточка: причина, действие, цена бездействия. "
-    "Красные — чинить сразу, оранжевые — важно, жёлтые — план.",
-    auto=True,
-)
-step_card(
-    4, "Каталог", "Каталог",
-    "Все тайтлы каталога против лимитов 75/125 одним взглядом: "
-    "линейка-допуск показывает, кто вылезает и на сколько резать.",
-)
-step_card(
-    5, "Синтез — решение боли тайтла", "Синтез",
-    "Выбираешь тайтл с превышением → ИИ режет его по методологии: "
-    "title до 75 символов + Item Highlights до 125 + список выброшенного на ревью. "
-    "Перед генерацией можно задать защищённые фразы (must-keep — сохранятся дословно, "
-    "запрещённые — не появятся). После генерации код проверяет результат: длину, "
-    "запрещённые символы, повторы, наличие фраз.",
-)
-step_card(
-    6, "Методологии — правила для ИИ", "Методологии",
-    "Тексты правил, по которым ИИ работает (как резать тайтл, что запрещено). "
-    "Правишь как документ → сохраняешь новую версию → следующие генерации идут по ней. "
-    "Есть общая методология (для всех задач) и своя на каждую область. "
-    "Любую версию можно откатить.",
-)
+step_card(1, t("guide.step1_title"), t("nav.matrix"), t("guide.step1_body"))
+step_card(2, t("guide.step2_title"), t("nav.matrix"), t("guide.step2_body"), auto=True)
+step_card(3, t("guide.step3_title"), t("nav.dashboard"), t("guide.step3_body"), auto=True)
+step_card(4, t("guide.step4_title"), t("nav.catalog"), t("guide.step4_body"))
+step_card(5, t("guide.step5_title"), t("nav.synthesis"), t("guide.step5_body"))
+step_card(6, t("guide.step6_title"), t("nav.methodology"), t("guide.step6_body"))
 
 st.markdown("")
 st.markdown(eyebrow("Как течёт поток · живая схема"), unsafe_allow_html=True)
@@ -205,15 +166,12 @@ st.markdown(
 )
 
 st.markdown("")
-st.markdown(eyebrow("Что дальше по продукту"), unsafe_allow_html=True)
+st.markdown(eyebrow(t("guide.roadmap_header")), unsafe_allow_html=True)
 st.markdown(
     f"""
     <div style="background:{CARD};border:1px dashed {BORDER};border-radius:12px;
                 padding:16px 20px;color:{MUTED};font-size:13px;line-height:1.6;">
-      Применение сплита на Amazon в один клик (через API) · история изменений
-      «до/после» с эффектом на продажи · автоподбор защищённых фраз из
-      поисковых запросов (SQP) · боли по фото, A+ контенту и ценам ·
-      методологии для буллетов и описаний.
+      {t("guide.roadmap_body")}
     </div>
     """,
     unsafe_allow_html=True,
