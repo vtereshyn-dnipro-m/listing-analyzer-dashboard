@@ -41,11 +41,15 @@ matrix_setup = st.Page(
     "pages/matrix_setup.py", title=t("nav.matrix"),
     icon=":material/account_tree:",
 )
+methodology = st.Page(
+    "pages/methodology.py", title="Методология",
+    icon=":material/menu_book:",
+)
 
 nav = st.navigation(
     {
         t("nav.section.work"): [dashboard, catalog, synthesis],
-        t("nav.section.settings"): [matrix_setup],
+        t("nav.section.settings"): [matrix_setup, methodology],
     }
 )
 
