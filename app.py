@@ -25,6 +25,10 @@ except Exception:
 
 # ---------------------------------------------------------------- страницы
 # Только существующие файлы; будущие добавляются по мере готовности шагов.
+guide = st.Page(
+    "pages/guide.py", title="Как это работает",
+    icon=":material/help:",
+)
 dashboard = st.Page(
     "pages/dashboard.py", title=t("nav.dashboard"),
     icon=":material/stethoscope:", default=True,
@@ -48,7 +52,7 @@ methodology = st.Page(
 
 nav = st.navigation(
     {
-        t("nav.section.work"): [dashboard, catalog, synthesis],
+        t("nav.section.work"): [guide, dashboard, catalog, synthesis],
         t("nav.section.settings"): [matrix_setup, methodology],
     }
 )
@@ -65,4 +69,4 @@ with st.sidebar:
         st.markdown(t("sidebar.deadline_passed"))
 
 # ---------------------------------------------------------------- запуск
-nav.run() 
+nav.run()
