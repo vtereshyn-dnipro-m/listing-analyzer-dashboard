@@ -1,27 +1,39 @@
 # -*- coding: utf-8 -*-
 """
-pages/matrix_setup.py — Настройка: Матрица товаров.
-Единственная страница с записью в БД (product_matrix) — разрешённые
-INSERT/UPDATE, никакого DDL. Ввод пачкой в любом формате:
-    GS-98, B0DKFVFT29, es
-    GS-98, B0XXXXXXXX, es, конкурент
-    B0YYYYYYYY
-    https://www.amazon.es/dp/B0ZZZZZZZZ
+pages/matrix_setup.py — Настройка: Матрица товаров. v2 (на 100+ ASIN).
 
-Также здесь временная секция ручного прогона пайплайна
-(batch_fetch -> analyze -> diagnose) через ScrapingDog,
-пока ноутбук в Databricks не может импортировать services/*.
+- Ввод пачкой (SKU, ASIN, маркетплейс[, конкурент] / голый ASIN / ссылка).
+- Вкладки Наши / Конкуренты, поиск, фильтр по маркетплейсу, пагинация.
+- Выбор строк -> «Собрать сейчас» (точечный прогон) / «Удалить из матрицы».
+- Блок «Расписание сбора» — настройка в collection_schedule (исполнитель —
+  Databricks Job, подключается отдельно и читает это расписание).
+
+DDL (один раз, через ноутбук или SQL Editor):
+    CREATE TABLE IF NOT EXISTS listing_data.collection_schedule (
+        id SMALLINT PRIMARY KEY DEFAULT 1,
+        enabled BOOLEAN NOT NULL DEFAULT TRUE,
+        run_time TEXT NOT NULL DEFAULT '13:00',
+        days TEXT NOT NULL DEFAULT 'mon,tue,wed,thu,fri,sat,sun',
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+    INSERT INTO listing_data.collection_schedule (id) VALUES (1)
+        ON CONFLICT (id) DO NOTHING;
 """
 from __future__ import annotations
+
+import json
 
 import pandas as pd
 import streamlit as st
 
 from i18n import t
-from services.db import get_conn, add_matrix_rows, parse_asin_lines
+from services.db import get_conn, add_matrix_rows, parse_asin_lines, cfg
+
+PAGE_SIZE = 25
 
 st.header(t("nav.matrix"))
 
+# ================================================================ ввод пачкой
 st.markdown(
     "Формат — построчно, любой из вариантов вперемешку:  \n"
     "`SKU, ASIN, маркетплейс[, конкурент]` · голый `ASIN` · ссылка amazon"
@@ -29,7 +41,7 @@ st.markdown(
 
 text = st.text_area(
     "ASIN пачкой",
-    height=180,
+    height=140,
     placeholder="GS-98, B0DKFVFT29, es\nGS-98, B0XXXXXXXX, es, конкурент\nB0YYYYYYYY",
     label_visibility="collapsed",
 )
@@ -50,199 +62,357 @@ if st.button("Добавить в матрицу", type="primary", disabled=not 
 
 st.divider()
 
-# ---- текущая матрица
-try:
-    conn = get_conn()
-    df = pd.read_sql(
-        "SELECT sku_group, asin, marketplace, is_competitor, added_at "
-        "FROM product_matrix ORDER BY sku_group, is_competitor, marketplace, asin",
-        conn,
-    )
-    conn.close()
-except Exception:
-    df = pd.DataFrame()
+# ================================================================ загрузка матрицы
+@st.cache_data(ttl=120)
+def load_matrix() -> pd.DataFrame:
+    try:
+        conn = get_conn()
+        df = pd.read_sql(
+            """
+            SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor, m.added_at,
+                   s.fetched_at AS last_fetch, s.ok AS last_ok
+            FROM product_matrix m
+            LEFT JOIN LATERAL (
+                SELECT fetched_at, ok FROM listing_snapshots s
+                WHERE s.asin = m.asin AND s.marketplace = m.marketplace
+                ORDER BY s.fetched_at DESC LIMIT 1
+            ) s ON TRUE
+            ORDER BY m.sku_group, m.marketplace, m.asin
+            """,
+            conn,
+        )
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+df = load_matrix()
 
 if df.empty:
     st.caption(t("common.no_data"))
 else:
-    df["кто"] = df["is_competitor"].map(
-        {True: t("common.competitor"), False: t("common.our")}
+    ours_df = df[~df.is_competitor].copy()
+    comp_df = df[df.is_competitor].copy()
+
+    tab_ours, tab_comp = st.tabs(
+        [f"Наши · {len(ours_df)}", f"Конкуренты · {len(comp_df)}"]
     )
-    st.dataframe(
-        df[["sku_group", "asin", "marketplace", "кто", "added_at"]],
-        use_container_width=True,
-        hide_index=True,
-    )
-    ours = int((~df.is_competitor).sum())
-    comps = int(df.is_competitor.sum())
-    st.caption(f"Всего: {len(df)} · наших {ours} · конкурентов {comps}")
 
-st.divider()
-st.markdown("### Прогнать пайплайн вручную")
-st.caption(
-    "Временно, пока ноутбук в Databricks не может импортировать services/* "
-    "(репозиторий не склонирован в Repos). Гоняет batch_fetch → analyze → "
-    "diagnose прямо отсюда для одного sku_group."
-)
+    def render_table(data: pd.DataFrame, tab_key: str) -> None:
+        if data.empty:
+            st.caption(t("common.no_data"))
+            return
 
-pipeline_sku = st.text_input(
-    "sku_group для прогона", placeholder="Например: GS-98", key="pipeline_sku"
-)
+        # ---- поиск и фильтры
+        f1, f2, f3 = st.columns([3, 2, 2])
+        query = f1.text_input(
+            "Поиск", key=f"q-{tab_key}", label_visibility="collapsed",
+            placeholder="Поиск: ASIN или SKU...",
+        )
+        mps = sorted(data["marketplace"].unique())
+        mp_sel = f2.multiselect(
+            "Маркетплейс", mps, default=[], key=f"mp-{tab_key}",
+            placeholder="Все маркетплейсы",
+        )
+        only_stale = f3.checkbox(
+            "Только без свежих данных", key=f"stale-{tab_key}",
+            help="Нет успешного снапшота за последние 48 часов",
+        )
 
-if st.button("Прогнать batch_fetch → analyze → diagnose", type="secondary"):
-    if not pipeline_sku.strip():
-        st.warning("Укажи sku_group.")
-    else:
+        view = data
+        if query.strip():
+            q = query.strip().upper()
+            view = view[
+                view["asin"].str.upper().str.contains(q, na=False)
+                | view["sku_group"].str.upper().str.contains(q, na=False)
+            ]
+        if mp_sel:
+            view = view[view["marketplace"].isin(mp_sel)]
+        if only_stale:
+            cutoff = pd.Timestamp.utcnow() - pd.Timedelta(hours=48)
+            lf = pd.to_datetime(view["last_fetch"], utc=True, errors="coerce")
+            view = view[lf.isna() | (lf < cutoff) | (view["last_ok"] == False)]  # noqa: E712
+
+        st.caption(f"Найдено: {len(view)}")
+
+        # ---- пагинация
+        pages = max(1, (len(view) + PAGE_SIZE - 1) // PAGE_SIZE)
+        page_key = f"page-{tab_key}"
+        page = st.session_state.get(page_key, 1)
+        page = min(page, pages)
+        start = (page - 1) * PAGE_SIZE
+        chunk = view.iloc[start:start + PAGE_SIZE].copy()
+
+        # ---- таблица с выбором
+        chunk["last_fetch_str"] = pd.to_datetime(
+            chunk["last_fetch"], errors="coerce"
+        ).dt.strftime("%d.%m %H:%M").fillna("—")
+        chunk["status"] = chunk.apply(
+            lambda r: "✓" if r["last_ok"] else ("—" if pd.isna(r["last_ok"]) else "✗"),
+            axis=1,
+        )
+
+        edited = st.data_editor(
+            chunk[["sku_group", "asin", "marketplace", "status", "last_fetch_str"]]
+            .assign(выбрать=False)[["выбрать", "sku_group", "asin", "marketplace",
+                                    "status", "last_fetch_str"]],
+            column_config={
+                "выбрать": st.column_config.CheckboxColumn("", width="small"),
+                "sku_group": st.column_config.TextColumn("SKU", disabled=True),
+                "asin": st.column_config.TextColumn("ASIN", disabled=True),
+                "marketplace": st.column_config.TextColumn("MP", disabled=True, width="small"),
+                "status": st.column_config.TextColumn("OK", disabled=True, width="small"),
+                "last_fetch_str": st.column_config.TextColumn("Последний сбор", disabled=True),
+            },
+            hide_index=True,
+            use_container_width=True,
+            key=f"editor-{tab_key}-{page}",
+        )
+        selected = edited[edited["выбрать"]]
+
+        # ---- пагинация: контролы
+        if pages > 1:
+            pc1, pc2, pc3 = st.columns([1, 2, 1])
+            if pc1.button("← Назад", key=f"prev-{tab_key}", disabled=page <= 1):
+                st.session_state[page_key] = page - 1
+                st.rerun()
+            pc2.markdown(
+                f"<div style='text-align:center;color:#8A8578;'>стр. {page} / {pages}</div>",
+                unsafe_allow_html=True,
+            )
+            if pc3.button("Вперёд →", key=f"next-{tab_key}", disabled=page >= pages):
+                st.session_state[page_key] = page + 1
+                st.rerun()
+
+        # ---- действия над выбранными
+        a1, a2, _ = st.columns([2, 2, 3])
+        collect_btn = a1.button(
+            f"↻ Собрать сейчас ({len(selected)})",
+            key=f"collect-{tab_key}", disabled=selected.empty,
+        )
+        delete_btn = a2.button(
+            f"Удалить из матрицы ({len(selected)})",
+            key=f"delete-{tab_key}", disabled=selected.empty,
+        )
+
+        if delete_btn and not selected.empty:
+            try:
+                conn = get_conn()
+                with conn, conn.cursor() as cur:
+                    for _, r in selected.iterrows():
+                        cur.execute(
+                            "DELETE FROM product_matrix WHERE asin = %s AND marketplace = %s",
+                            (r["asin"], r["marketplace"]),
+                        )
+                conn.close()
+                st.cache_data.clear()
+                st.success(f"Удалено: {len(selected)}")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Не удалилось: {e}")
+
+        if collect_btn and not selected.empty:
+            run_pipeline(selected)
+
+    # ---------------------------------------------------------- пайплайн
+    def run_pipeline(selected: pd.DataFrame) -> None:
         import requests
-        import json
-        from services.db import cfg
 
         SCRAPINGDOG_KEY = cfg("SCRAPINGDOG_API_KEY")
         if not SCRAPINGDOG_KEY:
             st.error("SCRAPINGDOG_API_KEY не найден в секретах.")
-        else:
-            # domain для ScrapingDog — просто TLD (es, com, de, co.uk):
-            # ровно то, что лежит в колонке marketplace. Словарь не нужен.
-            MP_COUNTRY = {
-                "com": "us", "de": "de", "es": "es",
-                "fr": "fr", "it": "it", "co.uk": "gb",
-                "nl": "nl", "se": "se", "pl": "pl",
-            }
+            return
 
-            try:
-                conn = get_conn()
-                cur = conn.cursor()
-                cur.execute(
-                    "SELECT asin, marketplace, is_competitor FROM product_matrix "
-                    "WHERE sku_group = %s",
-                    (pipeline_sku.strip(),),
-                )
-                rows = cur.fetchall()
+        MP_COUNTRY = {
+            "com": "us", "de": "de", "es": "es", "fr": "fr",
+            "it": "it", "co.uk": "gb", "nl": "nl", "se": "se", "pl": "pl",
+        }
 
-                if not rows:
-                    st.warning(f"В матрице нет строк для {pipeline_sku}. Сначала добавь ASIN выше.")
-                else:
-                    with st.status("Прогоняю пайплайн...", expanded=True) as status:
-                        for asin, mp, is_competitor in rows:
-                            st.write(f"Fetch {asin} ({mp})...")
-                            params = {
-                                "api_key": SCRAPINGDOG_KEY,
-                                "domain": mp,                       # TLD как есть: es, com, de
-                                "asin": asin,
-                                "country": MP_COUNTRY.get(mp, "us"),
-                            }
-                            resp = requests.get(
-                                "https://api.scrapingdog.com/amazon/product",
-                                params=params, timeout=60,
-                            )
-                            ok = resp.status_code == 200
-                            if ok:
-                                data = resp.json()
-                            else:
-                                # причина отказа — в raw, диагностируется из базы
-                                data = {
-                                    "_error_status": resp.status_code,
-                                    "_error_body": resp.text[:500],
-                                }
+        try:
+            conn = get_conn()
+            cur = conn.cursor()
+            with st.status("Собираю данные...", expanded=True) as status:
+                for _, row in selected.iterrows():
+                    asin, mp, sku = row["asin"], row["marketplace"], row["sku_group"]
+                    cur.execute(
+                        "SELECT is_competitor FROM product_matrix "
+                        "WHERE asin = %s AND marketplace = %s",
+                        (asin, mp),
+                    )
+                    res = cur.fetchone()
+                    is_competitor = bool(res[0]) if res else False
 
-                            availability = str(
-                                data.get("availability_status")
-                                or data.get("availability") or ""
-                            ).lower()
-                            in_stock = (
-                                "unavailable" not in availability
-                                and "out of stock" not in availability
-                            )
-                            title = data.get("title") or ""
-                            bullets = (
-                                data.get("feature_bullets")
-                                or data.get("about_this_item") or []
-                            )
-                            # total_reviews приходит строкой: "4" или "1,234"
-                            raw_reviews = (
-                                data.get("total_reviews")
-                                or data.get("review_count")
-                            )
-                            try:
-                                review_count = int(
-                                    str(raw_reviews).replace(",", "").replace(".", "")
-                                )
-                            except (TypeError, ValueError):
-                                review_count = None
+                    st.write(f"Fetch {asin} ({mp})...")
+                    resp = requests.get(
+                        "https://api.scrapingdog.com/amazon/product",
+                        params={
+                            "api_key": SCRAPINGDOG_KEY,
+                            "domain": mp,
+                            "asin": asin,
+                            "country": MP_COUNTRY.get(mp, "us"),
+                        },
+                        timeout=60,
+                    )
+                    ok = resp.status_code == 200
+                    data = resp.json() if ok else {
+                        "_error_status": resp.status_code,
+                        "_error_body": resp.text[:500],
+                    }
 
+                    availability = str(
+                        data.get("availability_status") or data.get("availability") or ""
+                    ).lower()
+                    in_stock = ("unavailable" not in availability
+                                and "out of stock" not in availability)
+                    title = data.get("title") or ""
+                    bullets = (data.get("feature_bullets")
+                               or data.get("about_this_item") or [])
+                    raw_reviews = data.get("total_reviews") or data.get("review_count")
+                    try:
+                        review_count = int(str(raw_reviews).replace(",", "").replace(".", ""))
+                    except (TypeError, ValueError):
+                        review_count = None
+
+                    cur.execute(
+                        """
+                        INSERT INTO listing_snapshots
+                            (asin, marketplace, ok, title, in_stock,
+                             review_count, bullet_points, raw)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """,
+                        (asin, mp, ok, title, in_stock, review_count,
+                         bullets, json.dumps(data)),
+                    )
+
+                    title_len = len(title)
+                    highlights_len = len(" ".join(bullets))
+                    cur.execute(
+                        """
+                        INSERT INTO listing_analysis
+                            (asin, marketplace, title_len, title_over, highlights_len)
+                        VALUES (%s, %s, %s, %s, %s)
+                        """,
+                        (asin, mp, title_len, max(0, title_len - 75), highlights_len),
+                    )
+
+                    if ok and not is_competitor:
+                        if not in_stock:
                             cur.execute(
                                 """
-                                INSERT INTO listing_snapshots
-                                    (asin, marketplace, ok, title, in_stock,
-                                     review_count, bullet_points, raw)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                                INSERT INTO diagnosis
+                                    (sku_group, asin, marketplace, severity,
+                                     pain, cause, action, rule_id)
+                                VALUES (%s, %s, %s, 'red', %s, %s, %s, 'out_of_stock')
                                 """,
-                                (asin, mp, ok, title, in_stock, review_count,
-                                 bullets, json.dumps(data)),
+                                (sku, asin, mp,
+                                 "товар мёртв: недоступен к покупке",
+                                 "сток/поставка, не контент",
+                                 "пополнить сток или переключить вариацию"),
                             )
-
-                            title_len = len(title)
-                            highlights_len = len(" ".join(bullets))
+                        if title_len > 75:
                             cur.execute(
                                 """
-                                INSERT INTO listing_analysis
-                                    (asin, marketplace, title_len, title_over, highlights_len)
-                                VALUES (%s, %s, %s, %s, %s)
+                                INSERT INTO diagnosis
+                                    (sku_group, asin, marketplace, severity,
+                                     pain, cause, action, rule_id)
+                                VALUES (%s, %s, %s, 'amber', %s, %s, %s, 'title_over_limit')
                                 """,
-                                (asin, mp, title_len,
-                                 max(0, title_len - 75), highlights_len),
+                                (sku, asin, mp,
+                                 f"тайтл {title_len} симв. при лимите 75",
+                                 "Amazon обрежет после 27.07",
+                                 "сплит на title 75 + highlights"),
+                            )
+                        if review_count is not None and review_count < 50:
+                            cur.execute(
+                                """
+                                INSERT INTO diagnosis
+                                    (sku_group, asin, marketplace, severity,
+                                     pain, cause, action, rule_id)
+                                VALUES (%s, %s, %s, 'yellow', %s, %s, %s, 'low_reviews')
+                                """,
+                                (sku, asin, mp,
+                                 f"{review_count} отзывов при пороге 50+",
+                                 "листинг молодой / без Vine",
+                                 "запустить Vine (30 юнитов)"),
                             )
 
-                            # Диагноз — только по успешным снапшотам наших товаров
-                            if ok and not is_competitor:
-                                if not in_stock:
-                                    cur.execute(
-                                        """
-                                        INSERT INTO diagnosis
-                                            (sku_group, asin, marketplace, severity,
-                                             pain, cause, action, rule_id)
-                                        VALUES (%s, %s, %s, 'red', %s, %s, %s, 'out_of_stock')
-                                        """,
-                                        (pipeline_sku, asin, mp,
-                                         "товар мёртв: недоступен к покупке",
-                                         "сток/поставка, не контент",
-                                         "пополнить сток или переключить вариацию"),
-                                    )
-                                if title_len > 75:
-                                    cur.execute(
-                                        """
-                                        INSERT INTO diagnosis
-                                            (sku_group, asin, marketplace, severity,
-                                             pain, cause, action, rule_id)
-                                        VALUES (%s, %s, %s, 'amber', %s, %s, %s, 'title_over_limit')
-                                        """,
-                                        (pipeline_sku, asin, mp,
-                                         f"тайтл {title_len} симв. при лимите 75",
-                                         "Amazon обрежет после 27.07",
-                                         "сплит на title 75 + highlights"),
-                                    )
-                                if review_count is not None and review_count < 50:
-                                    cur.execute(
-                                        """
-                                        INSERT INTO diagnosis
-                                            (sku_group, asin, marketplace, severity,
-                                             pain, cause, action, rule_id)
-                                        VALUES (%s, %s, %s, 'yellow', %s, %s, %s, 'low_reviews')
-                                        """,
-                                        (pipeline_sku, asin, mp,
-                                         f"{review_count} отзывов при пороге 50+",
-                                         "листинг молодой / без Vine",
-                                         "запустить Vine (30 юнитов)"),
-                                    )
+                    st.write(f"   → {asin}: ok={ok}, тайтл {title_len} симв.")
 
-                            st.write(f"   → {asin} готово (ok={ok}, in_stock={in_stock})")
+                conn.commit()
+                status.update(label="Готово", state="complete")
 
-                        conn.commit()
-                        status.update(label="Готово", state="complete")
+            cur.close()
+            conn.close()
+            st.cache_data.clear()
+            st.success("Сбор завершён. Открой Диагноз или Каталог.")
+        except Exception as e:
+            st.error(f"Ошибка сбора: {e}")
 
-                    st.success(f"Пайплайн для {pipeline_sku} прогнан. Открой Диагноз или Каталог 75/125.")
+    with tab_ours:
+        render_table(ours_df, "ours")
+    with tab_comp:
+        render_table(comp_df, "comp")
 
-                cur.close()
-                conn.close()
-            except Exception as e:
-                st.error(f"Ошибка пайплайна: {e}")
+# ================================================================ расписание
+st.divider()
+st.markdown("### Расписание автосбора")
+
+
+@st.cache_data(ttl=60)
+def load_schedule() -> dict:
+    try:
+        conn = get_conn()
+        df_s = pd.read_sql("SELECT * FROM collection_schedule WHERE id = 1", conn)
+        conn.close()
+        if not df_s.empty:
+            return dict(df_s.iloc[0])
+    except Exception:
+        pass
+    return {"enabled": True, "run_time": "13:00",
+            "days": "mon,tue,wed,thu,fri,sat,sun"}
+
+
+DAY_LABELS = {"mon": "Пн", "tue": "Вт", "wed": "Ср", "thu": "Чт",
+              "fri": "Пт", "sat": "Сб", "sun": "Вс"}
+
+sched = load_schedule()
+sc1, sc2, sc3 = st.columns([1, 2, 3])
+enabled = sc1.toggle("Включено", value=bool(sched.get("enabled", True)))
+run_time = sc2.time_input(
+    "Время (Kyiv)",
+    value=pd.to_datetime(str(sched.get("run_time", "13:00"))).time(),
+)
+days_current = str(sched.get("days", "")).split(",")
+days_sel = sc3.multiselect(
+    "Дни", list(DAY_LABELS.keys()),
+    default=[d for d in days_current if d in DAY_LABELS],
+    format_func=lambda d: DAY_LABELS[d],
+)
+
+if st.button("Сохранить расписание"):
+    try:
+        conn = get_conn()
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO collection_schedule (id, enabled, run_time, days, updated_at)
+                VALUES (1, %s, %s, %s, now())
+                ON CONFLICT (id) DO UPDATE SET
+                    enabled = EXCLUDED.enabled,
+                    run_time = EXCLUDED.run_time,
+                    days = EXCLUDED.days,
+                    updated_at = now()
+                """,
+                (enabled, run_time.strftime("%H:%M"), ",".join(days_sel)),
+            )
+        conn.close()
+        st.cache_data.clear()
+        st.success("Расписание сохранено.")
+    except Exception as e:
+        st.error(f"Не сохранилось: {e}")
+
+st.caption(
+    "Автосбор выполняется фоновым заданием по этому расписанию. "
+    "Точечный сбор — кнопкой «↻ Собрать сейчас» в таблице выше."
+)
