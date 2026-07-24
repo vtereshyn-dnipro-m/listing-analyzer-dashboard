@@ -20,26 +20,18 @@ inject_fonts()
 st.header(t("meth.title"))
 st.caption(t("meth.caption"))
 
-SCOPES = {
-    "common": "Общая · базовые правила для всех областей",
-    "title_split": "Split тайтла 75/125 · страница Синтез",
-    "bullets": "Буллеты · переписывание 5 пунктов",
-    "highlights": "Item Highlights · отдельная доработка 125 симв.",
-    "description": "Описание товара · product description",
-    "aplus": "A+ контент · структура и тексты модулей",
-    "photo_brief": "Фото · ТЗ дизайнеру на главное фото и галерею",
-    "video_brief": "Видео · сценарий и ТЗ на product video",
-    "ai_grade": "Оценка листинга · критерии грейда A-D",
-    "keyword_research": "Ключевые фразы · чистка, группировка, must-keep",
-    "review_analysis": "Отзывы · анализ негатива и инсайты для листинга",
-    "competitor_teardown": "Конкуренты · разбор чужого листинга",
-    "ppc_negatives": "PPC · минус-слова и структура кампаний",
-}
+# Подписи областей — в i18n (meth.scope.<id>), здесь только id
+SCOPE_IDS = [
+    "common", "title_split", "bullets", "highlights", "description",
+    "aplus", "photo_brief", "video_brief", "ai_grade",
+    "keyword_research", "review_analysis", "competitor_teardown",
+    "ppc_negatives",
+]
 
 scope = st.selectbox(
     t("meth.scope"),
-    list(SCOPES.keys()),
-    format_func=lambda s: SCOPES.get(s, s),
+    SCOPE_IDS,
+    format_func=lambda s: t(f"meth.scope.{s}"),
 )
 
 
@@ -156,4 +148,4 @@ if not versions.empty:
                         st.cache_data.clear()
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Откат не удался: {e}")
+                        st.error(f"Откат не удался: {e}") 
