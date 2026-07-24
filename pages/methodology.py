@@ -17,12 +17,8 @@ from services.db import get_conn
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
-st.header("Методологии")
-st.caption(
-    "Правила, по которым ИИ выполняет конкретную задачу. Каждая область — "
-    "своя методология и своя история версий. Правишь текст — сохраняешь "
-    "новую версию — все следующие генерации идут по ней. Код не трогается."
-)
+st.header(t("meth.title"))
+st.caption(t("meth.caption"))
 
 SCOPES = {
     "common": "Общая · базовые правила для всех областей",
@@ -41,7 +37,7 @@ SCOPES = {
 }
 
 scope = st.selectbox(
-    "Область применения",
+    t("meth.scope"),
     list(SCOPES.keys()),
     format_func=lambda s: SCOPES.get(s, s),
 )
@@ -69,10 +65,7 @@ def load_versions(scope_: str) -> pd.DataFrame:
 versions = load_versions(scope)
 
 if versions.empty:
-    st.info(
-        f"Для области «{SCOPES.get(scope, scope)}» методологии ещё нет — "
-        "напиши текст ниже и сохрани первую версию."
-    )
+    st.info(t("meth.empty_scope"))
     current_text = ""
     current_version = 0
 else:
@@ -80,28 +73,28 @@ else:
     if active.empty:
         current_text = ""
         current_version = int(versions["version"].max())
-        st.warning("Нет активной версии — сохрани новую или откати старую ниже.")
+        st.warning(t("meth.no_active"))
     else:
         current_text = active.iloc[0]["skill_text"]
         current_version = int(active.iloc[0]["version"])
         st.markdown(
             eyebrow(
-                f"активная версия v{current_version} · "
+                f"{t('meth.active_version')} v{current_version} · "
                 f"{pd.to_datetime(active.iloc[0]['created_at']).strftime('%d.%m %H:%M')}"
             ),
             unsafe_allow_html=True,
         )
 
 edited = st.text_area(
-    "Текст методологии",
+    t("meth.title"),
     value=current_text,
     height=420,
     label_visibility="collapsed",
-    placeholder="Опиши правила для этой области...",
+    placeholder=t("meth.editor_placeholder"),
 )
 
 save = st.button(
-    f"Сохранить как v{current_version + 1}",
+    f"{t('meth.save_as')} v{current_version + 1}",
     type="primary",
     disabled=(edited.strip() == current_text.strip() or not edited.strip()),
 )
@@ -125,7 +118,7 @@ if save:
             )
         conn.close()
         st.cache_data.clear()
-        st.success(f"Сохранено как v{current_version + 1} — теперь активна она.")
+        st.success(t("meth.saved"))
         st.rerun()
     except Exception as e:
         st.error(f"Не сохранилось: {e}")
@@ -133,18 +126,18 @@ if save:
 # ---- история версий и откат
 if not versions.empty:
     st.divider()
-    st.markdown("### История версий")
+    st.markdown(f"### {t('meth.history')}")
 
     for _, v in versions.iterrows():
         label = (
             f"v{int(v['version'])} · "
             f"{pd.to_datetime(v['created_at']).strftime('%d.%m.%Y %H:%M')}"
-            + (" · **активная**" if v["is_active"] else "")
+            + (f" · **{t('meth.active_label')}**" if v["is_active"] else "")
         )
         with st.expander(label):
             st.text(v["skill_text"][:2000])
             if not v["is_active"]:
-                if st.button(f"Откатиться на v{int(v['version'])}",
+                if st.button(f"{t('meth.rollback')} v{int(v['version'])}",
                              key=f"rollback-{v['id']}"):
                     try:
                         conn = get_conn()
@@ -163,4 +156,4 @@ if not versions.empty:
                         st.cache_data.clear()
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Откат не удался: {e}") 
+                        st.error(f"Откат не удался: {e}")
