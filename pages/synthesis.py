@@ -88,7 +88,7 @@ def load_skill() -> tuple[str, int]:
         df = pd.read_sql(
             """
             SELECT skill_text, version FROM synthesis_skill
-            WHERE is_active = TRUE AND marketplace = 'all'
+            WHERE is_active = TRUE AND scope = 'title_split'
             ORDER BY version DESC LIMIT 1
             """,
             conn,
