@@ -42,7 +42,7 @@ matrix_setup = st.Page(
     icon=":material/account_tree:",
 )
 methodology = st.Page(
-    "pages/methodology.py", title="Методология",
+    "pages/methodology.py", title=t("nav.methodology"),
     icon=":material/menu_book:",
 )
 
@@ -65,4 +65,4 @@ with st.sidebar:
         st.markdown(t("sidebar.deadline_passed"))
 
 # ---------------------------------------------------------------- запуск
-nav.run()
+nav.run() 
