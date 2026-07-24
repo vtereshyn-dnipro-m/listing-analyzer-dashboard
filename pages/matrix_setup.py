@@ -43,11 +43,13 @@ text = st.text_area(
     "ASIN пачкой",
     height=140,
     placeholder=(
-    "GS-98, B0DKFVFT29, es\n"
-    "GS-98, https://www.amazon.es/dp/B0DKFVFT29\n"
-    "https://www.amazon.de/dp/B0XXXXXXXX\n"
-    "GS-98, B0XXXXXXXX, es, конкурент"
-),
+        "GS-98, B0DKFVFT29, es\n"
+        "GS-98, https://www.amazon.es/dp/B0DKFVFT29\n"
+        "https://www.amazon.de/dp/B0XXXXXXXX\n"
+        "GS-98, B0XXXXXXXX, es, конкурент"
+    ),
+    label_visibility="collapsed",
+)
 
 if st.button("Добавить в матрицу", type="primary", disabled=not text.strip()):
     rows = parse_asin_lines(text)
@@ -192,7 +194,7 @@ else:
         a1, a2, _ = st.columns([2, 2, 3])
         collect_btn = a1.button(
             f"↻ Собрать сейчас ({len(selected)})",
-            key=f"collect-{tab_key}", disabled=selected.empty,
+            key=f"collect-{tab_key}", type="primary", disabled=selected.empty,
         )
         delete_btn = a2.button(
             f"Удалить из матрицы ({len(selected)})",
