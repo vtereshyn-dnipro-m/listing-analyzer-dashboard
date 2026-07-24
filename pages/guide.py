@@ -102,6 +102,109 @@ step_card(
 )
 
 st.markdown("")
+st.markdown(eyebrow("Как течёт поток · живая схема"), unsafe_allow_html=True)
+
+
+@st.cache_data(ttl=300)
+def load_flow_status() -> dict:
+    """Живой статус для схемы: свежесть сбора и число активных болей."""
+    out = {"fresh_collect": False, "pains": 0, "last_fetch": None}
+    try:
+        from services.db import get_conn
+        import pandas as pd
+        conn = get_conn()
+        df = pd.read_sql(
+            """
+            SELECT
+                (SELECT MAX(fetched_at) FROM listing_snapshots WHERE ok = TRUE) AS last_fetch,
+                (SELECT COUNT(*) FROM (
+                    SELECT DISTINCT ON (asin, marketplace, rule_id) 1
+                    FROM diagnosis
+                    ORDER BY asin, marketplace, rule_id, created_at DESC
+                ) x) AS pains
+            """,
+            conn,
+        )
+        conn.close()
+        if not df.empty:
+            lf = df.iloc[0]["last_fetch"]
+            if lf is not None and not pd.isna(lf):
+                age_h = (pd.Timestamp.utcnow() - pd.to_datetime(lf, utc=True)
+                         ).total_seconds() / 3600
+                out["fresh_collect"] = age_h <= 24
+                out["last_fetch"] = pd.to_datetime(lf).strftime("%d.%m %H:%M")
+            out["pains"] = int(df.iloc[0]["pains"] or 0)
+    except Exception:
+        pass
+    return out
+
+
+_flow = load_flow_status()
+_hot = " hot" if _flow["fresh_collect"] else ""
+_fetch_ds = (f"последний: {_flow['last_fetch']}" if _flow["last_fetch"]
+             else "ежедневно 13:00")
+_pain_ds = (f"найдено болей: {_flow['pains']}" if _flow["pains"]
+            else "правила находят боли")
+
+st.markdown(
+    f"""
+<style>
+@keyframes lsflow {{
+  0% {{ left: 0%; opacity: 0; }}
+  8% {{ opacity: 1; }}
+  92% {{ opacity: 1; }}
+  100% {{ left: calc(100% - 10px); opacity: 0; }}
+}}
+@keyframes lspulse {{
+  0%, 100% {{ box-shadow: 0 0 0 0 rgba(232,89,12,0.35); }}
+  50% {{ box-shadow: 0 0 0 10px rgba(232,89,12,0); }}
+}}
+.ls-node {{
+  background:{CARD}; border:1.5px solid {BORDER}; border-radius:12px;
+  padding:12px 10px; text-align:center; position:relative; z-index:2;
+}}
+.ls-node .nm {{ font-size:12.5px; font-weight:700; color:{INK}; }}
+.ls-node .ds {{ font-size:10.5px; color:{MUTED}; line-height:1.3; margin-top:3px; }}
+.ls-node.hot {{ border-color:{ACCENT}; animation: lspulse 2.4s infinite; }}
+.ls-lane {{ position:relative; height:3px; background:{BORDER}; flex:1;
+           margin-top:34px; z-index:1; border-radius:2px; }}
+.ls-dot {{
+  position:absolute; top:-3.5px; width:10px; height:10px; border-radius:50%;
+  background:{ACCENT}; animation: lsflow 2.8s linear infinite;
+}}
+.ls-dot.d2 {{ animation-delay: 1.4s; background:#EF9F27; }}
+</style>
+<div style="display:flex;align-items:flex-start;gap:0;margin-top:10px;">
+  <div class="ls-node" style="width:16%;">
+    <div class="nm">Матрица</div><div class="ds">ASIN'ы, которые мониторим</div>
+  </div>
+  <div class="ls-lane"><span class="ls-dot"></span><span class="ls-dot d2"></span></div>
+  <div class="ls-node{_hot}" style="width:16%;">
+    <div class="nm">Сбор</div><div class="ds">{_fetch_ds}</div>
+  </div>
+  <div class="ls-lane"><span class="ls-dot"></span><span class="ls-dot d2"></span></div>
+  <div class="ls-node" style="width:16%;">
+    <div class="nm">Диагноз</div><div class="ds">{_pain_ds}</div>
+  </div>
+  <div class="ls-lane"><span class="ls-dot"></span><span class="ls-dot d2"></span></div>
+  <div class="ls-node" style="width:16%;">
+    <div class="nm">Синтез</div><div class="ds">ИИ режет тайтл по методологии</div>
+  </div>
+  <div class="ls-lane"><span class="ls-dot"></span><span class="ls-dot d2"></span></div>
+  <div class="ls-node" style="width:16%;">
+    <div class="nm">Amazon</div><div class="ds">обновлённый листинг · до/после</div>
+  </div>
+</div>
+<div style="display:flex;justify-content:space-between;margin-top:14px;font-size:11px;color:{MUTED};">
+  <span>← человек добавляет</span>
+  <span style="color:{ACCENT};font-weight:600;">● данные текут сами</span>
+  <span>человек утверждает →</span>
+</div>
+    """,
+    unsafe_allow_html=True,
+)
+
+st.markdown("")
 st.markdown(eyebrow("Что дальше по продукту"), unsafe_allow_html=True)
 st.markdown(
     f"""
