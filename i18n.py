@@ -29,6 +29,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.changes": "Before / After",
         "nav.history": "History",
         "nav.matrix": "Product Matrix",
+        "nav.methodology": "Methodology",
         "nav.keys": "Keys & Connections",
         "sidebar.deadline": "title deadline: **:red[{days} d.]**  \n75-char limit from 27.07.2026",
         "sidebar.deadline_passed": "**75-char** limit is live",
@@ -85,6 +86,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.changes": "До / после",
         "nav.history": "История",
         "nav.matrix": "Матрица товаров",
+        "nav.methodology": "Методология",
         "nav.keys": "Ключи и подключения",
         "sidebar.deadline": "дедлайн тайтлов: **:red[{days} дн.]**  \nлимит 75 симв. с 27.07.2026",
         "sidebar.deadline_passed": "лимит **75 симв.** действует",
@@ -141,6 +143,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.changes": "До / після",
         "nav.history": "Історія",
         "nav.matrix": "Матриця товарів",
+        "nav.methodology": "Методологія",
         "nav.keys": "Ключі та підключення",
         "sidebar.deadline": "дедлайн тайтлів: **:red[{days} дн.]**  \nліміт 75 симв. з 27.07.2026",
         "sidebar.deadline_passed": "ліміт **75 симв.** діє",
@@ -221,5 +224,6 @@ def lang_selector() -> None:
     if choice and choice != cur:
         st.session_state["lang"] = choice
         st.rerun()
+ 
 
 
