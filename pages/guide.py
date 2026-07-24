@@ -52,18 +52,8 @@ def step_card(num: int, title: str, page: str, body: str, auto: bool = False) ->
 st.header(t("guide.title"))
 st.caption(t("guide.caption"))
 
-st.markdown(eyebrow(t("guide.steps_header")), unsafe_allow_html=True)
 st.markdown("")
-
-step_card(1, t("guide.step1_title"), t("nav.matrix"), t("guide.step1_body"))
-step_card(2, t("guide.step2_title"), t("nav.matrix"), t("guide.step2_body"), auto=True)
-step_card(3, t("guide.step3_title"), t("nav.dashboard"), t("guide.step3_body"), auto=True)
-step_card(4, t("guide.step4_title"), t("nav.catalog"), t("guide.step4_body"))
-step_card(5, t("guide.step5_title"), t("nav.synthesis"), t("guide.step5_body"))
-step_card(6, t("guide.step6_title"), t("nav.methodology"), t("guide.step6_body"))
-
-st.markdown("")
-st.markdown(eyebrow("Как течёт поток · живая схема"), unsafe_allow_html=True)
+st.markdown(eyebrow(t("guide.flow.header")), unsafe_allow_html=True)
 
 
 @st.cache_data(ttl=300)
@@ -102,10 +92,10 @@ def load_flow_status() -> dict:
 
 _flow = load_flow_status()
 _hot = " hot" if _flow["fresh_collect"] else ""
-_fetch_ds = (f"последний: {_flow['last_fetch']}" if _flow["last_fetch"]
-             else "ежедневно 13:00")
-_pain_ds = (f"найдено болей: {_flow['pains']}" if _flow["pains"]
-            else "правила находят боли")
+_fetch_ds = (f"{t('guide.flow.collect_last')} {_flow['last_fetch']}" if _flow["last_fetch"]
+             else t("guide.flow.collect_default"))
+_pain_ds = (f"{t('guide.flow.diagnosis_pains')} {_flow['pains']}" if _flow["pains"]
+            else t("guide.flow.diagnosis_default"))
 
 st.markdown(
     f"""
@@ -137,33 +127,44 @@ st.markdown(
 </style>
 <div style="display:flex;align-items:flex-start;gap:0;margin-top:10px;">
   <div class="ls-node" style="width:16%;">
-    <div class="nm">Матрица</div><div class="ds">ASIN'ы, которые мониторим</div>
+    <div class="nm">{t("guide.flow.matrix")}</div><div class="ds">{t("guide.flow.matrix_ds")}</div>
   </div>
   <div class="ls-lane"><span class="ls-dot"></span><span class="ls-dot d2"></span></div>
   <div class="ls-node{_hot}" style="width:16%;">
-    <div class="nm">Сбор</div><div class="ds">{_fetch_ds}</div>
+    <div class="nm">{t("guide.flow.collect")}</div><div class="ds">{_fetch_ds}</div>
   </div>
   <div class="ls-lane"><span class="ls-dot"></span><span class="ls-dot d2"></span></div>
   <div class="ls-node" style="width:16%;">
-    <div class="nm">Диагноз</div><div class="ds">{_pain_ds}</div>
+    <div class="nm">{t("guide.flow.diagnosis")}</div><div class="ds">{_pain_ds}</div>
   </div>
   <div class="ls-lane"><span class="ls-dot"></span><span class="ls-dot d2"></span></div>
   <div class="ls-node" style="width:16%;">
-    <div class="nm">Синтез</div><div class="ds">ИИ режет тайтл по методологии</div>
+    <div class="nm">{t("guide.flow.synthesis")}</div><div class="ds">{t("guide.flow.synthesis_ds")}</div>
   </div>
   <div class="ls-lane"><span class="ls-dot"></span><span class="ls-dot d2"></span></div>
   <div class="ls-node" style="width:16%;">
-    <div class="nm">Amazon</div><div class="ds">обновлённый листинг · до/после</div>
+    <div class="nm">Amazon</div><div class="ds">{t("guide.flow.amazon_ds")}</div>
   </div>
 </div>
 <div style="display:flex;justify-content:space-between;margin-top:14px;font-size:11px;color:{MUTED};">
-  <span>← человек добавляет</span>
-  <span style="color:{ACCENT};font-weight:600;">● данные текут сами</span>
-  <span>человек утверждает →</span>
+  <span>{t("guide.flow.human_adds")}</span>
+  <span style="color:{ACCENT};font-weight:600;">{t("guide.flow.data_flows")}</span>
+  <span>{t("guide.flow.human_approves")}</span>
 </div>
     """,
     unsafe_allow_html=True,
 )
+
+
+st.markdown(eyebrow(t("guide.steps_header")), unsafe_allow_html=True)
+st.markdown("")
+
+step_card(1, t("guide.step1_title"), t("nav.matrix"), t("guide.step1_body"))
+step_card(2, t("guide.step2_title"), t("nav.matrix"), t("guide.step2_body"), auto=True)
+step_card(3, t("guide.step3_title"), t("nav.dashboard"), t("guide.step3_body"), auto=True)
+step_card(4, t("guide.step4_title"), t("nav.catalog"), t("guide.step4_body"))
+step_card(5, t("guide.step5_title"), t("nav.synthesis"), t("guide.step5_body"))
+step_card(6, t("guide.step6_title"), t("nav.methodology"), t("guide.step6_body"))
 
 st.markdown("")
 st.markdown(eyebrow(t("guide.roadmap_header")), unsafe_allow_html=True)
