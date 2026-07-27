@@ -148,4 +148,95 @@ if not versions.empty:
                         st.cache_data.clear()
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Откат не удался: {e}") 
+                        st.error(f"Откат не удался: {e}")
+
+# ================================================================ источники
+st.divider()
+st.markdown(eyebrow("Официальные источники Amazon"), unsafe_allow_html=True)
+st.caption(
+    "Документы, на которых основаны правила методологий. "
+    "Проверяй при изменениях политик Amazon — открой ссылку, сверь, отметь."
+)
+
+_INK = "#1A1815"
+_MUTED = "#8A8578"
+_BORDER = "#E7E4DD"
+_CARD = "#FFFFFF"
+_ACCENT = "#E8590C"
+_MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
+_STALE_DAYS = 30
+
+
+@st.cache_data(ttl=120)
+def load_sources() -> pd.DataFrame:
+    try:
+        conn = get_conn()
+        df_src = pd.read_sql(
+            "SELECT * FROM policy_sources ORDER BY id", conn)
+        conn.close()
+        return df_src
+    except Exception:
+        return pd.DataFrame()
+
+
+sources = load_sources()
+
+if sources.empty:
+    st.caption("Источники не заведены — прогони DDL-ячейку policy_sources.")
+else:
+    today = pd.Timestamp.now().normalize()
+    for _, src in sources.iterrows():
+        checked = pd.to_datetime(src["last_checked"]) if src["last_checked"] else None
+        stale = checked is None or (today - checked).days > _STALE_DAYS
+        edge = _ACCENT if stale else _BORDER
+        left = f"border-left:3px solid {_ACCENT};" if stale else ""
+        checked_str = checked.strftime("%d.%m.%Y") if checked is not None else "—"
+        checked_html = (
+            f"<span style='font-family:{_MONO};font-size:11px;color:#993C1D;'>"
+            f"⚠ проверено {checked_str}</span>"
+            if stale else
+            f"<span style='font-family:{_MONO};font-size:11px;color:{_MUTED};'>"
+            f"проверено {checked_str}</span>"
+        )
+        note = f" · {src['url_note']}" if src.get("url_note") else ""
+        chips = "".join(
+            f"<span style='background:#F1EFE8;border-radius:6px;padding:1px 8px;"
+            f"margin-left:4px;font-size:11px;'>{s.strip()}</span>"
+            for s in str(src.get("scopes") or "").split(",") if s.strip()
+        )
+
+        c_card, c_btn = st.columns([8, 1.4])
+        c_card.markdown(
+            f"""
+            <div style="background:{_CARD};border:1px solid {edge};{left}
+                        border-radius:10px;padding:12px 16px;margin-bottom:8px;">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;">
+                <div style="font-size:14px;font-weight:600;color:{_INK};">
+                  {src['title']}
+                  <a href="{src['url']}" target="_blank"
+                     style="font-family:{_MONO};font-size:11px;color:{_MUTED};">↗ открыть</a>
+                  <span style="font-size:11px;color:{_MUTED};">{note}</span>
+                </div>
+                {checked_html}
+              </div>
+              <div style="font-size:12px;color:{_MUTED};margin-top:4px;">
+                Обосновывает: {src['grounds']} {chips}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if c_btn.button("✓ проверено", key=f"src-check-{src['id']}"):
+            try:
+                conn = get_conn()
+                with conn, conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE policy_sources SET last_checked = CURRENT_DATE "
+                        "WHERE id = %s",
+                        (int(src["id"]),),
+                    )
+                conn.close()
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"Не сохранилось: {e}")
