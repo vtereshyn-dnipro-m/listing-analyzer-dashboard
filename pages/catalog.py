@@ -193,8 +193,17 @@ mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
                         placeholder="Все маркетплейсы")
 only_problems = f3.checkbox("Только с проблемами")
 
-q = st.text_input("Поиск", label_visibility="collapsed",
+qc, vc = st.columns([4, 1.6])
+q = qc.text_input("Поиск", label_visibility="collapsed",
                   placeholder="Поиск: ASIN, SKU или название...")
+try:
+    mode = vc.segmented_control(
+        "Вид", ["Карточки", "Таблица"], default="Карточки",
+        selection_mode="single", label_visibility="collapsed", key="cat_mode")
+except AttributeError:
+    mode = vc.radio("Вид", ["Карточки", "Таблица"], horizontal=True,
+                    label_visibility="collapsed", key="cat_mode")
+mode = mode or "Карточки"
 
 view = df
 if who == "наши":
@@ -238,7 +247,7 @@ exp = pd.DataFrame([{
     "sku": x["r"]["sku_group"], "asin": x["r"]["asin"], "mp": x["r"]["marketplace"],
     "кто": "конкурент" if x["r"]["is_competitor"] else "наш",
     "здоровье": x["label"], "тайтл_симв": x["mx"]["title_len"],
-    "фото": x["mx"]["images"], "видео": x["mx"]["video"],
+    "фото_шт": x["mx"]["images"], "видео": x["mx"]["video"],
     "aplus": x["mx"]["aplus"], "отзывы": x["mx"]["reviews"],
     "рейтинг": x["mx"]["rating"], "цена": x["mx"]["price"],
     "bsr": x["mx"]["bsr"][0] if x["mx"]["bsr"] else None,
@@ -251,6 +260,31 @@ st.download_button("Каталог → CSV", exp.to_csv(index=False).encode("utf
 pages = max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE)
 page = min(st.session_state.get("cat_page", 1), pages)
 chunk = rows[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
+
+# ---- таблица
+if mode == "Таблица":
+    tv = exp.copy()
+    tv["фото"] = [x["mx"]["main_img"] for x in rows]
+    tv["ссылка"] = [f"https://www.amazon.{x['r']['marketplace']}/dp/{x['r']['asin']}"
+                    for x in rows]
+    tv["bsr_кат"] = [x["mx"]["bsr"][1] if x["mx"]["bsr"] else "" for x in rows]
+    st.dataframe(
+        tv[["фото", "sku", "asin", "mp", "кто", "здоровье", "тайтл_симв",
+            "фото_шт", "видео", "aplus", "отзывы", "рейтинг", "цена",
+            "bsr", "bsr_кат", "в_наличии", "название", "ссылка"]].rename(columns={
+                "sku": "SKU", "asin": "ASIN", "mp": "MP",
+                "тайтл_симв": "тайтл, симв.", "фото_шт": "фото, шт",
+                "bsr_кат": "категория BSR"}),
+        column_config={
+            "фото": st.column_config.ImageColumn("Фото", width="small"),
+            "ссылка": st.column_config.LinkColumn("Листинг", display_text="открыть"),
+            "здоровье": st.column_config.TextColumn("Здоровье", width="small"),
+            "название": st.column_config.TextColumn("Название", width="large"),
+        },
+        hide_index=True, use_container_width=True, height=560,
+    )
+    st.caption("Сортировка — клик по заголовку колонки")
+    st.stop()
 
 # ---- карточки
 for x in chunk:
