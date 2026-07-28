@@ -226,21 +226,21 @@ run_label = pd.to_datetime(diag["created_at"].max()).strftime("%d.%m %H:%M")
 
 money_at_risk = pd.to_numeric(diag.get("money_impact"), errors="coerce").sum()
 risk_html = (
-    f"Под риском <span style='color:#E8590C;font-weight:700;'>€{money_at_risk:,.0f}</span>/мес"
+    f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>€{money_at_risk:,.0f}</span>/мес"
     if money_at_risk else
-    "Под риском <span style='color:#E8590C;font-weight:700;'>н/д</span> "
+    f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>н/д</span> "
     "<span style='color:#8A8578;'>(заполни sku_economics)</span>"
 )
 delta_html = ""
 if added or closed:
     delta_html = (
-        f" · с прошлого прогона <span style='color:#E8590C;font-weight:600;'>"
-        f"+{added} новых</span> · {closed} закрыто"
+        f" · {t('dash.since_last')} <span style='color:#E8590C;font-weight:600;'>"
+        f"+{added} {t('dash.new_pains')}</span> · {closed} {t('dash.closed_pains')}"
     )
 
-headline = (f"{affected} товаров требуют внимания"
-            + (f" из {total_products}" if total_products else ""))
-verdict(headline, risk_html + delta_html, meta_right=f"прогон {run_label}")
+headline = (f"{affected} {t('dash.need_attention')}"
+            + (f" {t('dash.of')} {total_products}" if total_products else ""))
+verdict(headline, risk_html + delta_html, meta_right=f"{t('dash.run')} {run_label}")
 
 st.download_button(t("dash.fix_all_csv"),
                    diag.to_csv(index=False).encode("utf-8-sig"),
@@ -278,18 +278,20 @@ grp_f = _seg(fc2, grp_opts,
 # ---- поиск, маркетплейсы, вид
 q_col, mp_col, mode_col = st.columns([3, 2, 1.6])
 query = q_col.text_input("Поиск", label_visibility="collapsed",
-                         placeholder="Поиск: ASIN, SKU или текст боли...")
+                         placeholder=t("list.search_pains"))
 mps = sorted(diag["marketplace"].unique())
 mp_sel = mp_col.multiselect("MP", mps, default=[], label_visibility="collapsed",
-                            placeholder="Все маркетплейсы")
+                            placeholder=t("list.all_mp"))
 try:
     mode = mode_col.segmented_control(
-        "Вид", ["Карточки", "Таблица"], default="Карточки",
+        "Вид", ["cards", "table"], default="cards",
+        format_func=lambda k: t("list.cards") if k == "cards" else t("list.table"),
         selection_mode="single", label_visibility="collapsed", key="diag_mode")
 except AttributeError:
-    mode = mode_col.radio("Вид", ["Карточки", "Таблица"], horizontal=True,
+    mode = mode_col.radio("Вид", ["cards", "table"], horizontal=True,
+                          format_func=lambda k: t("list.cards") if k == "cards" else t("list.table"),
                           label_visibility="collapsed", key="diag_mode")
-mode = mode or "Карточки"
+mode = mode or "cards"
 
 view = diag
 if sev_f:
@@ -307,7 +309,7 @@ if query.strip():
     ]
 
 if view.empty:
-    st.caption("По этим фильтрам болей нет.")
+    st.caption(t("dash.no_by_filter"))
     st.stop()
 
 view = view.copy()
@@ -315,7 +317,7 @@ view["_o"] = view["severity"].map(SEV_ORDER).fillna(9)
 n_products = view.groupby(["asin", "marketplace"]).ngroups
 
 # ---------------------------------------------------------------- вывод
-if mode == "Таблица":
+if mode == "table":
     tbl = view.copy()
     # боли одного товара идут подряд; товары — по худшей боли, потом по числу болей
     prod = tbl.groupby(["asin", "marketplace"]).agg(
@@ -353,8 +355,8 @@ if mode == "Таблица":
         hide_index=True, use_container_width=True, height=560,
     )
     st.caption(
-        f"{len(tbl)} болей по {prod.shape[0]} товарам · "
-        "строки одного товара идут подряд · сортировка колонок — клик по заголовку"
+        f"{len(tbl)} {t('dash.pains_by_products')} {prod.shape[0]} · "
+        f"{t('dash.rows_grouped')} · {t('list.sort_hint')}"
     )
 elif n_products < GROUP_THRESHOLD:
     for _, r in view.sort_values(["_o", "created_at"],
@@ -376,7 +378,7 @@ else:
     page = min(st.session_state.get("diag_page", 1), pages)
     chunk = groups[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
 
-    st.caption(f"{len(groups)} товаров с болями · показано {len(chunk)}")
+    st.caption(f"{len(groups)} {t('dash.products_with_pains')} {len(chunk)}")
 
     for i, grp in enumerate(chunk):
         dots = " · ".join(
@@ -395,13 +397,14 @@ else:
 
     if pages > 1:
         p1, p2, p3 = st.columns([1, 2, 1])
-        if p1.button("← Назад", disabled=page <= 1):
+        if p1.button(t("list.prev"), disabled=page <= 1):
             st.session_state["diag_page"] = page - 1
             st.rerun()
         p2.markdown(
-            f"<div style='text-align:center;color:{MUTED};'>стр. {page} / {pages}</div>",
+            f"<div style='text-align:center;color:{MUTED};'>"
+            f"{t('list.page')} {page} / {pages}</div>",
             unsafe_allow_html=True)
-        if p3.button("Вперёд →", disabled=page >= pages):
+        if p3.button(t("list.next"), disabled=page >= pages):
             st.session_state["diag_page"] = page + 1
             st.rerun()
 
@@ -412,6 +415,6 @@ if total_products:
         st.divider()
         st.markdown(
             f"<div style='color:{MUTED};font-size:13px;'>"
-            f"{healthy} товаров без болей · "
+            f"{healthy} {t('dash.healthy_products')} · "
             f"<span style='color:#2F6B3A;'>✓ здоровы</span></div>",
             unsafe_allow_html=True)
