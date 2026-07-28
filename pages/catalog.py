@@ -35,7 +35,10 @@ ERR_BG = "#FCEBEB"
 ERR_TEXT = "#A32D2D"
 MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
 
-MIN_REVIEWS = 50
+MIN_REVIEWS = 50          # отзывы: ниже — жёлтый
+CRIT_REVIEWS = 10         # отзывы: ниже — красный
+RATING_RED = 4.3          # рейтинг: <4.3 красный
+RATING_GREEN = 4.4        # рейтинг: >=4.4 зелёный, между — жёлтый
 MIN_IMAGES = 7
 PAGE_SIZE = 20
 
@@ -84,14 +87,27 @@ def metrics(row: pd.Series) -> dict:
         if isinstance(u, str):
             ids.add(u.rsplit("/I/", 1)[-1].split(".")[0])
 
-    bsr_txt = str(info.get("Best Sellers Rank") or "")
+    # BSR: ключ и формат зависят от языка страницы
+    bsr_txt = ""
+    for k, v in info.items():
+        if re.search(r"best.?sellers|clasificaci|bestseller|classement|"
+                     r"posizione|migliori|rank", str(k), re.I):
+            bsr_txt = str(v)
+            break
     bsr = None
-    m = re.findall(r"([\d,\.]+)\s+in\s+([^\(]+)", bsr_txt)
-    if m:
-        try:
-            bsr = (int(m[-1][0].replace(",", "").replace(".", "")), m[-1][1].strip())
-        except ValueError:
-            bsr = None
+    if bsr_txt:
+        clean = re.sub(r"\([^)]*\)", " ", bsr_txt)   # убрать "(Ver el Top 100 ...)"
+        m = re.findall(
+            r"(?:n[ºo°]\s*|nr\.?\s*)?([\d][\d.,]*)\s+(?:in|en|dans|nella|di)\s+"
+            r"([^,;]+?)(?=\s*(?:n[ºo°]\s*[\d]|nr\.?\s*[\d]|[\d]+\s+(?:in|en)\s|$))",
+            clean, re.I)
+        if m:
+            try:
+                bsr = (int(re.sub(r"[^\d]", "", m[-1][0])), m[-1][1].strip(" ,.·"))
+            except ValueError:
+                bsr = None
+
+    main_img = d.get("main_image") or (imgs[0] if imgs else "")
 
     price = d.get("price") or ""
     try:
@@ -112,6 +128,7 @@ def metrics(row: pd.Series) -> dict:
         "bsr": bsr,
         "in_stock": bool(row.get("in_stock")),
         "seller": d.get("sold_by") or "",
+        "main_img": main_img,
         "coupon": bool(d.get("is_coupon_exists")),
     }
 
@@ -132,6 +149,8 @@ def health(mx: dict, is_comp: bool) -> tuple[str, str, str]:
     if not mx["aplus"]:
         problems += 1
     if mx["reviews"] is not None and mx["reviews"] < MIN_REVIEWS:
+        problems += 1
+    if mx["rating"] is not None and mx["rating"] < RATING_RED:
         problems += 1
     if problems >= 3:
         return "amber", ACCENT, f"{problems} проблемы"
@@ -251,11 +270,16 @@ for x in chunk:
         chip("A+", "есть" if mx["aplus"] else "нет",
              "ok" if mx["aplus"] else "warn"),
         chip("отзывы", str(mx["reviews"] if mx["reviews"] is not None else "—"),
-             "ok" if (mx["reviews"] or 0) >= MIN_REVIEWS else "warn"),
-        chip("рейтинг", str(mx["rating"] or "—"),
-             "ok" if (mx["rating"] or 0) >= 4.3 else "warn"),
+             "ok" if (mx["reviews"] or 0) >= MIN_REVIEWS
+             else ("err" if (mx["reviews"] or 0) < CRIT_REVIEWS else "warn")),
+        chip("рейтинг",
+             (f"{mx['rating']:.1f}".replace(".", ",") if mx["rating"] else "—"),
+             "neutral" if not mx["rating"]
+             else ("err" if mx["rating"] < RATING_RED
+                   else ("ok" if mx["rating"] >= RATING_GREEN else "warn"))),
         chip("цена", str(mx["price"] or "—"), "neutral"),
-        chip("BSR", f"{mx['bsr'][0]}" if mx["bsr"] else "—", "neutral"),
+        chip("BSR", (f"#{mx['bsr'][0]} · {mx['bsr'][1][:22]}"
+                     if mx["bsr"] else "—"), "neutral"),
         chip("сток", "в наличии" if mx["in_stock"] else "нет",
              "ok" if mx["in_stock"] else "err"),
     ])
@@ -275,7 +299,11 @@ for x in chunk:
         f"""
         <div style="background:{CARD};border:1px solid {BORDER};
                     border-left:3px solid {color};border-radius:0 12px 12px 0;
-                    padding:14px 18px;margin-bottom:10px;">
+                    padding:14px 18px;margin-bottom:10px;display:flex;gap:16px;">
+          <div style="flex:0 0 92px;">
+            {f'<img src="{mx["main_img"]}" style="width:92px;height:92px;object-fit:contain;background:#fff;border:1px solid {BORDER};border-radius:10px;">' if mx["main_img"] else ''}
+          </div>
+          <div style="flex:1;min-width:0;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;">
             {eyebrow(f"{head}<a href='https://www.amazon.{mp}/dp/{asin}' target='_blank' style='color:{MUTED};'>{asin}</a> · {mp} · {who_lbl}")}
             <span style="font-family:{MONO};font-size:12px;color:{color};">{label} · {fetched}</span>
@@ -283,6 +311,7 @@ for x in chunk:
           <div style="font-size:13px;color:{INK};margin:6px 0 8px;">{short or "— нет данных"}</div>
           {ruler}
           <div style="margin-top:6px;">{chips}</div>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
