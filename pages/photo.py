@@ -15,6 +15,7 @@ import json
 import pandas as pd
 import streamlit as st
 
+from i18n import t
 from services.db import get_conn, cfg
 from components.ui import inject_fonts, eyebrow
 
@@ -259,16 +260,15 @@ def render_checks(res: dict, block: str, checks: list[tuple[str, str]],
 def show_grade(grade: str, detail: str) -> None:
     color = OK_TEXT if grade in ("A", "B") else ACCENT
     st.markdown(
-        f"<div style='font-size:22px;font-weight:700;color:{INK};'>Грейд "
+        f"<div style='font-size:22px;font-weight:700;color:{INK};'>{t('photo.grade')} "
         f"<span style='color:{color};font-family:{MONO};'>{grade}</span>"
         f"<span style='font-size:13px;color:{MUTED};font-weight:400;'> · {detail}"
         f"</span></div>", unsafe_allow_html=True)
 
 
 # ---------------------------------------------------------------- UI
-st.header("Фото и A+")
-st.caption("Аудит визуала по методологиям photo_brief и aplus. "
-           "Грейд считает код, ИИ только смотрит.")
+st.header(t("photo.title"))
+st.caption(t("photo.caption"))
 
 cands = load_candidates()
 if cands.empty:
@@ -277,17 +277,17 @@ if cands.empty:
 
 opts = {f"{r['sku_group'] or r['asin']} · {r['asin']} · {r['marketplace']}": i
         for i, r in cands.iterrows()}
-choice = st.selectbox("Товар", list(opts.keys()))
+choice = st.selectbox(t("photo.product"), list(opts.keys()))
 row = cands.loc[opts[choice]]
 asin, mp, title = row["asin"], row["marketplace"], row["title"]
 
-tab_gallery, tab_aplus = st.tabs(["Галерея", "A+ контент"])
+tab_gallery, tab_aplus = st.tabs([t("photo.tab_gallery"), t("photo.tab_aplus")])
 
 # ---- галерея
 with tab_gallery:
     skill, ver = load_skill("photo_brief")
     if not skill:
-        st.warning("Методология photo_brief пуста — заполни на странице Методологии.")
+        st.warning(t("photo.skill_empty"))
     images = extract_images(row["raw"])
     st.markdown(eyebrow(f"{asin} · {mp} · фото: {len(images)} · методология v{ver}"),
                 unsafe_allow_html=True)
@@ -296,11 +296,11 @@ with tab_gallery:
         for i, url in enumerate(images[:6]):
             cols[i].image(url, use_container_width=True)
     else:
-        st.warning("В снапшоте нет изображений — пересобери товар.")
+        st.warning(t("photo.no_images"))
 
-    if st.button("Проанализировать галерею", type="primary",
+    if st.button(t("photo.analyze_gallery"), type="primary",
                  disabled=not images, key="btn-gallery"):
-        with st.spinner(f"Gemini смотрит {len(images)} фото..."):
+        with st.spinner(f"{t('photo.looking')} {len(images)}..."):
             res = analyze(
                 images, title, mp, skill, MAIN_CHECKS + GALLERY_CHECKS, "main",
                 "Первое изображение — ГЛАВНОЕ фото, остальные — галерея. "
@@ -323,18 +323,18 @@ with tab_gallery:
                           f"галерея {g}/{len(GALLERY_CHECKS)}")
         c1, c2 = st.columns(2)
         with c1:
-            render_checks(res, "main", MAIN_CHECKS, "Главное фото")
+            render_checks(res, "main", MAIN_CHECKS, t("photo.main_photo"))
         with c2:
-            render_checks(res, "main", GALLERY_CHECKS, "Роли галереи")
+            render_checks(res, "main", GALLERY_CHECKS, t("photo.gallery_roles"))
         if res.get("designer_brief"):
-            st.markdown("**ТЗ дизайнеру**")
+            st.markdown(f"**{t('photo.designer_brief')}**")
             st.code(res["designer_brief"], language=None)
 
 # ---- A+ контент
 with tab_aplus:
     skill_a, ver_a = load_skill("aplus")
     if not skill_a:
-        st.warning("Методология aplus пуста — заполни на странице Методологии.")
+        st.warning(t("photo.skill_empty"))
     aplus = extract_aplus(row["raw"])
     st.markdown(eyebrow(f"{asin} · {mp} · модулей A+: {len(aplus)} · методология v{ver_a}"),
                 unsafe_allow_html=True)
@@ -342,12 +342,11 @@ with tab_aplus:
         for url in aplus[:4]:
             st.image(url, use_container_width=True)
     else:
-        st.info("A+ контента нет в снапшоте — либо его нет на листинге, "
-                "либо пересобери товар.")
+        st.info(t("photo.no_aplus"))
 
-    if st.button("Проанализировать A+", type="primary",
+    if st.button(t("photo.analyze_aplus"), type="primary",
                  disabled=not aplus, key="btn-aplus"):
-        with st.spinner(f"Gemini смотрит {len(aplus)} модулей A+..."):
+        with st.spinner(f"{t('photo.looking')} {len(aplus)} A+..."):
             res_a = analyze(
                 aplus, title, mp, skill_a, APLUS_CHECKS, "aplus",
                 "Это модули A+ контента листинга, по порядку сверху вниз.",
@@ -364,7 +363,7 @@ with tab_aplus:
         _, _, res_a, grade_a, a = saved_a
         st.divider()
         show_grade(grade_a, f"{a}/{len(APLUS_CHECKS)} пунктов")
-        render_checks(res_a, "aplus", APLUS_CHECKS, "A+ контент")
+        render_checks(res_a, "aplus", APLUS_CHECKS, t("photo.tab_aplus"))
         if res_a.get("designer_brief"):
-            st.markdown("**ТЗ дизайнеру**")
+            st.markdown(f"**{t('photo.designer_brief')}**")
             st.code(res_a["designer_brief"], language=None)
