@@ -517,4 +517,4 @@ with st.expander(t("matrix.schedule_edit")):
             st.success(t("matrix.schedule_saved"))
             st.rerun()
         except Exception as e:
-            st.error(f"Не сохранилось: {e}")
+            st.error(f"Не сохранилось: {e}") 
