@@ -202,16 +202,6 @@ def render_pain(r: pd.Series, title_map: dict) -> None:
     )
 
 
-def chip_button(col, label: str, key: str, state_key: str, value: str,
-                disabled: bool = False) -> None:
-    active = st.session_state.get(state_key) == value
-    if col.button(label, key=key, disabled=disabled,
-                  type="primary" if active else "secondary"):
-        st.session_state[state_key] = None if active else value
-        st.session_state["diag_page"] = 1
-        st.rerun()
-
-
 # ---------------------------------------------------------------- страница
 diag = load_diagnosis()
 titles = load_titles()
@@ -252,41 +242,52 @@ st.download_button(t("dash.fix_all_csv"),
                    diag.to_csv(index=False).encode("utf-8-sig"),
                    file_name="diagnosis.csv", mime="text/csv")
 
-# ---- фильтры: severity
-s_counts = {s: int((diag["severity"] == s).sum()) for s in SEV_ORDER}
-c1, c2, c3, c4 = st.columns([1, 1, 1, 3])
-chip_button(c1, f"🔴 критично {s_counts['red']}", "f-red", "sev_filter", "red",
-            s_counts["red"] == 0)
-chip_button(c2, f"🟠 важно {s_counts['amber']}", "f-amber", "sev_filter", "amber",
-            s_counts["amber"] == 0)
-chip_button(c3, f"🟡 план {s_counts['yellow']}", "f-yellow", "sev_filter", "yellow",
-            s_counts["yellow"] == 0)
-
-# ---- фильтры: тип боли
+# ---- фильтры: severity и тип боли (компактные сегменты)
 diag = diag.copy()
 diag["_group"] = diag["rule_id"].map(RULE_GROUP).fillna("другое")
-groups_present = sorted(diag["_group"].unique())
-gcols = st.columns(max(len(groups_present), 1) + 2)
-for i, gname in enumerate(groups_present):
-    n = int((diag["_group"] == gname).sum())
-    chip_button(gcols[i], f"{gname} {n}", f"f-g-{gname}", "grp_filter", gname)
 
-# ---- поиск и маркетплейсы
-q_col, mp_col = st.columns([3, 2])
+s_counts = {s: int((diag["severity"] == s).sum()) for s in SEV_ORDER}
+sev_opts = [s for s in ("red", "amber", "yellow") if s_counts[s]]
+sev_labels = {"red": "критично", "amber": "важно", "yellow": "план"}
+grp_opts = sorted(diag["_group"].unique())
+grp_counts = {g: int((diag["_group"] == g).sum()) for g in grp_opts}
+
+
+def _seg(col, options, fmt, key):
+    """Сегмент-контрол с фолбэком на multiselect для старых версий."""
+    try:
+        return col.segmented_control(
+            key, options, format_func=fmt, default=None,
+            selection_mode="single", label_visibility="collapsed", key=key)
+    except AttributeError:
+        sel = col.multiselect(key, options, default=[], format_func=fmt,
+                              label_visibility="collapsed", key=key)
+        return sel[0] if sel else None
+
+
+fc1, fc2 = st.columns([1.1, 1.6])
+sev_f = _seg(fc1, sev_opts,
+             lambda s: f"{SEV_DOT[s]} {sev_labels[s]} {s_counts[s]}", "sev_seg")
+grp_f = _seg(fc2, grp_opts,
+             lambda g: f"{g} {grp_counts[g]}", "grp_seg")
+
+# ---- поиск, маркетплейсы, вид
+q_col, mp_col, mode_col = st.columns([3, 2, 1.6])
 query = q_col.text_input("Поиск", label_visibility="collapsed",
                          placeholder="Поиск: ASIN, SKU или текст боли...")
 mps = sorted(diag["marketplace"].unique())
 mp_sel = mp_col.multiselect("MP", mps, default=[], label_visibility="collapsed",
                             placeholder="Все маркетплейсы")
-
-mode = st.radio(
-    "Вид", ["Карточки", "Таблица"], horizontal=True,
-    label_visibility="collapsed", key="diag_mode",
-)
+try:
+    mode = mode_col.segmented_control(
+        "Вид", ["Карточки", "Таблица"], default="Карточки",
+        selection_mode="single", label_visibility="collapsed", key="diag_mode")
+except AttributeError:
+    mode = mode_col.radio("Вид", ["Карточки", "Таблица"], horizontal=True,
+                          label_visibility="collapsed", key="diag_mode")
+mode = mode or "Карточки"
 
 view = diag
-sev_f = st.session_state.get("sev_filter")
-grp_f = st.session_state.get("grp_filter")
 if sev_f:
     view = view[view["severity"] == sev_f]
 if grp_f:
@@ -311,28 +312,45 @@ n_products = view.groupby(["asin", "marketplace"]).ngroups
 
 # ---------------------------------------------------------------- вывод
 if mode == "Таблица":
-    tbl = view.sort_values(["_o", "asin"]).copy()
+    tbl = view.copy()
+    # боли одного товара идут подряд; товары — по худшей боли, потом по числу болей
+    prod = tbl.groupby(["asin", "marketplace"]).agg(
+        _worst=("_o", "min"), _cnt=("_o", "size")).reset_index()
+    tbl = tbl.merge(prod, on=["asin", "marketplace"], how="left")
+    tbl = tbl.sort_values(["_worst", "_cnt", "asin", "_o"],
+                          ascending=[True, False, True, True])
+
     tbl["товар"] = tbl.apply(
         lambda r: (r["sku_group"] if r["sku_group"] and r["sku_group"] != r["asin"]
-                   else "") or "", axis=1)
+                   else r["asin"]), axis=1)
+    tbl["название"] = tbl.apply(
+        lambda r: (title_map.get((r["asin"], r["marketplace"])) or "")[:60], axis=1)
     tbl["важность"] = tbl["severity"].map(
         {"red": "🔴 критично", "amber": "🟠 важно", "yellow": "🟡 план"})
+    tbl["болей"] = tbl["_cnt"]
     tbl["ссылка"] = tbl.apply(
         lambda r: f"https://www.amazon.{r['marketplace']}/dp/{r['asin']}", axis=1)
+
     st.dataframe(
-        tbl[["важность", "_group", "товар", "asin", "marketplace",
-             "pain", "action", "ссылка"]],
+        tbl[["товар", "asin", "marketplace", "название", "болей",
+             "важность", "_group", "pain", "action", "ссылка"]],
         column_config={
-            "важность": st.column_config.TextColumn("Важность", width="small"),
-            "_group": st.column_config.TextColumn("Тип", width="small"),
-            "товар": st.column_config.TextColumn("SKU", width="small"),
+            "товар": st.column_config.TextColumn("Товар", width="small"),
             "asin": st.column_config.TextColumn("ASIN", width="small"),
             "marketplace": st.column_config.TextColumn("MP", width="small"),
+            "название": st.column_config.TextColumn("Название", width="medium"),
+            "болей": st.column_config.NumberColumn("Болей", width="small"),
+            "важность": st.column_config.TextColumn("Важность", width="small"),
+            "_group": st.column_config.TextColumn("Тип", width="small"),
             "pain": st.column_config.TextColumn("Боль", width="large"),
             "action": st.column_config.TextColumn("Действие", width="medium"),
             "ссылка": st.column_config.LinkColumn("Листинг", display_text="открыть"),
         },
-        hide_index=True, use_container_width=True,
+        hide_index=True, use_container_width=True, height=560,
+    )
+    st.caption(
+        f"{len(tbl)} болей по {prod.shape[0]} товарам · "
+        "строки одного товара идут подряд · сортировка колонок — клик по заголовку"
     )
 elif n_products < GROUP_THRESHOLD:
     for _, r in view.sort_values(["_o", "created_at"],
