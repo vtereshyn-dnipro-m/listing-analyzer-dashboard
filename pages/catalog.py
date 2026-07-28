@@ -136,9 +136,9 @@ def metrics(row: pd.Series) -> dict:
 def health(mx: dict, is_comp: bool) -> tuple[str, str, str]:
     """Итоговое здоровье товара: (уровень, цвет, подпись)."""
     if is_comp:
-        return "comp", MUTED, "конкурент"
+        return "comp", MUTED, t("common.competitor")
     if not mx["in_stock"]:
-        return "red", ERR_TEXT, "нет в наличии"
+        return "red", ERR_TEXT, t("catalog.h_nostock")
     problems = 0
     if mx["title_len"] > TITLE_LIMIT:
         problems += 1
@@ -153,10 +153,10 @@ def health(mx: dict, is_comp: bool) -> tuple[str, str, str]:
     if mx["rating"] is not None and mx["rating"] < RATING_RED:
         problems += 1
     if problems >= 3:
-        return "amber", ACCENT, f"{problems} проблемы"
+        return "amber", ACCENT, f"{problems} {t('catalog.h_problems')}"
     if problems:
-        return "yellow", WARN_TEXT, f"{problems} замечания"
-    return "ok", OK_TEXT, "здоров"
+        return "yellow", WARN_TEXT, f"{problems} {t('catalog.h_notes')}"
+    return "ok", OK_TEXT, t("catalog.h_ok")
 
 
 def chip(label: str, value: str, state: str) -> str:
@@ -175,8 +175,7 @@ def chip(label: str, value: str, state: str) -> str:
 
 
 st.header(t("nav.catalog"))
-st.caption("Паспорт каждого товара: все метрики разом. Диагноз показывает только "
-           "проблемные — здесь весь каталог, включая здоровых и конкурентов.")
+st.caption(t("catalog.caption"))
 
 df = load_catalog()
 if df.empty:
@@ -185,30 +184,35 @@ if df.empty:
 
 # ---- фильтры
 f1, f2, f3 = st.columns([2, 2, 2])
+_who_opts = ["all", "ours", "comp"]
+_who_lbl = {"all": t("catalog.all"), "ours": t("catalog.ours"),
+            "comp": t("catalog.competitors")}
 who = f1.segmented_control(
-    "кто", ["все", "наши", "конкуренты"], default="все",
-    selection_mode="single", label_visibility="collapsed", key="cat_who") or "все"
+    "кто", _who_opts, default="all", format_func=lambda k: _who_lbl[k],
+    selection_mode="single", label_visibility="collapsed", key="cat_who") or "all"
 mps = sorted(df["marketplace"].unique())
 mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
-                        placeholder="Все маркетплейсы")
-only_problems = f3.checkbox("Только с проблемами")
+                        placeholder=t("list.all_mp"))
+only_problems = f3.checkbox(t("catalog.only_problems"))
 
 qc, vc = st.columns([4, 1.6])
 q = qc.text_input("Поиск", label_visibility="collapsed",
-                  placeholder="Поиск: ASIN, SKU или название...")
+                  placeholder=t("catalog.search"))
 try:
     mode = vc.segmented_control(
-        "Вид", ["Карточки", "Таблица"], default="Карточки",
+        "Вид", ["cards", "table"], default="cards",
+        format_func=lambda k: t("list.cards") if k == "cards" else t("list.table"),
         selection_mode="single", label_visibility="collapsed", key="cat_mode")
 except AttributeError:
-    mode = vc.radio("Вид", ["Карточки", "Таблица"], horizontal=True,
+    mode = vc.radio("Вид", ["cards", "table"], horizontal=True,
+                    format_func=lambda k: t("list.cards") if k == "cards" else t("list.table"),
                     label_visibility="collapsed", key="cat_mode")
-mode = mode or "Карточки"
+mode = mode or "cards"
 
 view = df
-if who == "наши":
+if who == "ours":
     view = view[~view["is_competitor"]]
-elif who == "конкуренты":
+elif who == "comp":
     view = view[view["is_competitor"]]
 if mp_sel:
     view = view[view["marketplace"].isin(mp_sel)]
@@ -230,7 +234,7 @@ if only_problems:
     rows = [x for x in rows if x["lvl"] in ("red", "amber", "yellow")]
 
 if not rows:
-    st.caption("Ничего не найдено по фильтрам.")
+    st.caption(t("catalog.nothing"))
     st.stop()
 
 order = {"red": 0, "amber": 1, "yellow": 2, "ok": 3, "comp": 4}
@@ -239,7 +243,8 @@ rows.sort(key=lambda x: (order[x["lvl"]], -(x["mx"]["title_len"] or 0)))
 healthy = sum(1 for x in rows if x["lvl"] == "ok")
 st.markdown(
     f"<div style='font-size:14px;color:{INK};margin-bottom:12px;'>"
-    f"{len(rows)} товаров · <span style='color:{OK_TEXT};'>здоровых {healthy}</span>"
+    f"{len(rows)} {t('catalog.products')} · <span style='color:{OK_TEXT};'>"
+    f"{t('catalog.healthy')} {healthy}</span>"
     f"</div>", unsafe_allow_html=True)
 
 # ---- экспорт
@@ -253,7 +258,7 @@ exp = pd.DataFrame([{
     "bsr": x["mx"]["bsr"][0] if x["mx"]["bsr"] else None,
     "в_наличии": x["mx"]["in_stock"], "название": x["mx"]["title"],
 } for x in rows])
-st.download_button("Каталог → CSV", exp.to_csv(index=False).encode("utf-8-sig"),
+st.download_button(t("catalog.export"), exp.to_csv(index=False).encode("utf-8-sig"),
                    file_name="catalog.csv", mime="text/csv")
 
 # ---- пагинация
@@ -262,7 +267,7 @@ page = min(st.session_state.get("cat_page", 1), pages)
 chunk = rows[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
 
 # ---- таблица
-if mode == "Таблица":
+if mode == "table":
     tv = exp.copy()
     tv["фото"] = [x["mx"]["main_img"] for x in rows]
     tv["ссылка"] = [f"https://www.amazon.{x['r']['marketplace']}/dp/{x['r']['asin']}"
@@ -283,7 +288,7 @@ if mode == "Таблица":
         },
         hide_index=True, use_container_width=True, height=560,
     )
-    st.caption("Сортировка — клик по заголовку колонки")
+    st.caption(t("list.sort_hint"))
     st.stop()
 
 # ---- карточки
@@ -295,26 +300,26 @@ for x in chunk:
     who_lbl = t("common.competitor") if r["is_competitor"] else t("common.our")
 
     chips = "".join([
-        chip("тайтл", f"{mx['title_len']}/{TITLE_LIMIT}",
+        chip(t("metric.title"), f"{mx['title_len']}/{TITLE_LIMIT}",
              "err" if mx["title_len"] > TITLE_LIMIT else "ok"),
-        chip("фото", str(mx["images"]),
+        chip(t("metric.photos"), str(mx["images"]),
              "ok" if mx["images"] >= MIN_IMAGES else "warn"),
-        chip("видео", "есть" if mx["video"] else "нет",
+        chip(t("metric.video"), t("metric.yes") if mx["video"] else t("metric.no"),
              "ok" if mx["video"] else "warn"),
-        chip("A+", "есть" if mx["aplus"] else "нет",
+        chip(t("metric.aplus"), t("metric.yes") if mx["aplus"] else t("metric.no"),
              "ok" if mx["aplus"] else "warn"),
-        chip("отзывы", str(mx["reviews"] if mx["reviews"] is not None else "—"),
+        chip(t("metric.reviews"), str(mx["reviews"] if mx["reviews"] is not None else "—"),
              "ok" if (mx["reviews"] or 0) >= MIN_REVIEWS
              else ("err" if (mx["reviews"] or 0) < CRIT_REVIEWS else "warn")),
-        chip("рейтинг",
+        chip(t("metric.rating"),
              (f"{mx['rating']:.1f}".replace(".", ",") if mx["rating"] else "—"),
              "neutral" if not mx["rating"]
              else ("err" if mx["rating"] < RATING_RED
                    else ("ok" if mx["rating"] >= RATING_GREEN else "warn"))),
-        chip("цена", str(mx["price"] or "—"), "neutral"),
-        chip("BSR", (f"#{mx['bsr'][0]} · {mx['bsr'][1][:22]}"
+        chip(t("metric.price"), str(mx["price"] or "—"), "neutral"),
+        chip(t("metric.bsr"), (f"#{mx['bsr'][0]} · {mx['bsr'][1][:22]}"
                      if mx["bsr"] else "—"), "neutral"),
-        chip("сток", "в наличии" if mx["in_stock"] else "нет",
+        chip(t("metric.stock"), t("metric.in_stock") if mx["in_stock"] else t("metric.no"),
              "ok" if mx["in_stock"] else "err"),
     ])
 
@@ -326,7 +331,7 @@ for x in chunk:
     ) if mx["title_len"] else ""
 
     fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
-               if pd.notna(r["fetched_at"]) else "не собирался")
+               if pd.notna(r["fetched_at"]) else t("catalog.not_collected"))
     short = (mx["title"][:130] + "…") if len(mx["title"]) > 130 else mx["title"]
 
     st.markdown(
@@ -342,7 +347,7 @@ for x in chunk:
             {eyebrow(f"{head}<a href='https://www.amazon.{mp}/dp/{asin}' target='_blank' style='color:{MUTED};'>{asin}</a> · {mp} · {who_lbl}")}
             <span style="font-family:{MONO};font-size:12px;color:{color};">{label} · {fetched}</span>
           </div>
-          <div style="font-size:13px;color:{INK};margin:6px 0 8px;">{short or "— нет данных"}</div>
+          <div style="font-size:13px;color:{INK};margin:6px 0 8px;">{short or t("catalog.no_data_row")}</div>
           {ruler}
           <div style="margin-top:6px;">{chips}</div>
           </div>
@@ -353,11 +358,12 @@ for x in chunk:
 
 if pages > 1:
     p1, p2, p3 = st.columns([1, 2, 1])
-    if p1.button("← Назад", disabled=page <= 1):
+    if p1.button(t("list.prev"), disabled=page <= 1):
         st.session_state["cat_page"] = page - 1
         st.rerun()
-    p2.markdown(f"<div style='text-align:center;color:{MUTED};'>стр. {page} / {pages}</div>",
+    p2.markdown(f"<div style='text-align:center;color:{MUTED};'>"
+                f"{t('list.page')} {page} / {pages}</div>",
                 unsafe_allow_html=True)
-    if p3.button("Вперёд →", disabled=page >= pages):
+    if p3.button(t("list.next"), disabled=page >= pages):
         st.session_state["cat_page"] = page + 1
         st.rerun()
