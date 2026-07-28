@@ -33,6 +33,12 @@ MP_COUNTRY = {
     "com": "us", "de": "de", "es": "es", "fr": "fr",
     "it": "it", "co.uk": "gb", "nl": "nl", "se": "se", "pl": "pl",
 }
+# язык страницы: без него ScrapingDog иногда отдаёт EN-версию amazon.es,
+# и длина тайтла считается по чужому языку
+MP_LANGUAGE = {
+    "es": "es", "de": "de", "fr": "fr", "it": "it",
+    "com": "en", "co.uk": "en", "nl": "nl", "se": "sv", "pl": "pl",
+}
 
 st.header(t("nav.matrix"))
 st.caption(t("matrix.caption"))
@@ -131,7 +137,8 @@ def collect_rows(rows: pd.DataFrame) -> None:
                 resp = requests.get(
                     "https://api.scrapingdog.com/amazon/product",
                     params={"api_key": key, "domain": mp, "asin": asin,
-                            "country": MP_COUNTRY.get(mp, "us")},
+                            "country": MP_COUNTRY.get(mp, "us"),
+                            "language": MP_LANGUAGE.get(mp, "en")},
                     timeout=60,
                 )
                 ok = resp.status_code == 200
