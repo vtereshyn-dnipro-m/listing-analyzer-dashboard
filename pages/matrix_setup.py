@@ -339,7 +339,7 @@ else:
     page = min(st.session_state.get("matrix-page", 1), pages)
     chunk = view.iloc[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
 
-    # ---- табличный режим
+    # ---- табличный режим (с выбором строк)
     if view_mode == "table":
         tv = chunk.copy()
         tv["статус"] = tv.apply(
@@ -353,21 +353,51 @@ else:
             + int(0 if pd.isna(x["yellow"]) else x["yellow"]), axis=1)
         tv["ссылка"] = tv.apply(
             lambda x: f"https://www.amazon.{x['marketplace']}/dp/{x['asin']}", axis=1)
-        st.dataframe(
-            tv[["main_image", "sku_group", "asin", "marketplace", "статус",
-                "последний сбор", "боли", "title", "ссылка"]],
+        tv.insert(0, "выбрать", False)
+
+        edited = st.data_editor(
+            tv[["выбрать", "main_image", "sku_group", "asin", "marketplace",
+                "статус", "последний сбор", "боли", "title", "ссылка"]],
             column_config={
+                "выбрать": st.column_config.CheckboxColumn("", width="small"),
                 "main_image": st.column_config.ImageColumn("Фото", width="small"),
-                "sku_group": st.column_config.TextColumn("SKU", width="small"),
-                "asin": st.column_config.TextColumn("ASIN", width="small"),
-                "marketplace": st.column_config.TextColumn("MP", width="small"),
-                "статус": st.column_config.TextColumn("Статус", width="small"),
-                "боли": st.column_config.NumberColumn("Болей", width="small"),
-                "title": st.column_config.TextColumn("Название", width="large"),
+                "sku_group": st.column_config.TextColumn("SKU", width="small", disabled=True),
+                "asin": st.column_config.TextColumn("ASIN", width="small", disabled=True),
+                "marketplace": st.column_config.TextColumn("MP", width="small", disabled=True),
+                "статус": st.column_config.TextColumn("Статус", width="small", disabled=True),
+                "последний сбор": st.column_config.TextColumn("Собрано", disabled=True),
+                "боли": st.column_config.NumberColumn("Болей", width="small", disabled=True),
+                "title": st.column_config.TextColumn("Название", width="large", disabled=True),
                 "ссылка": st.column_config.LinkColumn("Листинг", display_text="открыть"),
             },
             hide_index=True, use_container_width=True, height=460,
+            key=f"matrix-table-{page}",
         )
+        sel = edited[edited["выбрать"]]
+        sel_keys = [(r["asin"], r["marketplace"]) for _, r in sel.iterrows()]
+
+        ta1, ta2, _ = st.columns([2, 2, 3])
+        if ta1.button(f"{t('matrix.collect_selected')} ({len(sel_keys)})",
+                      type="primary", disabled=not sel_keys, key="tbl-collect"):
+            mask = chunk.apply(
+                lambda x: (x["asin"], x["marketplace"]) in sel_keys, axis=1)
+            collect_rows(chunk[mask])
+        if ta2.button(f"{t('matrix.delete_selected')} ({len(sel_keys)})",
+                      disabled=not sel_keys, key="tbl-delete"):
+            try:
+                conn = get_conn()
+                with conn, conn.cursor() as cur:
+                    for a, m in sel_keys:
+                        cur.execute(
+                            "DELETE FROM product_matrix WHERE asin = %s AND marketplace = %s",
+                            (a, m))
+                conn.close()
+                st.cache_data.clear()
+                st.success(f"{t('matrix.deleted')} {len(sel_keys)}")
+                st.rerun()
+            except Exception as e:
+                st.error(f"{e}")
+
         st.caption(t("list.sort_hint"))
         st.stop()
 
