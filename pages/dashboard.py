@@ -279,6 +279,11 @@ mps = sorted(diag["marketplace"].unique())
 mp_sel = mp_col.multiselect("MP", mps, default=[], label_visibility="collapsed",
                             placeholder="Все маркетплейсы")
 
+mode = st.radio(
+    "Вид", ["Карточки", "Таблица"], horizontal=True,
+    label_visibility="collapsed", key="diag_mode",
+)
+
 view = diag
 sev_f = st.session_state.get("sev_filter")
 grp_f = st.session_state.get("grp_filter")
@@ -305,7 +310,31 @@ view["_o"] = view["severity"].map(SEV_ORDER).fillna(9)
 n_products = view.groupby(["asin", "marketplace"]).ngroups
 
 # ---------------------------------------------------------------- вывод
-if n_products < GROUP_THRESHOLD:
+if mode == "Таблица":
+    tbl = view.sort_values(["_o", "asin"]).copy()
+    tbl["товар"] = tbl.apply(
+        lambda r: (r["sku_group"] if r["sku_group"] and r["sku_group"] != r["asin"]
+                   else "") or "", axis=1)
+    tbl["важность"] = tbl["severity"].map(
+        {"red": "🔴 критично", "amber": "🟠 важно", "yellow": "🟡 план"})
+    tbl["ссылка"] = tbl.apply(
+        lambda r: f"https://www.amazon.{r['marketplace']}/dp/{r['asin']}", axis=1)
+    st.dataframe(
+        tbl[["важность", "_group", "товар", "asin", "marketplace",
+             "pain", "action", "ссылка"]],
+        column_config={
+            "важность": st.column_config.TextColumn("Важность", width="small"),
+            "_group": st.column_config.TextColumn("Тип", width="small"),
+            "товар": st.column_config.TextColumn("SKU", width="small"),
+            "asin": st.column_config.TextColumn("ASIN", width="small"),
+            "marketplace": st.column_config.TextColumn("MP", width="small"),
+            "pain": st.column_config.TextColumn("Боль", width="large"),
+            "action": st.column_config.TextColumn("Действие", width="medium"),
+            "ссылка": st.column_config.LinkColumn("Листинг", display_text="открыть"),
+        },
+        hide_index=True, use_container_width=True,
+    )
+elif n_products < GROUP_THRESHOLD:
     for _, r in view.sort_values(["_o", "created_at"],
                                  ascending=[True, False]).iterrows():
         render_pain(r, title_map)
@@ -333,7 +362,9 @@ else:
         )
         ptitle = title_map.get((grp["asin"], grp["mp"])) or ""
         short = ptitle[:55] + ("…" if len(ptitle) > 55 else "")
-        label = (f"{grp['sku']} · {grp['asin']} · {grp['mp']} · {dots}"
+        head = (f"{grp['sku']} · {grp['asin']}"
+                if grp["sku"] and grp["sku"] != grp["asin"] else grp["asin"])
+        label = (f"{head} · {grp['mp']} · {dots}"
                  + (f" · {short}" if short else ""))
         with st.expander(label, expanded=(i == 0 and page == 1)):
             for _, r in grp["rows"].sort_values(
