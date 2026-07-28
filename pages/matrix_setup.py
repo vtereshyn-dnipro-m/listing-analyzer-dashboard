@@ -299,7 +299,7 @@ else:
 
     data = df[~df.is_competitor] if seg == "ours" else df[df.is_competitor]
 
-    f1, f2, f3 = st.columns([3, 2, 2])
+    f1, f2, f3, f4 = st.columns([3, 2, 2, 1.6])
     query = f1.text_input("Поиск", key="matrix-q", label_visibility="collapsed",
                           placeholder=t("matrix.search_placeholder"))
     mps = sorted(data["marketplace"].unique()) if not data.empty else []
@@ -307,6 +307,17 @@ else:
                             placeholder=t("matrix.all_mp"),
                             label_visibility="collapsed")
     only_stale = f3.checkbox(t("matrix.only_stale"), key="matrix-stale")
+    try:
+        view_mode = f4.segmented_control(
+            "Вид", ["cards", "table"], default="cards",
+            format_func=lambda k: t("list.cards") if k == "cards" else t("list.table"),
+            selection_mode="single", label_visibility="collapsed", key="matrix-mode")
+    except AttributeError:
+        view_mode = f4.radio(
+            "Вид", ["cards", "table"], horizontal=True,
+            format_func=lambda k: t("list.cards") if k == "cards" else t("list.table"),
+            label_visibility="collapsed", key="matrix-mode")
+    view_mode = view_mode or "cards"
 
     view = data
     if query.strip():
@@ -327,6 +338,38 @@ else:
     pages = max(1, (len(view) + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(st.session_state.get("matrix-page", 1), pages)
     chunk = view.iloc[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
+
+    # ---- табличный режим
+    if view_mode == "table":
+        tv = chunk.copy()
+        tv["статус"] = tv.apply(
+            lambda x: "✓ ok" if x["last_ok"] is True
+            else ("✗ err" if x["last_ok"] is False else "—"), axis=1)
+        tv["последний сбор"] = pd.to_datetime(
+            tv["last_fetch"], errors="coerce").dt.strftime("%d.%m %H:%M").fillna("—")
+        tv["боли"] = tv.apply(
+            lambda x: int(0 if pd.isna(x["red"]) else x["red"])
+            + int(0 if pd.isna(x["amber"]) else x["amber"])
+            + int(0 if pd.isna(x["yellow"]) else x["yellow"]), axis=1)
+        tv["ссылка"] = tv.apply(
+            lambda x: f"https://www.amazon.{x['marketplace']}/dp/{x['asin']}", axis=1)
+        st.dataframe(
+            tv[["main_image", "sku_group", "asin", "marketplace", "статус",
+                "последний сбор", "боли", "title", "ссылка"]],
+            column_config={
+                "main_image": st.column_config.ImageColumn("Фото", width="small"),
+                "sku_group": st.column_config.TextColumn("SKU", width="small"),
+                "asin": st.column_config.TextColumn("ASIN", width="small"),
+                "marketplace": st.column_config.TextColumn("MP", width="small"),
+                "статус": st.column_config.TextColumn("Статус", width="small"),
+                "боли": st.column_config.NumberColumn("Болей", width="small"),
+                "title": st.column_config.TextColumn("Название", width="large"),
+                "ссылка": st.column_config.LinkColumn("Листинг", display_text="открыть"),
+            },
+            hide_index=True, use_container_width=True, height=460,
+        )
+        st.caption(t("list.sort_hint"))
+        st.stop()
 
     # ---- строки-карточки
     selected_keys: list[tuple[str, str]] = []
@@ -360,6 +403,8 @@ else:
             else ((ERR_BG, ERR_TEXT, "✗ err") if fetch_failed else ("#F0EFEA", MUTED, "—"))
         )
 
+        sku_val = r["sku_group"]
+        sku_part = (f"{sku_val} ·" if sku_val and sku_val != asin else "")
         img = None if pd.isna(r.get("main_image")) else r.get("main_image")
         thumb_html = (
             f"<img src='{img}' style='width:40px;height:40px;object-fit:contain;"
@@ -378,9 +423,11 @@ else:
               {thumb_html}
               <div>
               <div style="font-size:14px;font-weight:600;color:{INK};">
-                {r['sku_group']}
+                {sku_part}
                 <span style="font-family:{MONO};font-weight:400;color:{MUTED};font-size:12px;">
-                  · {asin} · {mp}</span>
+                  <a href="https://www.amazon.{mp}/dp/{asin}" target="_blank"
+                     style="color:{MUTED};text-decoration:none;
+                            border-bottom:1px dotted {MUTED};">{asin}</a> · {mp}</span>
               </div>
               <div style="font-size:12px;color:{MUTED};">{title_line} · {fetch_line} {('· ' + pains) if pains else ''}</div>
               </div>
@@ -517,4 +564,4 @@ with st.expander(t("matrix.schedule_edit")):
             st.success(t("matrix.schedule_saved"))
             st.rerun()
         except Exception as e:
-            st.error(f"Не сохранилось: {e}") 
+            st.error(f"Не сохранилось: {e}")
