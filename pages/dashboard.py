@@ -156,6 +156,28 @@ for _, r in view.head(50).iterrows():
         headline = "Товар недоступен к покупке"
         kind = "Сток"
         money_line = money
+    elif rule == "few_images":
+        digits = [int(s) for s in str(r["pain"]).split() if s.isdigit()]
+        current = digits[0] if digits else 0
+        ruler = limit_ruler_html(
+            current, 7,
+            left_label=f"{current} фото",
+            right_label="норма 7+",
+            over_style=False,
+        )
+        headline = f"Галерея: {current} фото при норме категории 7+"
+        kind = "Медиа"
+        money_line = f"{current} / 7"
+    elif rule == "no_video":
+        ruler = ""
+        headline = "Нет видео на листинге"
+        kind = "Медиа"
+        money_line = "видео: нет"
+    elif rule == "no_aplus":
+        ruler = ""
+        headline = "Нет A+ контента"
+        kind = "Контент"
+        money_line = "A+: нет"
     else:
         ruler = ""
         headline = str(r["pain"])
