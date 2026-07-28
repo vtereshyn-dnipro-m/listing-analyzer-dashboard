@@ -21,7 +21,7 @@ from components.ui import (
 
 MIN_REVIEWS = 50
 MIN_IMAGES = 7
-GROUP_THRESHOLD = 4       # с этого числа товаров — режим строк-групп
+GROUP_THRESHOLD = 1       # режим строк-групп всегда (единый вид на любом объёме)
 PAGE_SIZE = 25
 SEV_ORDER = {"red": 0, "amber": 1, "yellow": 2}
 SEV_DOT = {"red": "🔴", "amber": "🟠", "yellow": "🟡"}
