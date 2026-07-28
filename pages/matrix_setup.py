@@ -424,7 +424,7 @@ else:
               <div>
               <div style="font-size:14px;font-weight:600;color:{INK};">
                 {sku_part}
-                <span style="font-family:{MONO};font-weight:400;color:{MUTED};font-size:12px;">
+                <span style='font-family:{MONO};font-weight:400;color:{MUTED};font-size:12px;'>
                   <a href="https://www.amazon.{mp}/dp/{asin}" target="_blank"
                      style="color:{MUTED};text-decoration:none;
                             border-bottom:1px dotted {MUTED};">{asin}</a> · {mp}</span>
@@ -521,7 +521,7 @@ st.markdown(
       {eyebrow(t('matrix.schedule_header'))}
       <div style="display:flex;gap:16px;align-items:center;margin-top:10px;">
         {status_chip}
-        <span style="font-family:{MONO};font-size:14px;color:{INK};">
+        <span style='font-family:{MONO};font-size:14px;color:{INK};'>
           {sched.get('run_time', '13:00')} Kyiv</span>
         <span style="font-size:13px;color:{INK};">
           {' '.join(DAY_LABELS[d] for d in sched_days)}</span>
