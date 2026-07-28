@@ -86,10 +86,12 @@ def load_matrix() -> pd.DataFrame:
             """
             SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor, m.added_at,
                    s.fetched_at AS last_fetch, s.ok AS last_ok, s.title,
+                   s.main_image,
                    d.red, d.amber, d.yellow
             FROM product_matrix m
             LEFT JOIN LATERAL (
-                SELECT fetched_at, ok, title FROM listing_snapshots s
+                SELECT fetched_at, ok, title, raw->>'main_image' AS main_image
+                FROM listing_snapshots s
                 WHERE s.asin = m.asin AND s.marketplace = m.marketplace
                 ORDER BY s.fetched_at DESC LIMIT 1
             ) s ON TRUE
@@ -358,6 +360,12 @@ else:
             else ((ERR_BG, ERR_TEXT, "✗ err") if fetch_failed else ("#F0EFEA", MUTED, "—"))
         )
 
+        img = None if pd.isna(r.get("main_image")) else r.get("main_image")
+        thumb_html = (
+            f"<img src='{img}' style='width:40px;height:40px;object-fit:contain;"
+            f"background:#fff;border:1px solid {BORDER};border-radius:8px;"
+            f"margin-right:12px;vertical-align:middle;'>" if img else ""
+        )
         c_check, c_card, c_badge, c_btn = st.columns([0.4, 7, 1, 1.3])
         if c_check.checkbox("", key=f"sel-{row_key}", label_visibility="collapsed"):
             selected_keys.append((asin, mp))
@@ -366,12 +374,17 @@ else:
             <div style="background:{CARD};border:1px solid {BORDER};
                         border-left:3px solid {edge};border-radius:0 10px 10px 0;
                         padding:10px 14px;">
+              <div style="display:flex;align-items:center;">
+              {thumb_html}
+              <div>
               <div style="font-size:14px;font-weight:600;color:{INK};">
                 {r['sku_group']}
                 <span style="font-family:{MONO};font-weight:400;color:{MUTED};font-size:12px;">
                   · {asin} · {mp}</span>
               </div>
               <div style="font-size:12px;color:{MUTED};">{title_line} · {fetch_line} {('· ' + pains) if pains else ''}</div>
+              </div>
+              </div>
             </div>
             """,
             unsafe_allow_html=True,
