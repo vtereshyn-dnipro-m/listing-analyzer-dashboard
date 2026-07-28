@@ -64,7 +64,8 @@ def load_titles() -> pd.DataFrame:
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (s.asin, s.marketplace)
-                   s.asin, s.marketplace, s.title
+                   s.asin, s.marketplace, s.title,
+                   s.raw->>'main_image' AS main_image
             FROM listing_snapshots s
             WHERE s.ok = TRUE AND s.title <> ''
             ORDER BY s.asin, s.marketplace, s.fetched_at DESC
@@ -197,6 +198,7 @@ def render_pain(r: pd.Series, title_map: dict) -> None:
         severity=str(r["severity"]),
         asin=asin, marketplace=mp,
         product_title=product_title,
+        image_url=image_map.get((asin, mp)),
         cause=str(r["cause"]), action=str(r["action"]),
         **build_card_args(r, product_title),
     )
@@ -205,9 +207,11 @@ def render_pain(r: pd.Series, title_map: dict) -> None:
 # ---------------------------------------------------------------- страница
 diag = load_diagnosis()
 titles = load_titles()
-title_map = {}
+title_map, image_map = {}, {}
 if not titles.empty:
     title_map = {(r["asin"], r["marketplace"]): r["title"]
+                 for _, r in titles.iterrows()}
+    image_map = {(r["asin"], r["marketplace"]): r.get("main_image")
                  for _, r in titles.iterrows()}
 
 if diag.empty:
