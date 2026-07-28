@@ -1,20 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-pages/photo.py — Фото: аудит галереи листинга через Gemini Vision.
+pages/photo.py — Фото и A+ : аудит визуала листинга через Gemini Vision.
 
-Берёт URL фото из последнего снапшота, отправляет их в Gemini вместе
-с методологией photo_brief (scope='photo_brief' + common), получает
-JSON с чек-пунктами, считает грейд КОДОМ, показывает ТЗ дизайнеру.
-Результат сохраняется в photo_analysis.
+Вкладка «Галерея» — главное фото + галерея (методология photo_brief).
+Вкладка «A+ контент» — модули A+ из снапшота (методология aplus).
+Грейд в обоих случаях считает КОД, ИИ только отвечает по чек-пунктам.
+Результаты пишутся в photo_analysis (analysis_type = gallery | aplus).
 """
 from __future__ import annotations
 
+import base64
 import json
 
 import pandas as pd
 import streamlit as st
 
-from i18n import t
 from services.db import get_conn, cfg
 from components.ui import inject_fonts, eyebrow
 
@@ -22,8 +22,6 @@ inject_fonts()
 
 INK = "#1A1815"
 MUTED = "#8A8578"
-BORDER = "#E7E4DD"
-CARD = "#FFFFFF"
 ACCENT = "#E8590C"
 OK_TEXT = "#2F6B3A"
 MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
@@ -34,6 +32,7 @@ GEMINI_URL = (
     f"{VISION_MODEL}:generateContent"
 )
 MAX_IMAGES = 10
+MAX_APLUS = 8
 
 MAIN_CHECKS = [
     ("main_white_bg", "фон чисто белый"),
@@ -50,26 +49,31 @@ GALLERY_CHECKS = [
     ("role_scale", "масштаб / габариты"),
     ("role_compat", "совместимость платформы"),
 ]
+APLUS_CHECKS = [
+    ("aplus_brand_story", "есть блок о бренде"),
+    ("aplus_benefits", "выгоды, а не только характеристики"),
+    ("aplus_comparison", "сравнение моделей линейки"),
+    ("aplus_usecases", "сценарии применения"),
+    ("aplus_readable_mobile", "текст читаем на мобильном"),
+    ("aplus_no_claims_risk", "нет запрещённых утверждений и чужих брендов"),
+    ("aplus_consistent_style", "единый стиль с брендом"),
+]
 
-PROMPT = """{skill}
+PROMPT_TPL = """{skill}
 
-Проанализируй фото листинга Amazon (маркетплейс {mp}, товар: {title}).
-Первое изображение — ГЛАВНОЕ фото, остальные — галерея.
+Проанализируй изображения листинга Amazon (маркетплейс {mp}, товар: {title}).
+{context}
 
 Ответь ТОЛЬКО валидным JSON:
 {{
-  "main": {{{main_keys}}},
-  "gallery": {{{gallery_keys}}},
+  "{block}": {{{keys}}},
   "notes": {{"<ключ_чекпункта>": "короткое замечание по-русски"}},
-  "designer_brief": "ТЗ дизайнеру: что переснять и как, по пунктам"
+  "designer_brief": "ТЗ дизайнеру: что переснять/переделать, по пунктам"
 }}
 Значения всех чек-пунктов — true или false."""
 
 
-st.header("Фото")
-st.caption("Аудит галереи по методологии photo_brief. Грейд считает код, ИИ только смотрит.")
-
-
+# ---------------------------------------------------------------- данные
 @st.cache_data(ttl=300)
 def load_candidates() -> pd.DataFrame:
     try:
@@ -93,26 +97,26 @@ def load_candidates() -> pd.DataFrame:
 
 
 @st.cache_data(ttl=120)
-def load_skill() -> tuple[str, int]:
-    """common + photo_brief, склеенные."""
+def load_skill(scope: str) -> tuple[str, int]:
+    """common + указанная область, склеенные."""
     try:
         conn = get_conn()
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (scope) scope, skill_text, version
             FROM synthesis_skill
-            WHERE is_active = TRUE AND scope IN ('common', 'photo_brief')
+            WHERE is_active = TRUE AND scope IN ('common', %(scope)s)
             ORDER BY scope, version DESC
             """,
-            conn,
+            conn, params={"scope": scope},
         )
         conn.close()
         parts, ver = [], 0
-        for sc in ("common", "photo_brief"):
+        for sc in ("common", scope):
             row = df[df["scope"] == sc]
             if not row.empty:
                 parts.append(str(row.iloc[0]["skill_text"]))
-                if sc == "photo_brief":
+                if sc == scope:
                     ver = int(row.iloc[0]["version"])
         if parts:
             return "\n\n".join(parts), ver
@@ -121,23 +125,56 @@ def load_skill() -> tuple[str, int]:
     return "", 0
 
 
-def extract_images(raw) -> list[str]:
+def _img_id(url: str) -> str:
+    """ID картинки Amazon: .../I/{ID}._SIZE_.jpg -> {ID} (для дедупа размеров)."""
     try:
-        data = raw if isinstance(raw, dict) else json.loads(raw or "{}")
+        tail = url.rsplit("/I/", 1)[-1]
+        return tail.split(".")[0]
     except Exception:
-        return []
+        return url
+
+
+def _raw_dict(raw) -> dict:
+    try:
+        return raw if isinstance(raw, dict) else json.loads(raw or "{}")
+    except Exception:
+        return {}
+
+
+def extract_images(raw) -> list[str]:
+    data = _raw_dict(raw)
     imgs = data.get("images") or data.get("images_of_specified_asin") or []
     main = data.get("main_image")
-    out: list[str] = []
-    if main:
-        out.append(main)
-    for u in imgs:
-        if isinstance(u, str) and u not in out:
-            out.append(u)
+    out, seen = [], set()
+    for u in ([main] if main else []) + list(imgs):
+        if not isinstance(u, str):
+            continue
+        uid = _img_id(u)
+        if uid in seen:
+            continue
+        seen.add(uid)
+        out.append(u)
     return out[:MAX_IMAGES]
 
 
-def analyze(images: list[str], title: str, mp: str, skill: str) -> dict | None:
+def extract_aplus(raw) -> list[str]:
+    data = _raw_dict(raw)
+    imgs = data.get("aplus_images") or []
+    out, seen = [], set()
+    for u in imgs:
+        if not isinstance(u, str):
+            continue
+        uid = _img_id(u)
+        if uid in seen:
+            continue
+        seen.add(uid)
+        out.append(u)
+    return out[:MAX_APLUS]
+
+
+# ---------------------------------------------------------------- анализ
+def analyze(images: list[str], title: str, mp: str, skill: str,
+            checks: list[tuple[str, str]], block: str, context: str) -> dict | None:
     api_key = cfg("GEMINI_API_KEY")
     if not api_key:
         st.error("GEMINI_API_KEY не найден в секретах.")
@@ -150,145 +187,184 @@ def analyze(images: list[str], title: str, mp: str, skill: str) -> dict | None:
             r = _rq.get(url, timeout=30)
             if r.status_code != 200:
                 continue
-            import base64
-            parts.append({
-                "inline_data": {
-                    "mime_type": r.headers.get("Content-Type", "image/jpeg"),
-                    "data": base64.b64encode(r.content).decode(),
-                }
-            })
+            parts.append({"inline_data": {
+                "mime_type": r.headers.get("Content-Type", "image/jpeg"),
+                "data": base64.b64encode(r.content).decode(),
+            }})
         if not parts:
             st.error("Не удалось загрузить ни одного изображения.")
             return None
 
-        prompt = PROMPT.format(
-            skill=skill or "Оцени фото листинга Amazon по здравому смыслу.",
-            mp=mp, title=title[:120],
-            main_keys=", ".join(f'"{k}": true' for k, _ in MAIN_CHECKS),
-            gallery_keys=", ".join(f'"{k}": true' for k, _ in GALLERY_CHECKS),
-        )
-        parts.append({"text": prompt})
+        parts.append({"text": PROMPT_TPL.format(
+            skill=skill or "Оцени визуал листинга Amazon по здравому смыслу.",
+            mp=mp, title=title[:120], context=context, block=block,
+            keys=", ".join(f'"{k}": true' for k, _ in checks),
+        )})
 
         resp = _rq.post(
             GEMINI_URL,
             headers={"x-goog-api-key": str(api_key).strip()},
-            json={
-                "contents": [{"parts": parts}],
-                "generationConfig": {"responseMimeType": "application/json"},
-            },
-            timeout=180,
+            json={"contents": [{"parts": parts}],
+                  "generationConfig": {"responseMimeType": "application/json"}},
+            timeout=240,
         )
         if resp.status_code != 200:
             st.error(f"Gemini HTTP {resp.status_code}: {resp.text[:300]}")
             return None
-        text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(text)
+        return json.loads(
+            resp.json()["candidates"][0]["content"]["parts"][0]["text"])
     except Exception as e:
         st.error(f"Ошибка анализа: {e}")
         return None
 
 
-def compute_grade(main: dict, gallery: dict) -> tuple[str, int, int]:
-    """Грейд считает код, не ИИ."""
-    m = sum(1 for k, _ in MAIN_CHECKS if main.get(k) is True)
-    g = sum(1 for k, _ in GALLERY_CHECKS if gallery.get(k) is True)
-    total = m / len(MAIN_CHECKS) * 0.6 + g / len(GALLERY_CHECKS) * 0.4
-    grade = "A" if total >= 0.9 else "B" if total >= 0.75 else "C" if total >= 0.5 else "D"
-    return grade, m, g
+def grade_from(score: float) -> str:
+    return "A" if score >= 0.9 else "B" if score >= 0.75 else "C" if score >= 0.5 else "D"
 
 
-def save(asin, mp, res, grade, m, g, n_img, ver) -> None:
+def save(asin, mp, res, grade, m, g, n_img, ver, atype) -> None:
     try:
         conn = get_conn()
         with conn, conn.cursor() as cur:
             cur.execute(
                 """
                 INSERT INTO photo_analysis
-                    (asin, marketplace, grade, score_main, score_gallery,
-                     checks, designer_brief, images_analyzed, model, skill_version, raw)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                    (asin, marketplace, grade, score_main, score_gallery, checks,
+                     designer_brief, images_analyzed, model, skill_version,
+                     analysis_type, raw)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                 """,
                 (asin, mp, grade, m, g,
-                 json.dumps({"main": res.get("main"), "gallery": res.get("gallery")},
-                            ensure_ascii=False),
+                 json.dumps(res, ensure_ascii=False),
                  res.get("designer_brief", ""), n_img, VISION_MODEL, ver,
-                 json.dumps(res, ensure_ascii=False)),
+                 atype, json.dumps(res, ensure_ascii=False)),
             )
         conn.close()
     except Exception as e:
         st.warning(f"Анализ выполнен, но не сохранён: {e}")
 
 
+def render_checks(res: dict, block: str, checks: list[tuple[str, str]],
+                  title: str) -> None:
+    data = res.get(block, {}) or {}
+    notes = res.get("notes", {}) or {}
+    st.markdown(f"**{title}**")
+    for k, label in checks:
+        ok = data.get(k) is True
+        note = notes.get(k, "")
+        st.markdown(("✅ " if ok else "❌ ") + label
+                    + (f" — {note}" if note and not ok else ""))
+
+
+def show_grade(grade: str, detail: str) -> None:
+    color = OK_TEXT if grade in ("A", "B") else ACCENT
+    st.markdown(
+        f"<div style='font-size:22px;font-weight:700;color:{INK};'>Грейд "
+        f"<span style='color:{color};font-family:{MONO};'>{grade}</span>"
+        f"<span style='font-size:13px;color:{MUTED};font-weight:400;'> · {detail}"
+        f"</span></div>", unsafe_allow_html=True)
+
+
 # ---------------------------------------------------------------- UI
+st.header("Фото и A+")
+st.caption("Аудит визуала по методологиям photo_brief и aplus. "
+           "Грейд считает код, ИИ только смотрит.")
+
 cands = load_candidates()
 if cands.empty:
     st.info("Нет собранных листингов — прогони сбор в Матрице товаров.")
     st.stop()
-
-skill, skill_ver = load_skill()
-if not skill:
-    st.warning("Методология photo_brief пуста — заполни её на странице Методологии.")
 
 opts = {f"{r['sku_group'] or r['asin']} · {r['asin']} · {r['marketplace']}": i
         for i, r in cands.iterrows()}
 choice = st.selectbox("Товар", list(opts.keys()))
 row = cands.loc[opts[choice]]
 asin, mp, title = row["asin"], row["marketplace"], row["title"]
-images = extract_images(row["raw"])
 
-st.markdown(
-    eyebrow(f"{asin} · {mp} · фото: {len(images)} · методология v{skill_ver}"),
-    unsafe_allow_html=True)
+tab_gallery, tab_aplus = st.tabs(["Галерея", "A+ контент"])
 
-if images:
-    cols = st.columns(min(len(images), 6))
-    for i, url in enumerate(images[:6]):
-        cols[i].image(url, use_container_width=True)
-else:
-    st.warning("В снапшоте нет URL изображений — пересобери товар.")
+# ---- галерея
+with tab_gallery:
+    skill, ver = load_skill("photo_brief")
+    if not skill:
+        st.warning("Методология photo_brief пуста — заполни на странице Методологии.")
+    images = extract_images(row["raw"])
+    st.markdown(eyebrow(f"{asin} · {mp} · фото: {len(images)} · методология v{ver}"),
+                unsafe_allow_html=True)
+    if images:
+        cols = st.columns(min(len(images), 6))
+        for i, url in enumerate(images[:6]):
+            cols[i].image(url, use_container_width=True)
+    else:
+        st.warning("В снапшоте нет изображений — пересобери товар.")
 
-if st.button("Проанализировать галерею", type="primary", disabled=not images):
-    with st.spinner(f"Gemini смотрит {len(images)} фото..."):
-        res = analyze(images, title, mp, skill)
-    if res:
-        st.session_state["photo_res"] = res
-        st.session_state["photo_key"] = (asin, mp)
-        main, gallery = res.get("main", {}), res.get("gallery", {})
-        grade, m, g = compute_grade(main, gallery)
-        save(asin, mp, res, grade, m, g, len(images), skill_ver)
+    if st.button("Проанализировать галерею", type="primary",
+                 disabled=not images, key="btn-gallery"):
+        with st.spinner(f"Gemini смотрит {len(images)} фото..."):
+            res = analyze(
+                images, title, mp, skill, MAIN_CHECKS + GALLERY_CHECKS, "main",
+                "Первое изображение — ГЛАВНОЕ фото, остальные — галерея. "
+                "Ключи main_* относятся к главному фото, role_* — к галерее в целом.",
+            )
+        if res:
+            main = {k: v for k, v in (res.get("main", {}) or {}).items()}
+            m = sum(1 for k, _ in MAIN_CHECKS if main.get(k) is True)
+            g = sum(1 for k, _ in GALLERY_CHECKS if main.get(k) is True)
+            score = m / len(MAIN_CHECKS) * 0.6 + g / len(GALLERY_CHECKS) * 0.4
+            grade = grade_from(score)
+            st.session_state["res_gallery"] = (asin, mp, res, grade, m, g)
+            save(asin, mp, res, grade, m, g, len(images), ver, "gallery")
 
-res = st.session_state.get("photo_res")
-if res and st.session_state.get("photo_key") == (asin, mp):
-    main, gallery = res.get("main", {}), res.get("gallery", {})
-    notes = res.get("notes", {}) or {}
-    grade, m, g = compute_grade(main, gallery)
-    color = OK_TEXT if grade in ("A", "B") else ACCENT
+    saved = st.session_state.get("res_gallery")
+    if saved and saved[0] == asin and saved[1] == mp:
+        _, _, res, grade, m, g = saved
+        st.divider()
+        show_grade(grade, f"главное {m}/{len(MAIN_CHECKS)} · "
+                          f"галерея {g}/{len(GALLERY_CHECKS)}")
+        c1, c2 = st.columns(2)
+        with c1:
+            render_checks(res, "main", MAIN_CHECKS, "Главное фото")
+        with c2:
+            render_checks(res, "main", GALLERY_CHECKS, "Роли галереи")
+        if res.get("designer_brief"):
+            st.markdown("**ТЗ дизайнеру**")
+            st.code(res["designer_brief"], language=None)
 
-    st.divider()
-    st.markdown(
-        f"<div style='font-size:22px;font-weight:700;color:{INK};'>Грейд "
-        f"<span style='color:{color};font-family:{MONO};'>{grade}</span>"
-        f"<span style='font-size:13px;color:{MUTED};font-weight:400;'>"
-        f" · главное {m}/{len(MAIN_CHECKS)} · галерея {g}/{len(GALLERY_CHECKS)}</span></div>",
-        unsafe_allow_html=True)
+# ---- A+ контент
+with tab_aplus:
+    skill_a, ver_a = load_skill("aplus")
+    if not skill_a:
+        st.warning("Методология aplus пуста — заполни на странице Методологии.")
+    aplus = extract_aplus(row["raw"])
+    st.markdown(eyebrow(f"{asin} · {mp} · модулей A+: {len(aplus)} · методология v{ver_a}"),
+                unsafe_allow_html=True)
+    if aplus:
+        for url in aplus[:4]:
+            st.image(url, use_container_width=True)
+    else:
+        st.info("A+ контента нет в снапшоте — либо его нет на листинге, "
+                "либо пересобери товар.")
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("**Главное фото**")
-        for k, label in MAIN_CHECKS:
-            ok = main.get(k) is True
-            note = notes.get(k, "")
-            st.markdown(("✅ " if ok else "❌ ") + label
-                        + (f" — {note}" if note and not ok else ""))
-    with c2:
-        st.markdown("**Роли галереи**")
-        for k, label in GALLERY_CHECKS:
-            ok = gallery.get(k) is True
-            note = notes.get(k, "")
-            st.markdown(("✅ " if ok else "❌ ") + label
-                        + (f" — {note}" if note and not ok else ""))
+    if st.button("Проанализировать A+", type="primary",
+                 disabled=not aplus, key="btn-aplus"):
+        with st.spinner(f"Gemini смотрит {len(aplus)} модулей A+..."):
+            res_a = analyze(
+                aplus, title, mp, skill_a, APLUS_CHECKS, "aplus",
+                "Это модули A+ контента листинга, по порядку сверху вниз.",
+            )
+        if res_a:
+            block = res_a.get("aplus", {}) or {}
+            a = sum(1 for k, _ in APLUS_CHECKS if block.get(k) is True)
+            grade_a = grade_from(a / len(APLUS_CHECKS))
+            st.session_state["res_aplus"] = (asin, mp, res_a, grade_a, a)
+            save(asin, mp, res_a, grade_a, a, 0, len(aplus), ver_a, "aplus")
 
-    brief = res.get("designer_brief", "")
-    if brief:
-        st.markdown("**ТЗ дизайнеру**")
-        st.code(brief, language=None)
+    saved_a = st.session_state.get("res_aplus")
+    if saved_a and saved_a[0] == asin and saved_a[1] == mp:
+        _, _, res_a, grade_a, a = saved_a
+        st.divider()
+        show_grade(grade_a, f"{a}/{len(APLUS_CHECKS)} пунктов")
+        render_checks(res_a, "aplus", APLUS_CHECKS, "A+ контент")
+        if res_a.get("designer_brief"):
+            st.markdown("**ТЗ дизайнеру**")
+            st.code(res_a["designer_brief"], language=None)
