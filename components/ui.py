@@ -15,7 +15,7 @@ MUTED = "#8A8578"
 BORDER = "#E7E4DD"
 CARD = "#FFFFFF"
 TRACK = "#F0EFEA"
-MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace' 
+MONO = "'JetBrains Mono','SFMono-Regular',Consolas,monospace"
 
 SEV_EDGE = {"red": "#A32D2D", "amber": ACCENT, "yellow": AMBER}
 SEV_LABEL = {"red": "критично", "amber": "важно", "yellow": "план"}
@@ -135,7 +135,9 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
         <div style="background:{CARD};border:1px solid {BORDER};border-left:3px solid {edge};
                     border-radius:0 12px 12px 0;padding:18px 22px;margin-bottom:14px;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
-            {eyebrow(f'{kind_label} · {asin} · {marketplace}')}
+            {eyebrow(f"{kind_label} · <a href='https://www.amazon.{marketplace}/dp/{asin}' "
+                     f"target='_blank' style='color:{MUTED};text-decoration:none;"
+                     f"border-bottom:1px dotted {MUTED};'>{asin}</a> · {marketplace}")}
             <span style="font-family:{MONO};font-size:13px;font-weight:600;color:{edge};">{money}</span>
           </div>
           <div style="font-size:16px;font-weight:700;color:{INK};margin-bottom:3px;">{headline}</div>
