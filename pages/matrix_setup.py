@@ -332,11 +332,11 @@ else:
         asin, mp = r["asin"], r["marketplace"]
         row_key = f"{asin}-{mp}"
 
-        has_red = (r["red"] or 0) > 0
+        has_red = (0 if pd.isna(r["red"]) else int(r["red"])) > 0
         fetch_failed = (r["last_ok"] is not None) and (not r["last_ok"])
         edge = ERR_TEXT if (has_red or fetch_failed) else OK_TEXT
 
-        title = (r["title"] or "")[:90]
+        title = "" if pd.isna(r["title"]) else str(r["title"])[:90]
         title_line = f"«{title}…»" if title else t("matrix.no_data_yet")
         if pd.notna(r["last_fetch"]):
             fetch_str = pd.to_datetime(r["last_fetch"]).strftime("%d.%m %H:%M")
@@ -344,10 +344,13 @@ else:
                           else f"{t('matrix.fetch_error_at')} {fetch_str}")
         else:
             fetch_line = t("matrix.not_collected")
+        def _n(v) -> int:
+            return 0 if pd.isna(v) else int(v)
+
         pains = " ".join(filter(None, [
-            f"🔴{int(r['red'])}" if r["red"] else "",
-            f"🟠{int(r['amber'])}" if r["amber"] else "",
-            f"🟡{int(r['yellow'])}" if r["yellow"] else "",
+            f"🔴{_n(r['red'])}" if _n(r["red"]) else "",
+            f"🟠{_n(r['amber'])}" if _n(r["amber"]) else "",
+            f"🟡{_n(r['yellow'])}" if _n(r["yellow"]) else "",
         ]))
 
         badge_bg, badge_fg, badge_txt = (
