@@ -1,4 +1,11 @@
 # -*- coding: utf-8 -*-
+"""
+components/ui.py — визуальные компоненты Listing Suite (макет B + линейка C).
+
+Палитра зафиксирована: тёплый белый #FAFAF8, чернильный #1A1815,
+единственный акцент #E8590C — только для боли/превышений.
+"""
+
 from __future__ import annotations
 
 import streamlit as st
@@ -15,13 +22,14 @@ MUTED = "#8A8578"
 BORDER = "#E7E4DD"
 CARD = "#FFFFFF"
 TRACK = "#F0EFEA"
-MONO = "'JetBrains Mono','SFMono-Regular',Consolas,monospace"
+MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
 
 SEV_EDGE = {"red": "#A32D2D", "amber": ACCENT, "yellow": AMBER}
 SEV_LABEL = {"red": "критично", "amber": "важно", "yellow": "план"}
 
 
 def inject_fonts() -> None:
+    """Подключает JetBrains Mono. Один раз в начале страницы."""
     st.markdown(
         "<link href='https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap' rel='stylesheet'>",
         unsafe_allow_html=True,
@@ -36,6 +44,7 @@ def eyebrow(text: str) -> str:
 
 
 def verdict(title: str, subtitle_html: str, meta_right: str = "") -> None:
+    """Вердикт-блок: eyebrow + крупный заголовок + подстрока."""
     right = (
         f"<span style='font-family:{MONO};font-size:12px;color:{MUTED};'>{meta_right}</span>"
         if meta_right else ""
@@ -55,6 +64,7 @@ def verdict(title: str, subtitle_html: str, meta_right: str = "") -> None:
 
 
 def chips_row(red: int, amber: int, yellow: int, extra: str = "") -> None:
+    """Строка чипов-счётчиков."""
     def chip(dot: str, label: str, n: int, active: bool) -> str:
         bg = ACCENT_BG if active else CARD
         bd = ACCENT if active else BORDER
@@ -83,6 +93,8 @@ def chips_row(red: int, amber: int, yellow: int, extra: str = "") -> None:
 def limit_ruler_html(current: int, limit: int,
                      left_label: str, right_label: str,
                      over_style: bool = True) -> str:
+    """HTML линейки-допуска. over_style=True — штриховка превышения,
+    False — режим прогресса к цели (отзывы, фото)."""
     current = max(0, int(current or 0))
     limit = max(1, int(limit or 1))
     over = max(0, current - limit)
@@ -123,12 +135,15 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
               headline: str, product_title: str | None,
               ruler_html: str, cause: str, action: str, money: str,
               image_url: str | None = None) -> None:
+    """Карточка боли: формула боль → причина → действие → деньги целиком."""
     edge = SEV_EDGE.get(severity, BORDER)
+
     thumb = (
         f"<div style='flex:0 0 72px;'><img src='{image_url}' "
         f"style='width:72px;height:72px;object-fit:contain;background:#fff;"
         f"border:1px solid {BORDER};border-radius:10px;'></div>"
     ) if image_url else ""
+
     if product_title:
         short = product_title[:130] + ("…" if len(product_title) > 130 else "")
         title_line = (
@@ -136,6 +151,13 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
         )
     else:
         title_line = ""
+
+    head = eyebrow(
+        f"{kind_label} · <a href='https://www.amazon.{marketplace}/dp/{asin}' "
+        f"target='_blank' style='color:{MUTED};text-decoration:none;"
+        f"border-bottom:1px dotted {MUTED};'>{asin}</a> · {marketplace}"
+    )
+
     st.markdown(
         f"""
         <div style="background:{CARD};border:1px solid {BORDER};border-left:3px solid {edge};
@@ -144,9 +166,7 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
           {thumb}
           <div style="flex:1;min-width:0;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
-            {eyebrow(f"{kind_label} · <a href='https://www.amazon.{marketplace}/dp/{asin}' "
-                     f"target='_blank' style='color:{MUTED};text-decoration:none;"
-                     f"border-bottom:1px dotted {MUTED};'>{asin}</a> · {marketplace}")}
+            {head}
             <span style='font-family:{MONO};font-size:13px;font-weight:600;color:{edge};'>{money}</span>
           </div>
           <div style="font-size:16px;font-weight:700;color:{INK};margin-bottom:3px;">{headline}</div>
