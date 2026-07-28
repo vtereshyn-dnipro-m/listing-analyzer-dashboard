@@ -15,7 +15,7 @@ MUTED = "#8A8578"
 BORDER = "#E7E4DD"
 CARD = "#FFFFFF"
 TRACK = "#F0EFEA"
-MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
+MONO = "'JetBrains Mono','SFMono-Regular',Consolas,monospace"
 
 SEV_EDGE = {"red": "#A32D2D", "amber": ACCENT, "yellow": AMBER}
 SEV_LABEL = {"red": "критично", "amber": "важно", "yellow": "план"}
@@ -121,8 +121,14 @@ def limit_ruler_html(current: int, limit: int,
 
 def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
               headline: str, product_title: str | None,
-              ruler_html: str, cause: str, action: str, money: str) -> None:
+              ruler_html: str, cause: str, action: str, money: str,
+              image_url: str | None = None) -> None:
     edge = SEV_EDGE.get(severity, BORDER)
+    thumb = (
+        f"<div style='flex:0 0 72px;'><img src='{image_url}' "
+        f"style='width:72px;height:72px;object-fit:contain;background:#fff;"
+        f"border:1px solid {BORDER};border-radius:10px;'></div>"
+    ) if image_url else ""
     if product_title:
         short = product_title[:130] + ("…" if len(product_title) > 130 else "")
         title_line = (
@@ -133,7 +139,10 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
     st.markdown(
         f"""
         <div style="background:{CARD};border:1px solid {BORDER};border-left:3px solid {edge};
-                    border-radius:0 12px 12px 0;padding:18px 22px;margin-bottom:14px;">
+                    border-radius:0 12px 12px 0;padding:18px 22px;margin-bottom:14px;
+                    display:flex;gap:16px;">
+          {thumb}
+          <div style="flex:1;min-width:0;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
             {eyebrow(f"{kind_label} · <a href='https://www.amazon.{marketplace}/dp/{asin}' "
                      f"target='_blank' style='color:{MUTED};text-decoration:none;"
@@ -146,6 +155,7 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
           <div style="font-size:13px;color:{MUTED};margin-bottom:12px;">Причина: {cause}</div>
           <div style="display:inline-block;background:{INK};color:{BG};border-radius:8px;
                       padding:8px 14px;font-size:13px;font-weight:600;">{action}</div>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
