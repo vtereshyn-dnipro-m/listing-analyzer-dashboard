@@ -24,9 +24,8 @@ except Exception:
     pass  # лого нет в репо — работаем без него, не падаем
 
 # ---------------------------------------------------------------- страницы
-# Только существующие файлы; будущие добавляются по мере готовности шагов.
 guide = st.Page(
-    "pages/guide.py", title="Как это работает",
+    "pages/guide.py", title=t("nav.guide"),
     icon=":material/help:",
 )
 dashboard = st.Page(
@@ -41,6 +40,10 @@ synthesis = st.Page(
     "pages/synthesis.py", title=t("nav.synthesis"),
     icon=":material/content_cut:",
 )
+photo = st.Page(
+    "pages/photo.py", title="Фото",
+    icon=":material/photo_camera:",
+)
 matrix_setup = st.Page(
     "pages/matrix_setup.py", title=t("nav.matrix"),
     icon=":material/account_tree:",
@@ -52,7 +55,7 @@ methodology = st.Page(
 
 nav = st.navigation(
     {
-        t("nav.section.work"): [guide, dashboard, catalog, synthesis],
+        t("nav.section.work"): [guide, dashboard, catalog, synthesis, photo],
         t("nav.section.settings"): [matrix_setup, methodology],
     }
 )
