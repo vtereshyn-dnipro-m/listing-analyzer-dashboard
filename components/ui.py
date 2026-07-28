@@ -147,7 +147,7 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
             {eyebrow(f"{kind_label} · <a href='https://www.amazon.{marketplace}/dp/{asin}' "
                      f"target='_blank' style='color:{MUTED};text-decoration:none;"
                      f"border-bottom:1px dotted {MUTED};'>{asin}</a> · {marketplace}")}
-            <span style="font-family:{MONO};font-size:13px;font-weight:600;color:{edge};">{money}</span>
+            <span style='font-family:{MONO};font-size:13px;font-weight:600;color:{edge};'>{money}</span>
           </div>
           <div style="font-size:16px;font-weight:700;color:{INK};margin-bottom:3px;">{headline}</div>
           {title_line}
