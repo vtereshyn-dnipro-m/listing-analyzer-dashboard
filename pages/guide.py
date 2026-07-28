@@ -38,7 +38,7 @@ def step_card(num: int, title: str, page: str, body: str, auto: bool = False) ->
           <div style="flex:1;">
             <div style="font-size:15px;font-weight:700;color:{INK};margin-bottom:2px;">
               {title}
-              <span style="font-family:{MONO};font-weight:400;font-size:12px;color:{MUTED};">
+              <span style='font-family:{MONO};font-weight:400;font-size:12px;color:{MUTED};'>
                 · {page}</span> {badge}
             </div>
             <div style="font-size:13px;color:{MUTED};line-height:1.55;">{body}</div>
