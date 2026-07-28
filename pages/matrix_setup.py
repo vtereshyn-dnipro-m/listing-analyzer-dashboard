@@ -404,7 +404,15 @@ else:
         )
 
         sku_val = r["sku_group"]
-        sku_part = (f"{sku_val} ·" if sku_val and sku_val != asin else "")
+        sku_part = f"{sku_val} · " if sku_val and sku_val != asin else ""
+        name_html = (
+            f"{sku_part}"
+            f"<span style='font-family:{MONO};font-weight:400;color:{MUTED};"
+            f"font-size:12px;'>"
+            f"<a href='https://www.amazon.{mp}/dp/{asin}' target='_blank' "
+            f"style='color:{MUTED};text-decoration:none;"
+            f"border-bottom:1px dotted {MUTED};'>{asin}</a> · {mp}</span>"
+        )
         img = None if pd.isna(r.get("main_image")) else r.get("main_image")
         thumb_html = (
             f"<img src='{img}' style='width:40px;height:40px;object-fit:contain;"
@@ -422,13 +430,7 @@ else:
               <div style="display:flex;align-items:center;">
               {thumb_html}
               <div>
-              <div style="font-size:14px;font-weight:600;color:{INK};">
-                {sku_part}
-                <span style='font-family:{MONO};font-weight:400;color:{MUTED};font-size:12px;'>
-                  <a href="https://www.amazon.{mp}/dp/{asin}" target="_blank"
-                     style="color:{MUTED};text-decoration:none;
-                            border-bottom:1px dotted {MUTED};">{asin}</a> · {mp}</span>
-              </div>
+              <div style="font-size:14px;font-weight:600;color:{INK};">{name_html}</div>
               <div style="font-size:12px;color:{MUTED};">{title_line} · {fetch_line} {('· ' + pains) if pains else ''}</div>
               </div>
               </div>
