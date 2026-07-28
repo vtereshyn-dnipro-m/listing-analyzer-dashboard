@@ -154,6 +154,12 @@ def collect_rows(rows: pd.DataFrame) -> None:
                 except (TypeError, ValueError):
                     review_count = None
 
+                images = data.get("images") or []
+                image_count = len(images) if isinstance(images, list) else 0
+                has_video = bool(data.get("videos") or data.get("video")
+                                 or data.get("has_video"))
+                has_aplus = bool(data.get("aplus"))
+
                 cur.execute(
                     """
                     INSERT INTO listing_snapshots
@@ -211,6 +217,43 @@ def collect_rows(rows: pd.DataFrame) -> None:
                              f"{review_count} отзывов при пороге 50+",
                              "листинг молодой / без Vine",
                              "запустить Vine (30 юнитов)"),
+                        )
+
+                    if 0 < image_count < 7:
+                        cur.execute(
+                            """
+                            INSERT INTO diagnosis (sku_group, asin, marketplace,
+                                severity, pain, cause, action, rule_id)
+                            VALUES (%s, %s, %s, 'yellow', %s, %s, %s, 'few_images')
+                            """,
+                            (sku, asin, mp,
+                             f"{image_count} фото при норме 7+ для Tools",
+                             "галерея слабее нормы категории",
+                             "доснять фото: комплект, применение, размеры"),
+                        )
+                    if not has_video:
+                        cur.execute(
+                            """
+                            INSERT INTO diagnosis (sku_group, asin, marketplace,
+                                severity, pain, cause, action, rule_id)
+                            VALUES (%s, %s, %s, 'yellow', %s, %s, %s, 'no_video')
+                            """,
+                            (sku, asin, mp,
+                             "нет видео на листинге",
+                             "конверсия инструментов растёт с видео-демо",
+                             "снять 30-сек демо работы инструмента"),
+                        )
+                    if not has_aplus:
+                        cur.execute(
+                            """
+                            INSERT INTO diagnosis (sku_group, asin, marketplace,
+                                severity, pain, cause, action, rule_id)
+                            VALUES (%s, %s, %s, 'amber', %s, %s, %s, 'no_aplus')
+                            """,
+                            (sku, asin, mp,
+                             "нет A+ контента",
+                             "A+ поднимает конверсию и защищает бренд-зону",
+                             "собрать A+ из готовых модулей бренда"),
                         )
 
                 st.write(f"   → {asin}: ok={ok}, тайтл {title_len} симв.")
