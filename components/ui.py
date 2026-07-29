@@ -80,23 +80,24 @@ def eyebrow(text: str) -> str:
 
 
 def verdict(title: str, subtitle_html: str, meta_right: str = "") -> None:
-    """Вердикт-блок: eyebrow + крупный заголовок + подстрока."""
+    """Вердикт-блок: eyebrow + крупный заголовок + подстрока.
+    HTML одной строкой — см. пояснение в pain_card."""
     right = (
-        f'<span class="ls-mono" style="font-size:13px;color:{MUTED};">{meta_right}</span>'
+        f'<span class="ls-mono" style="font-size:13px;color:{MUTED};">'
+        f"{meta_right}</span>"
         if meta_right else ""
     )
-    st.markdown(
-        f"""
-        <div style="margin-bottom:16px;">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
-            {eyebrow(t('dash.eyebrow'))}{right}
-          </div>
-          <div style="font-size:28px;font-weight:700;color:{INK};line-height:1.25;margin-bottom:6px;">{title}</div>
-          <div style="font-size:15px;color:{INK};">{subtitle_html}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
+    html = (
+        f'<div style="margin-bottom:16px;">'
+        f'<div style="display:flex;justify-content:space-between;'
+        f'align-items:center;margin-bottom:6px;">'
+        f"{eyebrow(t('dash.eyebrow'))}{right}</div>"
+        f'<div style="font-size:28px;font-weight:700;color:{INK};'
+        f'line-height:1.25;margin-bottom:6px;">{title}</div>'
+        f'<div style="font-size:15px;color:{INK};">{subtitle_html}</div>'
+        f"</div>"
     )
+    st.markdown(html, unsafe_allow_html=True)
 
 
 def chips_row(red: int, amber: int, yellow: int, extra: str = "") -> None:
@@ -182,7 +183,11 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
               headline: str, product_title: str | None,
               ruler_html: str, cause: str, action: str, money: str,
               image_url: str | None = None) -> None:
-    """Карточка боли: боль → причина → действие → деньги."""
+    """Карточка боли: боль → причина → действие → деньги.
+
+    HTML собирается в ОДНУ строку без переносов и отступов — иначе пустые
+    участки (например отсутствующая линейка) превращаются в блок кода markdown.
+    """
     edge = SEV_EDGE.get(severity, BORDER)
 
     thumb = (
@@ -205,26 +210,27 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
         f'target="_blank">{asin}</a> · {marketplace}'
     )
 
-    st.markdown(
-        f"""
-        <div style="background:{CARD};border:1px solid {BORDER};
-                    border-left:3px solid {edge};border-radius:0 12px 12px 0;
-                    padding:18px 22px;margin-bottom:14px;display:flex;gap:16px;">
-          {thumb}
-          <div style="flex:1;min-width:0;">
-            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
-              {head}
-              <span class="ls-mono" style="font-size:14px;font-weight:600;color:{edge};">{money}</span>
-            </div>
-            <div style="font-size:17px;font-weight:700;color:{INK};margin-bottom:3px;">{headline}</div>
-            {title_line}
-            {ruler_html}
-            <div style="font-size:14px;color:{MUTED};margin-bottom:12px;">{t("card.cause")}: {cause}</div>
-            <div style="display:inline-block;background:{INK};color:{BG};
-                        border-radius:8px;padding:8px 14px;font-size:14px;
-                        font-weight:600;">{action}</div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    ) 
+    html = (
+        f'<div style="background:{CARD};border:1px solid {BORDER};'
+        f'border-left:3px solid {edge};border-radius:0 12px 12px 0;'
+        f'padding:18px 22px;margin-bottom:14px;display:flex;gap:16px;">'
+        f"{thumb}"
+        f'<div style="flex:1;min-width:0;">'
+        f'<div style="display:flex;justify-content:space-between;'
+        f'align-items:baseline;margin-bottom:4px;">'
+        f"{head}"
+        f'<span class="ls-mono" style="font-size:14px;font-weight:600;'
+        f'color:{edge};">{money}</span>'
+        f"</div>"
+        f'<div style="font-size:17px;font-weight:700;color:{INK};'
+        f'margin-bottom:3px;">{headline}</div>'
+        f"{title_line}"
+        f"{ruler_html or ''}"
+        f'<div style="font-size:14px;color:{MUTED};margin-bottom:12px;">'
+        f'{t("card.cause")}: {cause}</div>'
+        f'<div style="display:inline-block;background:{INK};color:{BG};'
+        f'border-radius:8px;padding:8px 14px;font-size:14px;'
+        f'font-weight:600;">{action}</div>'
+        f"</div></div>"
+    )
+    st.markdown(html, unsafe_allow_html=True)
