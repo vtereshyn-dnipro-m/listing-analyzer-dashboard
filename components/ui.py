@@ -26,7 +26,7 @@ OK_BG = "#DCEEE0"
 OK_TEXT = "#2F6B3A"
 AMBER = "#EF9F27"
 AMBER_TEXT = "#854F0B"
-MUTED = "#8A8578"
+MUTED = "#6B665C"   # приглушённый, но читаемый
 BORDER = "#E7E4DD"
 CARD = "#FFFFFF"
 TRACK = "#F0EFEA"
@@ -48,7 +48,7 @@ def inject_fonts() -> None:
         :root {
             --ls-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
             --ls-ink: #1A1815;
-            --ls-muted: #8A8578;
+            --ls-muted: #6B665C;
             --ls-accent: #E8590C;
             --ls-border: #E7E4DD;
         }
@@ -69,9 +69,20 @@ def inject_fonts() -> None:
         [data-testid="stMarkdownContainer"] p { font-size: 15px; }
         [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
             font-size: 13.5px;
+            color: var(--ls-muted);
         }
         .stButton button, .stDownloadButton button { font-size: 14px; }
         [data-testid="stExpander"] summary p { font-size: 15px; }
+
+        /* сайдбар: пункты меню, заголовки секций, текст */
+        [data-testid="stSidebarNav"] a span,
+        [data-testid="stSidebarNav"] span[class*="st-emotion"] { font-size: 15px; }
+        [data-testid="stSidebarNav"] ul { padding-top: 2px; }
+        section[data-testid="stSidebar"] .stMarkdown p,
+        section[data-testid="stSidebar"] .stMarkdown li { font-size: 15px; }
+        section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
+            font-size: 13.5px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
