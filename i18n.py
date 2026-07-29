@@ -19,7 +19,7 @@ LANGS: dict[str, dict[str, str]] = {
         "app.tagline": "listing diagnostics",
         "nav.section.work": "Work",
         "nav.section.control": "Control",
-        "nav.section.settings": "Settings",
+        "nav.section.settings": "Management",
         "nav.dashboard": "Diagnosis",
         "nav.diagnosis": "Diagnosis",
         "nav.catalog": "Catalog",
@@ -33,6 +33,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.methodology": "Methodology",
         "nav.guide": "How it works",
         "nav.keys": "Keys & Connections",
+        "nav.settings": "Settings",
         "sidebar.deadline": "title deadline: **:red[{days} d.]**  \n75-char limit from 27.07.2026",
         "sidebar.deadline_passed": "**75-char** limit is live",
         "sidebar.next_run": "next run: daily 13:00 Kyiv",
@@ -237,7 +238,7 @@ LANGS: dict[str, dict[str, str]] = {
         "app.tagline": "диагностика листингов",
         "nav.section.work": "Работа",
         "nav.section.control": "Контроль",
-        "nav.section.settings": "Настройка",
+        "nav.section.settings": "Управление",
         "nav.dashboard": "Диагноз",
         "nav.diagnosis": "Диагноз",
         "nav.catalog": "Каталог",
@@ -251,6 +252,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.methodology": "Методология",
         "nav.guide": "Как это работает",
         "nav.keys": "Ключи и подключения",
+        "nav.settings": "Настройки",
         "sidebar.deadline": "дедлайн тайтлов: **:red[{days} дн.]**  \nлимит 75 симв. с 27.07.2026",
         "sidebar.deadline_passed": "лимит **75 симв.** действует",
         "sidebar.next_run": "след. прогон: ежедневно 13:00 Kyiv",
@@ -455,7 +457,7 @@ LANGS: dict[str, dict[str, str]] = {
         "app.tagline": "діагностика лістингів",
         "nav.section.work": "Робота",
         "nav.section.control": "Контроль",
-        "nav.section.settings": "Налаштування",
+        "nav.section.settings": "Керування",
         "nav.dashboard": "Діагноз",
         "nav.diagnosis": "Діагноз",
         "nav.catalog": "Каталог",
@@ -469,6 +471,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.methodology": "Методологія",
         "nav.guide": "Як це працює",
         "nav.keys": "Ключі та підключення",
+        "nav.settings": "Налаштування",
         "sidebar.deadline": "дедлайн тайтлів: **:red[{days} дн.]**  \nліміт 75 симв. з 27.07.2026",
         "sidebar.deadline_passed": "ліміт **75 симв.** діє",
         "sidebar.next_run": "наст. прогін: щодня 13:00 Kyiv",
@@ -707,6 +710,7 @@ def lang_selector() -> None:
     if choice and choice != cur:
         st.session_state["lang"] = choice
         st.rerun()
+
 
 
 
