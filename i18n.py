@@ -25,6 +25,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.catalog": "Catalog",
         "nav.analyzer": "Listing Score",
         "nav.media": "Photo · Video",
+        "nav.photo": "Photos & A+",
         "nav.synthesis": "Synthesis",
         "nav.changes": "Before / After",
         "nav.history": "History",
@@ -242,6 +243,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.catalog": "Каталог",
         "nav.analyzer": "Оценка листинга",
         "nav.media": "Фото · Видео",
+        "nav.photo": "Фото и A+",
         "nav.synthesis": "Синтез",
         "nav.changes": "До / после",
         "nav.history": "История",
@@ -459,6 +461,7 @@ LANGS: dict[str, dict[str, str]] = {
         "nav.catalog": "Каталог",
         "nav.analyzer": "Оцінка лістингу",
         "nav.media": "Фото · Відео",
+        "nav.photo": "Фото і A+",
         "nav.synthesis": "Синтез",
         "nav.changes": "До / після",
         "nav.history": "Історія",
@@ -704,6 +707,7 @@ def lang_selector() -> None:
     if choice and choice != cur:
         st.session_state["lang"] = choice
         st.rerun()
+
 
 
  
