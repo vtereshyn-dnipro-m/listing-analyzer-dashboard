@@ -94,7 +94,8 @@ def load_candidates() -> pd.DataFrame:
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (s.asin, s.marketplace)
-                   s.asin, s.marketplace, s.title, s.raw, m.sku_group
+                   s.asin, s.marketplace, s.title, s.raw, s.fetched_at,
+                   m.sku_group
             FROM listing_snapshots s
             LEFT JOIN product_matrix m
                 ON m.asin = s.asin AND m.marketplace = s.marketplace
@@ -293,6 +294,12 @@ opts = {f"{r['sku_group'] or r['asin']} · {r['asin']} · {r['marketplace']}": i
 choice = st.selectbox(t("photo.product"), list(opts.keys()))
 row = cands.loc[opts[choice]]
 asin, mp, title = row["asin"], row["marketplace"], row["title"]
+_f = row.get("fetched_at")
+fetched_part = (
+    f" · {t('matrix.collected_at')} "
+    f"{pd.to_datetime(_f).strftime('%d.%m %H:%M')}"
+    if _f is not None and not pd.isna(_f) else ""
+)
 
 tab_gallery, tab_aplus = st.tabs([t("photo.tab_gallery"), t("photo.tab_aplus")])
 
@@ -302,8 +309,11 @@ with tab_gallery:
     if not skill:
         st.warning(t("photo.skill_empty"))
     images = extract_images(row["raw"])
-    st.markdown(eyebrow(f"{asin} · {mp} · фото: {len(images)} · методология v{ver}"),
-                unsafe_allow_html=True)
+    st.markdown(
+        eyebrow(f"{asin} · {mp}{fetched_part} · "
+                f"{t('metric.photos')}: {len(images)} · "
+                f"{t('synth.methodology')} v{ver}"),
+        unsafe_allow_html=True)
     if images:
         cols = st.columns(min(len(images), 6))
         for i, url in enumerate(images[:6]):
@@ -349,8 +359,10 @@ with tab_aplus:
     if not skill_a:
         st.warning(t("photo.skill_empty"))
     aplus = extract_aplus(row["raw"])
-    st.markdown(eyebrow(f"{asin} · {mp} · модулей A+: {len(aplus)} · методология v{ver_a}"),
-                unsafe_allow_html=True)
+    st.markdown(
+        eyebrow(f"{asin} · {mp}{fetched_part} · "
+                f"A+: {len(aplus)} · {t('synth.methodology')} v{ver_a}"),
+        unsafe_allow_html=True)
     if aplus:
         for url in aplus[:4]:
             st.image(url, use_container_width=True)
