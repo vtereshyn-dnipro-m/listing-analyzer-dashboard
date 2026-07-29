@@ -156,6 +156,13 @@ LANGS: dict[str, dict[str, str]] = {
         "matrix.schedule_days": "Days",
         "matrix.schedule_save": "Save schedule",
         "matrix.schedule_saved": "Schedule saved.",
+        "matrix.day_mon": "Mon",
+        "matrix.day_tue": "Tue",
+        "matrix.day_wed": "Wed",
+        "matrix.day_thu": "Thu",
+        "matrix.day_fri": "Fri",
+        "matrix.day_sat": "Sat",
+        "matrix.day_sun": "Sun",
         # --- Каталог (catalog.*)
         "catalog.caption": "A passport for every product: all metrics at once. Diagnosis shows only problem items — here is the whole catalog, including healthy ones and competitors.",
         "catalog.all": "all",
@@ -366,6 +373,13 @@ LANGS: dict[str, dict[str, str]] = {
         "matrix.schedule_days": "Дни",
         "matrix.schedule_save": "Сохранить расписание",
         "matrix.schedule_saved": "Расписание сохранено.",
+        "matrix.day_mon": "Пн",
+        "matrix.day_tue": "Вт",
+        "matrix.day_wed": "Ср",
+        "matrix.day_thu": "Чт",
+        "matrix.day_fri": "Пт",
+        "matrix.day_sat": "Сб",
+        "matrix.day_sun": "Вс",
         # --- Каталог (catalog.*)
         "catalog.caption": "Паспорт каждого товара: все метрики разом. Диагноз показывает только проблемные — здесь весь каталог, включая здоровых и конкурентов.",
         "catalog.all": "все",
@@ -576,6 +590,13 @@ LANGS: dict[str, dict[str, str]] = {
         "matrix.schedule_days": "Дні",
         "matrix.schedule_save": "Зберегти розклад",
         "matrix.schedule_saved": "Розклад збережено.",
+        "matrix.day_mon": "Пн",
+        "matrix.day_tue": "Вт",
+        "matrix.day_wed": "Ср",
+        "matrix.day_thu": "Чт",
+        "matrix.day_fri": "Пт",
+        "matrix.day_sat": "Сб",
+        "matrix.day_sun": "Нд",
         # --- Каталог (catalog.*)
         "catalog.caption": "Паспорт кожного товару: всі метрики разом. Діагноз показує лише проблемні — тут увесь каталог, включно зі здоровими та конкурентами.",
         "catalog.all": "усі",
@@ -683,6 +704,7 @@ def lang_selector() -> None:
     if choice and choice != cur:
         st.session_state["lang"] = choice
         st.rerun()
+
 
  
 
