@@ -13,6 +13,7 @@ from i18n import t, lang_selector
 
 st.set_page_config(
     page_title=APP_NAME,
+    page_icon="logo_light.png",     # или "🔧", если файл не подхватится
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -24,8 +25,9 @@ except Exception:
     pass  # лого нет в репо — работаем без него, не падаем
 
 # ---------------------------------------------------------------- страницы
+# Только существующие файлы; будущие добавляются по мере готовности шагов.
 guide = st.Page(
-    "pages/guide.py", title=t("nav.guide"),
+    "pages/guide.py", title="Как это работает",
     icon=":material/help:",
 )
 dashboard = st.Page(
@@ -41,7 +43,7 @@ synthesis = st.Page(
     icon=":material/content_cut:",
 )
 photo = st.Page(
-    "pages/photo.py", title="Фото",
+    "pages/photo.py", title=t("nav.photo"),
     icon=":material/photo_camera:",
 )
 matrix_setup = st.Page(
