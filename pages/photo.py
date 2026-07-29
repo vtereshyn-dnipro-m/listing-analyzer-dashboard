@@ -35,12 +35,19 @@ GEMINI_URL = (
 MAX_IMAGES = 10
 MAX_APLUS = 8
 
+MP_LANGUAGE = {
+    "es": "испанский", "de": "немецкий", "fr": "французский",
+    "it": "итальянский", "nl": "нидерландский", "se": "шведский",
+    "pl": "польский", "com": "английский", "co.uk": "английский",
+}
+
 MAIN_CHECKS = [
     ("main_white_bg", "фон чисто белый"),
     ("main_product_share", "товар ≥85% кадра"),
     ("main_no_packaging_dominance", "упаковка не доминирует"),
     ("main_no_overlays", "нет надписей и плашек"),
     ("main_readable_thumb", "читаемо в миниатюре"),
+    ("main_language_match", "текст на языке маркетплейса"),
 ]
 GALLERY_CHECKS = [
     ("role_specs", "инфографика характеристик"),
@@ -49,6 +56,7 @@ GALLERY_CHECKS = [
     ("role_lifestyle", "применение"),
     ("role_scale", "масштаб / габариты"),
     ("role_compat", "совместимость платформы"),
+    ("gallery_language_match", "инфографика на языке маркетплейса"),
 ]
 APLUS_CHECKS = [
     ("aplus_brand_story", "есть блок о бренде"),
@@ -58,11 +66,15 @@ APLUS_CHECKS = [
     ("aplus_readable_mobile", "текст читаем на мобильном"),
     ("aplus_no_claims_risk", "нет запрещённых утверждений и чужих брендов"),
     ("aplus_consistent_style", "единый стиль с брендом"),
+    ("aplus_language_match", "тексты на языке маркетплейса"),
 ]
 
 PROMPT_TPL = """{skill}
 
 Проанализируй изображения листинга Amazon (маркетплейс {mp}, товар: {title}).
+Ожидаемый язык всех текстов на изображениях — {lang} (язык маркетплейса {mp}).
+Английские или иные надписи для этого маркетплейса считаются нарушением,
+кроме модели, бренда и единиц измерения (20V, 50 Nm, mm).
 {context}
 
 Ответь ТОЛЬКО валидным JSON:
@@ -198,7 +210,8 @@ def analyze(images: list[str], title: str, mp: str, skill: str,
 
         parts.append({"text": PROMPT_TPL.format(
             skill=skill or "Оцени визуал листинга Amazon по здравому смыслу.",
-            mp=mp, title=title[:120], context=context, block=block,
+            mp=mp, lang=MP_LANGUAGE.get(mp, "язык маркетплейса"),
+            title=title[:120], context=context, block=block,
             keys=", ".join(f'"{k}": true' for k, _ in checks),
         )})
 
