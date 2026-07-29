@@ -61,10 +61,10 @@ def load_candidates() -> pd.DataFrame:
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (d.asin, d.marketplace)
-                   d.asin, d.marketplace, s.title
+                   d.asin, d.marketplace, s.title, s.fetched_at
             FROM diagnosis d
             JOIN LATERAL (
-                SELECT title FROM listing_snapshots s
+                SELECT title, fetched_at FROM listing_snapshots s
                 WHERE s.asin = d.asin AND s.marketplace = d.marketplace
                   AND s.ok = TRUE AND s.title <> ''
                 ORDER BY s.fetched_at DESC LIMIT 1
@@ -254,10 +254,16 @@ choice = st.selectbox(t("synth.select_title"), list(options.keys()))
 row = candidates.loc[options[choice]]
 asin, mp, title = row["asin"], row["marketplace"], row["title"]
 
+_fetched = row.get("fetched_at")
+_fetched_part = (
+    f" · {t('matrix.collected_at')} "
+    f"{pd.to_datetime(_fetched).strftime('%d.%m %H:%M')}"
+    if _fetched is not None and not pd.isna(_fetched) else ""
+)
 st.markdown(
-    eyebrow(f"{t('synth.original')} · {asin} · {mp} · "
-            f"<a href='/methodology' target='_self' "
-            f"style='color:#8A8578;text-decoration:underline;'>{t('synth.methodology')} v{skill_version}</a>"),
+    eyebrow(f"{t('synth.original')} · {asin} · {mp}{_fetched_part} · "
+            f"<a href='/methodology' target='_self'>"
+            f"{t('synth.methodology')} v{skill_version}</a>"),
     unsafe_allow_html=True,
 )
 st.markdown(f"«{title}»")
