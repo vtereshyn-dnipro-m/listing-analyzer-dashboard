@@ -10,16 +10,35 @@ from __future__ import annotations
 import streamlit as st
 
 from i18n import t
-from components.ui import inject_fonts, eyebrow
+from components.ui import inject_fonts
 
 inject_fonts()
+
+# локальный безопасный eyebrow: стили в классе, кавычек в атрибутах нет
+st.markdown(
+    """
+    <style>
+    :root { --ls-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace; }
+    .ls-eyebrow {
+        font-family: var(--ls-mono); font-size: 12px; letter-spacing: .06em;
+        color: #8A8578; text-transform: uppercase;
+    }
+    .ls-mono { font-family: var(--ls-mono); }
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+
+def eyebrow(text: str) -> str:
+    return f'<span class="ls-eyebrow">{text}</span>' 
 
 INK = "#1A1815"
 MUTED = "#8A8578"
 BORDER = "#E7E4DD"
 CARD = "#FFFFFF"
 ACCENT = "#E8590C"
-MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
+MONO = "var(--ls-mono)"
 
 
 def step_card(num: int, title: str, page: str, body: str, auto: bool = False) -> None:
@@ -38,7 +57,7 @@ def step_card(num: int, title: str, page: str, body: str, auto: bool = False) ->
           <div style="flex:1;">
             <div style="font-size:15px;font-weight:700;color:{INK};margin-bottom:2px;">
               {title}
-              <span style='font-family:{MONO};font-weight:400;font-size:12px;color:{MUTED};'>
+              <span style='font-family:var(--ls-mono);font-weight:400;font-size:12px;color:{MUTED};'>
                 · {page}</span> {badge}
             </div>
             <div style="font-size:13px;color:{MUTED};line-height:1.55;">{body}</div>
