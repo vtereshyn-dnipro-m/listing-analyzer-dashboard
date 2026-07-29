@@ -26,7 +26,7 @@ OK_BG = "#DCEEE0"
 OK_TEXT = "#2F6B3A"
 AMBER = "#EF9F27"
 AMBER_TEXT = "#854F0B"
-MUTED = "#6B665C"   # приглушённый, но читаемый
+MUTED = "#57534A"   # приглушённый, но хорошо читаемый
 BORDER = "#E7E4DD"
 CARD = "#FFFFFF"
 TRACK = "#F0EFEA"
@@ -51,7 +51,7 @@ def inject_fonts() -> None:
         "<style>"
         ":root{"
         "--ls-mono:\"JetBrains Mono\",\"SFMono-Regular\",Consolas,monospace;"
-        "--ls-ink:#1A1815;--ls-muted:#6B665C;--ls-accent:#E8590C;"
+        "--ls-ink:#1A1815;--ls-muted:#57534A;--ls-accent:#E8590C;"
         "--ls-border:#E7E4DD;}"
         ".ls-mono{font-family:var(--ls-mono);}"
         ".ls-eyebrow{font-family:var(--ls-mono);font-size:13px;"
