@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 app.py — точка входа Listing Suite. Три языка: EN / RU / UA (i18n.py).
-Навигация st.navigation, Дашборд по умолчанию, иконки Material (без эмодзи).
-Лого Dnipro-M — как в Кабинете (logo_light.png в корне репо).
+Навигация st.navigation, Диагноз по умолчанию, иконки Material.
 Запуск: streamlit run app.py
 """
 
@@ -13,7 +12,7 @@ from i18n import t, lang_selector
 
 st.set_page_config(
     page_title=APP_NAME,
-    page_icon="logo_light.png",     # или "🔧", если файл не подхватится
+    page_icon="logo_light.png",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -25,9 +24,8 @@ except Exception:
     pass  # лого нет в репо — работаем без него, не падаем
 
 # ---------------------------------------------------------------- страницы
-# Только существующие файлы; будущие добавляются по мере готовности шагов.
 guide = st.Page(
-    "pages/guide.py", title="Как это работает",
+    "pages/guide.py", title=t("nav.guide"),
     icon=":material/help:",
 )
 dashboard = st.Page(
@@ -54,11 +52,15 @@ methodology = st.Page(
     "pages/methodology.py", title=t("nav.methodology"),
     icon=":material/menu_book:",
 )
+settings = st.Page(
+    "pages/settings.py", title=t("nav.settings"),
+    icon=":material/settings:",
+)
 
 nav = st.navigation(
     {
         t("nav.section.work"): [guide, dashboard, catalog, synthesis, photo],
-        t("nav.section.settings"): [matrix_setup, methodology],
+        t("nav.section.settings"): [matrix_setup, methodology, settings],
     }
 )
 
