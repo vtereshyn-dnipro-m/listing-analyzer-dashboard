@@ -21,7 +21,7 @@ st.markdown(
     :root { --ls-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace; }
     .ls-eyebrow {
         font-family: var(--ls-mono); font-size: 12px; letter-spacing: .06em;
-        color: #8A8578; text-transform: uppercase;
+        color: #57534A; text-transform: uppercase;
     }
     .ls-mono { font-family: var(--ls-mono); }
     </style>
@@ -34,7 +34,7 @@ def eyebrow(text: str) -> str:
     return f'<span class="ls-eyebrow">{text}</span>' 
 
 INK = "#1A1815"
-MUTED = "#8A8578"
+MUTED = "#57534A"
 BORDER = "#E7E4DD"
 CARD = "#FFFFFF"
 ACCENT = "#E8590C"
@@ -200,4 +200,4 @@ st.markdown(
 st.markdown("")
 st.caption(
     f"Вопросы и идеи — Vitalii T. · дедлайн тайтлов: лимит 75 симв. с 27.07.2026"
-)
+) 
