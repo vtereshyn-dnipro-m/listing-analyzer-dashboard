@@ -40,53 +40,38 @@ SEV_LABEL = {"red": "критично", "amber": "важно", "yellow": "пла
 
 def inject_fonts() -> None:
     """Подключает JetBrains Mono, объявляет CSS-переменные и утилитарные
-    классы. Вызывается один раз в начале каждой страницы."""
-    st.markdown(
-        """
-        <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-        <style>
-        :root {
-            --ls-mono: "JetBrains Mono", "SFMono-Regular", Consolas, monospace;
-            --ls-ink: #1A1815;
-            --ls-muted: #6B665C;
-            --ls-accent: #E8590C;
-            --ls-border: #E7E4DD;
-        }
-        .ls-mono { font-family: var(--ls-mono); }
-        .ls-eyebrow {
-            font-family: var(--ls-mono);
-            font-size: 13px;
-            letter-spacing: .06em;
-            color: var(--ls-muted);
-            text-transform: uppercase;
-        }
-        .ls-eyebrow a { color: var(--ls-muted); text-decoration: none;
-                        border-bottom: 1px dotted var(--ls-muted); }
-        [data-testid="stStatusWidget"] { visibility: hidden; }
+    классы. Вызывается один раз в начале каждой страницы.
 
-        /* базовый текст приложения +1 к дефолту */
-        .stMarkdown p, .stMarkdown li, .stMarkdown span,
-        [data-testid="stMarkdownContainer"] p { font-size: 15px; }
-        [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
-            font-size: 13.5px;
-            color: var(--ls-muted);
-        }
-        .stButton button, .stDownloadButton button { font-size: 14px; }
-        [data-testid="stExpander"] summary p { font-size: 15px; }
-
-        /* сайдбар: пункты меню, заголовки секций, текст */
-        [data-testid="stSidebarNav"] a span,
-        [data-testid="stSidebarNav"] span[class*="st-emotion"] { font-size: 15px; }
-        [data-testid="stSidebarNav"] ul { padding-top: 2px; }
-        section[data-testid="stSidebar"] .stMarkdown p,
-        section[data-testid="stSidebar"] .stMarkdown li { font-size: 15px; }
-        section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
-            font-size: 13.5px;
-        }
-        </style>
-        """,
-        unsafe_allow_html=True,
+    ВАЖНО: строка со стилями формируется без отступов и без пустых строк —
+    иначе markdown Streamlit принимает её за блок кода и печатает как текст.
+    """
+    css = (
+        '<link href="https://fonts.googleapis.com/css2?'
+        'family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">'
+        "<style>"
+        ":root{"
+        "--ls-mono:\"JetBrains Mono\",\"SFMono-Regular\",Consolas,monospace;"
+        "--ls-ink:#1A1815;--ls-muted:#6B665C;--ls-accent:#E8590C;"
+        "--ls-border:#E7E4DD;}"
+        ".ls-mono{font-family:var(--ls-mono);}"
+        ".ls-eyebrow{font-family:var(--ls-mono);font-size:13px;"
+        "letter-spacing:.06em;color:var(--ls-muted);text-transform:uppercase;}"
+        ".ls-eyebrow a{color:var(--ls-muted);text-decoration:none;"
+        "border-bottom:1px dotted var(--ls-muted);}"
+        '[data-testid="stStatusWidget"]{visibility:hidden;}'
+        ".stMarkdown p,.stMarkdown li,"
+        '[data-testid="stMarkdownContainer"] p{font-size:15px;}'
+        '[data-testid="stCaptionContainer"],'
+        '[data-testid="stCaptionContainer"] p{font-size:13.5px;'
+        "color:var(--ls-muted);}"
+        ".stButton button,.stDownloadButton button{font-size:14px;}"
+        '[data-testid="stExpander"] summary p{font-size:15px;}'
+        'section[data-testid="stSidebar"] .stMarkdown p,'
+        'section[data-testid="stSidebar"] .stMarkdown li{font-size:15px;}'
+        'section[data-testid="stSidebar"] a span{font-size:15px;}'
+        "</style>"
     )
+    st.markdown(css, unsafe_allow_html=True)
 
 
 def eyebrow(text: str) -> str:
@@ -242,4 +227,4 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
         </div>
         """,
         unsafe_allow_html=True,
-    )
+    ) 
