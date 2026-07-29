@@ -64,7 +64,7 @@ def load_titles() -> pd.DataFrame:
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (s.asin, s.marketplace)
-                   s.asin, s.marketplace, s.title,
+                   s.asin, s.marketplace, s.title, s.fetched_at,
                    s.raw->>'main_image' AS main_image
             FROM listing_snapshots s
             WHERE s.ok = TRUE AND s.title <> ''
@@ -197,11 +197,17 @@ def build_card_args(r: pd.Series, product_title: str | None) -> dict:
 def render_pain(r: pd.Series, title_map: dict) -> None:
     asin, mp = r["asin"], r["marketplace"]
     product_title = title_map.get((asin, mp))
+    fetched = fetch_map.get((asin, mp))
+    fetched_label = (
+        f"{t('matrix.collected_at')} {pd.to_datetime(fetched).strftime('%d.%m %H:%M')}"
+        if fetched is not None and not pd.isna(fetched) else None
+    )
     pain_card(
         severity=str(r["severity"]),
         asin=asin, marketplace=mp,
         product_title=product_title,
         image_url=image_map.get((asin, mp)),
+        fetched_label=fetched_label,
         cause=str(r["cause"]), action=str(r["action"]),
         **build_card_args(r, product_title),
     )
@@ -210,11 +216,13 @@ def render_pain(r: pd.Series, title_map: dict) -> None:
 # ---------------------------------------------------------------- страница
 diag = load_diagnosis()
 titles = load_titles()
-title_map, image_map = {}, {}
+title_map, image_map, fetch_map = {}, {}, {}
 if not titles.empty:
     title_map = {(r["asin"], r["marketplace"]): r["title"]
                  for _, r in titles.iterrows()}
     image_map = {(r["asin"], r["marketplace"]): r.get("main_image")
+                 for _, r in titles.iterrows()}
+    fetch_map = {(r["asin"], r["marketplace"]): r.get("fetched_at")
                  for _, r in titles.iterrows()}
 
 if diag.empty:
