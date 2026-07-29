@@ -182,7 +182,8 @@ def limit_ruler_html(current: int, limit: int,
 def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
               headline: str, product_title: str | None,
               ruler_html: str, cause: str, action: str, money: str,
-              image_url: str | None = None) -> None:
+              image_url: str | None = None,
+              fetched_label: str | None = None) -> None:
     """Карточка боли: боль → причина → действие → деньги.
 
     HTML собирается в ОДНУ строку без переносов и отступов — иначе пустые
@@ -205,9 +206,10 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
     else:
         title_line = ""
 
+    fetched_part = f" · {fetched_label}" if fetched_label else ""
     head = eyebrow(
         f'{kind_label} · <a href="https://www.amazon.{marketplace}/dp/{asin}" '
-        f'target="_blank">{asin}</a> · {marketplace}'
+        f'target="_blank">{asin}</a> · {marketplace}{fetched_part}'
     )
 
     html = (
