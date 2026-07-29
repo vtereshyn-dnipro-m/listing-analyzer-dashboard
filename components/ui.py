@@ -55,7 +55,7 @@ def inject_fonts() -> None:
         .ls-mono { font-family: var(--ls-mono); }
         .ls-eyebrow {
             font-family: var(--ls-mono);
-            font-size: 12px;
+            font-size: 13px;
             letter-spacing: .06em;
             color: var(--ls-muted);
             text-transform: uppercase;
@@ -63,6 +63,15 @@ def inject_fonts() -> None:
         .ls-eyebrow a { color: var(--ls-muted); text-decoration: none;
                         border-bottom: 1px dotted var(--ls-muted); }
         [data-testid="stStatusWidget"] { visibility: hidden; }
+
+        /* базовый текст приложения +1 к дефолту */
+        .stMarkdown p, .stMarkdown li, .stMarkdown span,
+        [data-testid="stMarkdownContainer"] p { font-size: 15px; }
+        [data-testid="stCaptionContainer"], [data-testid="stCaptionContainer"] p {
+            font-size: 13.5px;
+        }
+        .stButton button, .stDownloadButton button { font-size: 14px; }
+        [data-testid="stExpander"] summary p { font-size: 15px; }
         </style>
         """,
         unsafe_allow_html=True,
@@ -77,7 +86,7 @@ def eyebrow(text: str) -> str:
 def verdict(title: str, subtitle_html: str, meta_right: str = "") -> None:
     """Вердикт-блок: eyebrow + крупный заголовок + подстрока."""
     right = (
-        f'<span class="ls-mono" style="font-size:12px;color:{MUTED};">{meta_right}</span>'
+        f'<span class="ls-mono" style="font-size:13px;color:{MUTED};">{meta_right}</span>'
         if meta_right else ""
     )
     st.markdown(
@@ -86,8 +95,8 @@ def verdict(title: str, subtitle_html: str, meta_right: str = "") -> None:
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
             {eyebrow(t('dash.eyebrow'))}{right}
           </div>
-          <div style="font-size:27px;font-weight:700;color:{INK};line-height:1.25;margin-bottom:6px;">{title}</div>
-          <div style="font-size:14px;color:{INK};">{subtitle_html}</div>
+          <div style="font-size:28px;font-weight:700;color:{INK};line-height:1.25;margin-bottom:6px;">{title}</div>
+          <div style="font-size:15px;color:{INK};">{subtitle_html}</div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -103,14 +112,14 @@ def chips_row(red: int, amber: int, yellow: int, extra: str = "") -> None:
         return (
             f'<span style="background:{bg};border:1px solid {bd};'
             f'border-radius:999px;padding:5px 14px;color:{INK};'
-            f'font-weight:{w};font-size:13px;">'
+            f'font-weight:{w};font-size:14px;">'
             f'<span style="color:{dot};">&#9679;</span> {label} {n}</span>'
         )
 
     extra_html = (
         f'<span style="background:{CARD};border:1px solid {BORDER};'
         f'border-radius:999px;padding:5px 14px;color:{MUTED};'
-        f'font-size:13px;">{extra}</span>'
+        f'font-size:14px;">{extra}</span>'
         if extra else ""
     )
     st.markdown(
@@ -166,9 +175,9 @@ def limit_ruler_html(current: int, limit: int,
         f'margin:10px 0 12px;">'
         f"{fill}"
         f'<span class="ls-mono" style="position:absolute;left:8px;top:5px;'
-        f'font-size:11px;color:{left_color};">{left_label}</span>'
+        f'font-size:12px;color:{left_color};">{left_label}</span>'
         f'<span class="ls-mono" style="position:absolute;right:8px;top:5px;'
-        f'font-size:11px;color:{right_color};">{right_label}</span>'
+        f'font-size:12px;color:{right_color};">{right_label}</span>'
         f"</div>"
     )
 
@@ -189,7 +198,7 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
     if product_title:
         short = product_title[:130] + ("…" if len(product_title) > 130 else "")
         title_line = (
-            f'<div style="font-size:13px;color:{MUTED};margin-bottom:10px;">'
+            f'<div style="font-size:14px;color:{MUTED};margin-bottom:10px;">'
             f"&#171;{short}&#187;</div>"
         )
     else:
@@ -209,14 +218,14 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
           <div style="flex:1;min-width:0;">
             <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;">
               {head}
-              <span class="ls-mono" style="font-size:13px;font-weight:600;color:{edge};">{money}</span>
+              <span class="ls-mono" style="font-size:14px;font-weight:600;color:{edge};">{money}</span>
             </div>
-            <div style="font-size:16px;font-weight:700;color:{INK};margin-bottom:3px;">{headline}</div>
+            <div style="font-size:17px;font-weight:700;color:{INK};margin-bottom:3px;">{headline}</div>
             {title_line}
             {ruler_html}
-            <div style="font-size:13px;color:{MUTED};margin-bottom:12px;">{t("card.cause")}: {cause}</div>
+            <div style="font-size:14px;color:{MUTED};margin-bottom:12px;">{t("card.cause")}: {cause}</div>
             <div style="display:inline-block;background:{INK};color:{BG};
-                        border-radius:8px;padding:8px 14px;font-size:13px;
+                        border-radius:8px;padding:8px 14px;font-size:14px;
                         font-weight:600;">{action}</div>
           </div>
         </div>
