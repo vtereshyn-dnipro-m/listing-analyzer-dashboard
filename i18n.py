@@ -217,6 +217,7 @@ LANGS: dict[str, dict[str, str]] = {
         "dash.healthy_products": "products without pains",
         "dash.pains_by_products": "pains across",
         "dash.rows_grouped": "rows of one product are grouped",
+        "dash.eyebrow": "Diagnosis · whole catalog",
         # --- Фото (photo.*)
         "photo.title": "Photos & A+",
         "photo.caption": "Visual audit by methodology. The grade is computed by code, AI only looks.",
@@ -233,6 +234,32 @@ LANGS: dict[str, dict[str, str]] = {
         "photo.no_aplus": "No A+ content in the snapshot.",
         "photo.skill_empty": "Methodology is empty — fill it on the Methodologies page.",
         "photo.looking": "Gemini is looking at",
+        # --- Карточка товара: блоки (card.*)
+        "card.title": "Title",
+        "card.reviews": "Reviews",
+        "card.media": "Media",
+        "card.content": "Content",
+        "card.stock": "Stock",
+        "card.pain": "Pain",
+        "card.cause": "Cause",
+        # --- Формулировки болей (pain.*)
+        "pain.title_over": "Title {n} chars — Amazon will rewrite it",
+        "pain.low_reviews": "{n} reviews against a {min}+ trust threshold",
+        "pain.few_images": "Gallery: {n} photos against a {min}+ norm",
+        "pain.no_video": "No video on the listing",
+        "pain.no_aplus": "No A+ content",
+        "pain.out_of_stock": "Product unavailable for purchase",
+        # --- Линейка-допуск (ruler.*)
+        "ruler.limit": "limit",
+        "ruler.cut": "cut",
+        "ruler.free": "free",
+        "ruler.now": "now",
+        "ruler.goal": "goal",
+        "ruler.photos": "photos",
+        "ruler.norm": "norm",
+        "ruler.excess": "excess",
+        "ruler.video_no": "video: no",
+        "ruler.aplus_no": "A+: no",
     },
     "ru": {
         "app.tagline": "диагностика листингов",
@@ -436,6 +463,7 @@ LANGS: dict[str, dict[str, str]] = {
         "dash.healthy_products": "товаров без болей",
         "dash.pains_by_products": "болей по",
         "dash.rows_grouped": "строки одного товара идут подряд",
+        "dash.eyebrow": "Диагноз · весь каталог",
         # --- Фото (photo.*)
         "photo.title": "Фото и A+",
         "photo.caption": "Аудит визуала по методологиям. Грейд считает код, ИИ только смотрит.",
@@ -452,6 +480,32 @@ LANGS: dict[str, dict[str, str]] = {
         "photo.no_aplus": "A+ контента нет в снапшоте.",
         "photo.skill_empty": "Методология пуста — заполни на странице Методологии.",
         "photo.looking": "Gemini смотрит",
+        # --- Карточка товара: блоки (card.*)
+        "card.title": "Тайтл",
+        "card.reviews": "Отзывы",
+        "card.media": "Медиа",
+        "card.content": "Контент",
+        "card.stock": "Сток",
+        "card.pain": "Боль",
+        "card.cause": "Причина",
+        # --- Формулировки болей (pain.*)
+        "pain.title_over": "Тайтл {n} симв. — Amazon перепишет сам",
+        "pain.low_reviews": "{n} отзывов при пороге доверия {min}+",
+        "pain.few_images": "Галерея: {n} фото при норме {min}+",
+        "pain.no_video": "Нет видео на листинге",
+        "pain.no_aplus": "Нет A+ контента",
+        "pain.out_of_stock": "Товар недоступен к покупке",
+        # --- Линейка-допуск (ruler.*)
+        "ruler.limit": "допуск",
+        "ruler.cut": "резать",
+        "ruler.free": "свободно",
+        "ruler.now": "сейчас",
+        "ruler.goal": "цель",
+        "ruler.photos": "фото",
+        "ruler.norm": "норма",
+        "ruler.excess": "превышение",
+        "ruler.video_no": "видео: нет",
+        "ruler.aplus_no": "A+: нет",
     },
     "uk": {
         "app.tagline": "діагностика лістингів",
@@ -655,6 +709,7 @@ LANGS: dict[str, dict[str, str]] = {
         "dash.healthy_products": "товарів без болів",
         "dash.pains_by_products": "болів по",
         "dash.rows_grouped": "рядки одного товару йдуть поспіль",
+        "dash.eyebrow": "Діагноз · увесь каталог",
         # --- Фото (photo.*)
         "photo.title": "Фото і A+",
         "photo.caption": "Аудит візуалу за методологіями. Грейд рахує код, ШІ лише дивиться.",
@@ -671,6 +726,32 @@ LANGS: dict[str, dict[str, str]] = {
         "photo.no_aplus": "A+ контенту немає у снапшоті.",
         "photo.skill_empty": "Методологія порожня — заповни на сторінці Методології.",
         "photo.looking": "Gemini дивиться",
+        # --- Карточка товара: блоки (card.*)
+        "card.title": "Тайтл",
+        "card.reviews": "Відгуки",
+        "card.media": "Медіа",
+        "card.content": "Контент",
+        "card.stock": "Сток",
+        "card.pain": "Біль",
+        "card.cause": "Причина",
+        # --- Формулировки болей (pain.*)
+        "pain.title_over": "Тайтл {n} симв. — Amazon перепише сам",
+        "pain.low_reviews": "{n} відгуків при порозі довіри {min}+",
+        "pain.few_images": "Галерея: {n} фото при нормі {min}+",
+        "pain.no_video": "Немає відео на лістингу",
+        "pain.no_aplus": "Немає A+ контенту",
+        "pain.out_of_stock": "Товар недоступний до купівлі",
+        # --- Линейка-допуск (ruler.*)
+        "ruler.limit": "допуск",
+        "ruler.cut": "різати",
+        "ruler.free": "вільно",
+        "ruler.now": "зараз",
+        "ruler.goal": "ціль",
+        "ruler.photos": "фото",
+        "ruler.norm": "норма",
+        "ruler.excess": "перевищення",
+        "ruler.video_no": "відео: немає",
+        "ruler.aplus_no": "A+: немає",
     },
 }
 
@@ -710,6 +791,7 @@ def lang_selector() -> None:
     if choice and choice != cur:
         st.session_state["lang"] = choice
         st.rerun()
+
 
 
 
