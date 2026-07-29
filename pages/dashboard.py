@@ -149,45 +149,48 @@ def build_card_args(r: pd.Series, product_title: str | None) -> dict:
         current = len(product_title) if product_title else (digits[0] if digits else TITLE_LIMIT)
         over = max(0, current - TITLE_LIMIT)
         return dict(
-            kind_label="Тайтл",
-            headline=f"Тайтл {current} симв. — Amazon перепишет сам",
-            ruler_html=limit_ruler_html(current, TITLE_LIMIT,
-                                        left_label=f"{TITLE_LIMIT} допуск",
-                                        right_label=f"+{over} резать"),
-            money=f"{current} / {TITLE_LIMIT} · превышение {over}",
+            kind_label=t("card.title"),
+            headline=t("pain.title_over", n=current),
+            ruler_html=limit_ruler_html(
+                current, TITLE_LIMIT,
+                left_label=f"{TITLE_LIMIT} {t('ruler.limit')}",
+                right_label=f"+{over} {t('ruler.cut')}"),
+            money=f"{current} / {TITLE_LIMIT} · {t('ruler.excess')} {over}",
         )
     if rule == "low_reviews":
         current = digits[0] if digits else 0
         return dict(
-            kind_label="Отзывы",
-            headline=f"{current} отзывов при пороге доверия {MIN_REVIEWS}+",
-            ruler_html=limit_ruler_html(current, MIN_REVIEWS,
-                                        left_label=f"{current} сейчас",
-                                        right_label=f"цель {MIN_REVIEWS}",
-                                        over_style=False),
+            kind_label=t("card.reviews"),
+            headline=t("pain.low_reviews", n=current, min=MIN_REVIEWS),
+            ruler_html=limit_ruler_html(
+                current, MIN_REVIEWS,
+                left_label=f"{current} {t('ruler.now')}",
+                right_label=f"{t('ruler.goal')} {MIN_REVIEWS}",
+                over_style=False),
             money=f"{current} / {MIN_REVIEWS}",
         )
     if rule == "few_images":
         current = digits[0] if digits else 0
         return dict(
-            kind_label="Медиа",
-            headline=f"Галерея: {current} фото при норме {MIN_IMAGES}+",
-            ruler_html=limit_ruler_html(current, MIN_IMAGES,
-                                        left_label=f"{current} фото",
-                                        right_label=f"норма {MIN_IMAGES}+",
-                                        over_style=False),
+            kind_label=t("card.media"),
+            headline=t("pain.few_images", n=current, min=MIN_IMAGES),
+            ruler_html=limit_ruler_html(
+                current, MIN_IMAGES,
+                left_label=f"{current} {t('ruler.photos')}",
+                right_label=f"{t('ruler.norm')} {MIN_IMAGES}+",
+                over_style=False),
             money=f"{current} / {MIN_IMAGES}",
         )
     if rule == "no_video":
-        return dict(kind_label="Медиа", headline="Нет видео на листинге",
-                    ruler_html="", money="видео: нет")
+        return dict(kind_label=t("card.media"), headline=t("pain.no_video"),
+                    ruler_html="", money=t("ruler.video_no"))
     if rule == "no_aplus":
-        return dict(kind_label="Контент", headline="Нет A+ контента",
-                    ruler_html="", money="A+: нет")
+        return dict(kind_label=t("card.content"), headline=t("pain.no_aplus"),
+                    ruler_html="", money=t("ruler.aplus_no"))
     if rule == "out_of_stock":
-        return dict(kind_label="Сток", headline="Товар недоступен к покупке",
+        return dict(kind_label=t("card.stock"), headline=t("pain.out_of_stock"),
                     ruler_html="", money=money)
-    return dict(kind_label="Боль", headline=str(r["pain"]),
+    return dict(kind_label=t("card.pain"), headline=str(r["pain"]),
                 ruler_html="", money=money)
 
 
