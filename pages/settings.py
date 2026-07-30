@@ -206,38 +206,10 @@ st.divider()
 
 # ================================================================ пороги
 st.markdown(eyebrow("Пороги правил"), unsafe_allow_html=True)
-st.caption("По этим значениям правила находят боли. Меняешь — "
-           "следующий прогон считает по-новому.")
-
-p1, p2, p3 = st.columns(3)
-title_limit = p1.number_input("Лимит тайтла, симв.", 20, 300,
-                              get_int("limit.title", 75), 1)
-hl_limit = p2.number_input("Лимит Item Highlights", 20, 500,
-                           get_int("limit.highlights", 125), 1)
-min_reviews = p3.number_input("Мин. отзывов", 0, 1000,
-                              get_int("threshold.min_reviews", 50), 1)
-
-p4, p5, p6 = st.columns(3)
-min_images = p4.number_input("Мин. фото в галерее", 1, 20,
-                             get_int("threshold.min_images", 7), 1)
-rating_red = p5.number_input("Рейтинг: красный ниже", 1.0, 5.0,
-                             get_float("threshold.rating_red", 4.3), 0.1)
-rating_green = p6.number_input("Рейтинг: зелёный от", 1.0, 5.0,
-                               get_float("threshold.rating_green", 4.4), 0.1)
-
-if st.button("Сохранить пороги", type="primary"):
-    try:
-        save_setting("limit.title", title_limit)
-        save_setting("limit.highlights", hl_limit)
-        save_setting("threshold.min_reviews", min_reviews)
-        save_setting("threshold.min_images", min_images)
-        save_setting("threshold.rating_red", rating_red)
-        save_setting("threshold.rating_green", rating_green)
-        st.success("Пороги сохранены. Новый прогон учтёт их.")
-    except Exception as e:
-        st.error(f"Не сохранилось: {e}")
-
 st.caption(
-    "Пороги применяются при следующем сборе данных. Уже записанные боли "
-    "пересчитываются при новом прогоне — история прежних прогонов сохраняется."
+    "Пороги, по которым правила находят боли (лимит тайтла, минимум отзывов "
+    "и фото, границы рейтинга), живут на странице Методологии — рядом с "
+    "правилами, которые они дополняют."
 )
+st.page_link("pages/methodology.py", label="Перейти в Методологии",
+             icon=":material/menu_book:")
