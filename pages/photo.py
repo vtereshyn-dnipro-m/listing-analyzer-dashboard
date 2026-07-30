@@ -17,6 +17,8 @@ import streamlit as st
 
 from i18n import t
 from services.db import get_conn, cfg
+from services.settings import get_setting
+from services.ai import generate_json, task_config
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
@@ -27,7 +29,7 @@ ACCENT = "#E8590C"
 OK_TEXT = "#2F6B3A"
 MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
 
-VISION_MODEL = "gemini-3.5-flash"
+VISION_MODEL = task_config("photo_audit")[1]
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     f"{VISION_MODEL}:generateContent"
@@ -189,48 +191,14 @@ def extract_aplus(raw) -> list[str]:
 # ---------------------------------------------------------------- анализ
 def analyze(images: list[str], title: str, mp: str, skill: str,
             checks: list[tuple[str, str]], block: str, context: str) -> dict | None:
-    api_key = cfg("GEMINI_API_KEY")
-    if not api_key:
-        st.error("GEMINI_API_KEY не найден в секретах.")
-        return None
-    try:
-        import requests as _rq
-
-        parts: list[dict] = []
-        for url in images:
-            r = _rq.get(url, timeout=30)
-            if r.status_code != 200:
-                continue
-            parts.append({"inline_data": {
-                "mime_type": r.headers.get("Content-Type", "image/jpeg"),
-                "data": base64.b64encode(r.content).decode(),
-            }})
-        if not parts:
-            st.error("Не удалось загрузить ни одного изображения.")
-            return None
-
-        parts.append({"text": PROMPT_TPL.format(
-            skill=skill or "Оцени визуал листинга Amazon по здравому смыслу.",
-            mp=mp, lang=MP_LANGUAGE.get(mp, "язык маркетплейса"),
-            title=title[:120], context=context, block=block,
-            keys=", ".join(f'"{k}": true' for k, _ in checks),
-        )})
-
-        resp = _rq.post(
-            GEMINI_URL,
-            headers={"x-goog-api-key": str(api_key).strip()},
-            json={"contents": [{"parts": parts}],
-                  "generationConfig": {"responseMimeType": "application/json"}},
-            timeout=240,
-        )
-        if resp.status_code != 200:
-            st.error(f"Gemini HTTP {resp.status_code}: {resp.text[:300]}")
-            return None
-        return json.loads(
-            resp.json()["candidates"][0]["content"]["parts"][0]["text"])
-    except Exception as e:
-        st.error(f"Ошибка анализа: {e}")
-        return None
+    """Аудит визуала. Провайдер и модель — из Настроек (задача photo_audit)."""
+    prompt = PROMPT_TPL.format(
+        skill=skill or "Оцени визуал листинга Amazon по здравому смыслу.",
+        mp=mp, lang=MP_LANGUAGE.get(mp, "язык маркетплейса"),
+        title=title[:120], context=context, block=block,
+        keys=", ".join(f'"{k}": true' for k, _ in checks),
+    )
+    return generate_json("photo_audit", prompt, images=images, timeout=300)
 
 
 def grade_from(score: float) -> str:
@@ -391,4 +359,4 @@ with tab_aplus:
         render_checks(res_a, "aplus", APLUS_CHECKS, t("photo.tab_aplus"))
         if res_a.get("designer_brief"):
             st.markdown(f"**{t('photo.designer_brief')}**")
-            st.code(res_a["designer_brief"], language=None)
+            st.code(res_a["designer_brief"], language=None) 
