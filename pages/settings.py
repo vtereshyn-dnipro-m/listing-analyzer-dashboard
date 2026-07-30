@@ -151,24 +151,51 @@ if st.button("Обновить списки моделей"):
 gem_list = gemini_models()
 ant_list = anthropic_models()
 
+PROVIDERS = {"gemini": "Google Gemini", "anthropic": "Anthropic Claude"}
+MODELS_BY_PROVIDER = {"gemini": gem_list, "anthropic": ant_list}
+
 tasks = [
-    ("model.title_split", "Сплит тайтлов (Синтез)", gem_list, "gemini"),
-    ("model.photo_audit", "Аудит фото и A+ (Vision)", gem_list, "gemini"),
-    ("model.agents", "Агенты и сводки", ant_list, "anthropic"),
+    ("title_split", "Сплит тайтлов (Синтез)", "gemini"),
+    ("photo_audit", "Аудит фото и A+ (Vision)", "gemini"),
+    ("agents", "Агенты и сводки", "anthropic"),
 ]
-for key, label, options, prov in tasks:
-    current = get_setting(key)
-    opts = options or [current]
-    if current not in opts:
-        opts = [current] + opts
-    c1, c2 = st.columns([2, 3])
+
+for task, label, prov_default in tasks:
+    prov_key, model_key = f"provider.{task}", f"model.{task}"
+    cur_prov = get_setting(prov_key, prov_default) or prov_default
+    cur_model = get_setting(model_key)
+
+    c1, c2, c3 = st.columns([2, 1.6, 2.4])
     c1.markdown(f"**{label}**")
-    choice = c2.selectbox(label, opts, index=opts.index(current),
-                          label_visibility="collapsed", key=f"model-{key}")
-    if choice != current:
-        save_setting(key, choice)
-        st.success(f"{label}: {choice}")
+
+    prov_opts = list(PROVIDERS.keys())
+    prov_choice = c2.selectbox(
+        "провайдер", prov_opts,
+        index=prov_opts.index(cur_prov) if cur_prov in prov_opts else 0,
+        format_func=lambda p: PROVIDERS[p],
+        label_visibility="collapsed", key=f"prov-{task}")
+
+    opts = MODELS_BY_PROVIDER.get(prov_choice) or []
+    if not opts:
+        opts = [cur_model] if cur_model else ["—"]
+    if cur_model not in opts:
+        opts = [cur_model] + opts if cur_model else opts
+
+    model_choice = c3.selectbox(
+        "модель", opts, index=opts.index(cur_model) if cur_model in opts else 0,
+        label_visibility="collapsed", key=f"model-{task}")
+
+    if prov_choice != cur_prov or model_choice != cur_model:
+        save_setting(prov_key, prov_choice)
+        save_setting(model_key, model_choice)
+        st.success(f"{label}: {PROVIDERS[prov_choice]} · {model_choice}")
         st.rerun()
+
+st.caption(
+    "Провайдер и модель применяются сразу к следующей генерации. "
+    "Vision (фото, A+) поддерживают обе линейки — можно сравнить качество "
+    "на своих товарах и оставить лучшую."
+)
 
 if not gem_list:
     st.caption("Список моделей Gemini недоступен — проверь ключ.")
