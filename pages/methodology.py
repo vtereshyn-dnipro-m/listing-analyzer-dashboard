@@ -14,6 +14,7 @@ import streamlit as st
 
 from i18n import t
 from services.db import get_conn
+from services.settings import get_int, get_float, save_setting
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
@@ -150,6 +151,46 @@ if not versions.empty:
                     except Exception as e:
                         st.error(f"Откат не удался: {e}")
 
+# ================================================================ пороги правил
+st.divider()
+st.markdown(eyebrow("Пороги правил диагноза"), unsafe_allow_html=True)
+st.caption(
+    "Числовая часть методологии: по этим значениям правила решают, что считать "
+    "болью. Меняешь — следующий прогон сбора считает по-новому."
+)
+
+_p1, _p2, _p3 = st.columns(3)
+_title_limit = _p1.number_input(
+    "Лимит тайтла, симв.", 20, 300, get_int("limit.title", 75), 1,
+    help="Официальный лимит Amazon с 27.07.2026 — 75")
+_hl_limit = _p2.number_input(
+    "Лимит Item Highlights", 20, 500, get_int("limit.highlights", 125), 1)
+_min_reviews = _p3.number_input(
+    "Мин. отзывов", 0, 1000, get_int("threshold.min_reviews", 50), 1,
+    help="Ниже этого числа создаётся боль low_reviews")
+
+_p4, _p5, _p6 = st.columns(3)
+_min_images = _p4.number_input(
+    "Мин. фото в галерее", 1, 20, get_int("threshold.min_images", 7), 1,
+    help="Норма категории Tools — 7+")
+_rating_red = _p5.number_input(
+    "Рейтинг: красный ниже", 1.0, 5.0, get_float("threshold.rating_red", 4.3), 0.1)
+_rating_green = _p6.number_input(
+    "Рейтинг: зелёный от", 1.0, 5.0, get_float("threshold.rating_green", 4.4), 0.1)
+
+if st.button("Сохранить пороги", type="primary", key="save-thresholds"):
+    try:
+        save_setting("limit.title", _title_limit)
+        save_setting("limit.highlights", _hl_limit)
+        save_setting("threshold.min_reviews", _min_reviews)
+        save_setting("threshold.min_images", _min_images)
+        save_setting("threshold.rating_red", _rating_red)
+        save_setting("threshold.rating_green", _rating_green)
+        st.success("Пороги сохранены — новый прогон учтёт их.")
+    except Exception as e:
+        st.error(f"Не сохранилось: {e}")
+
+
 # ================================================================ источники
 st.divider()
 st.markdown(eyebrow("Официальные источники Amazon"), unsafe_allow_html=True)
@@ -214,7 +255,7 @@ else:
                 <div style="font-size:14px;font-weight:600;color:{_INK};">
                   {src['title']}
                   <a href="{src['url']}" target="_blank"
-                     style="font-family:{_MONO};font-size:11px;color:{_MUTED};">↗ открыть</a>
+                     style='font-family:{_MONO};font-size:11px;color:{_MUTED};'>↗ открыть</a>
                   <span style="font-size:11px;color:{_MUTED};">{note}</span>
                 </div>
                 {checked_html}
@@ -240,3 +281,97 @@ else:
                 st.rerun()
             except Exception as e:
                 st.error(f"Не сохранилось: {e}")
+
+# ================================================================ изменения правил
+st.divider()
+st.markdown(eyebrow("Изменения в правилах Amazon"), unsafe_allow_html=True)
+st.caption(
+    "Робот проверяет источники раз в неделю. Если текст документа изменился — "
+    "ИИ сравнивает версии и предлагает правки методологии. Решение за человеком."
+)
+
+_SEV = {"critical": ("#FCEBEB", "#A32D2D", "критично"),
+        "important": ("#FCE8DC", "#E8590C", "важно"),
+        "info": ("#F1EFE8", "#8A8578", "к сведению")}
+
+
+@st.cache_data(ttl=60)
+def load_alerts() -> pd.DataFrame:
+    try:
+        conn = get_conn()
+        df_a = pd.read_sql(
+            """
+            SELECT a.*, s.title AS source_title, s.url AS source_url
+            FROM policy_alerts a
+            LEFT JOIN policy_sources s ON s.id = a.source_id
+            WHERE a.status = 'new'
+            ORDER BY a.detected_at DESC
+            """, conn)
+        conn.close()
+        return df_a
+    except Exception:
+        return pd.DataFrame()
+
+
+alerts = load_alerts()
+
+if alerts.empty:
+    st.caption("Новых изменений нет — все источники соответствуют текущим методологиям.")
+else:
+    for _, a in alerts.iterrows():
+        bg, fg, lbl = _SEV.get(str(a["severity"]), _SEV["info"])
+        scopes_chips = "".join(
+            f"<span style='background:#F1EFE8;border-radius:6px;padding:1px 8px;"
+            f"margin-left:4px;font-size:11px;'>{s.strip()}</span>"
+            for s in str(a["affected_scopes"] or "").split(",") if s.strip())
+        st.markdown(
+            f"""
+            <div style="background:{_CARD};border:1px solid {_BORDER};
+                        border-left:3px solid {fg};border-radius:0 10px 10px 0;
+                        padding:14px 18px;margin-bottom:8px;">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;">
+                <div style="font-size:14px;font-weight:600;color:{_INK};">
+                  {a['source_title']}
+                  <a href="{a['source_url']}" target="_blank"
+                     style='font-family:{_MONO};font-size:11px;color:{_MUTED};'>↗ открыть</a>
+                </div>
+                <span style="background:{bg};color:{fg};border-radius:999px;
+                             padding:2px 10px;font-size:11px;font-weight:600;">{lbl}</span>
+              </div>
+              <div style="font-size:13px;color:{_INK};margin-top:6px;">{a['summary']}</div>
+              <div style="font-size:12px;color:{_MUTED};margin-top:4px;">
+                Затронуто: {scopes_chips or '—'} ·
+                обнаружено {pd.to_datetime(a['detected_at']).strftime('%d.%m.%Y')}
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if a["proposed_changes"]:
+            with st.expander("Предлагаемые правки методологии"):
+                st.text(a["proposed_changes"])
+        ac1, ac2, _ = st.columns([1.4, 1.4, 4])
+        if ac1.button("✓ Учтено", key=f"alert-ok-{a['id']}"):
+            try:
+                conn = get_conn()
+                with conn, conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE policy_alerts SET status = 'applied' WHERE id = %s",
+                        (int(a["id"]),))
+                conn.close()
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"{e}")
+        if ac2.button("Отклонить", key=f"alert-no-{a['id']}"):
+            try:
+                conn = get_conn()
+                with conn, conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE policy_alerts SET status = 'dismissed' WHERE id = %s",
+                        (int(a["id"]),))
+                conn.close()
+                st.cache_data.clear()
+                st.rerun()
+            except Exception as e:
+                st.error(f"{e}")
