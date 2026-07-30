@@ -20,15 +20,19 @@ import re
 import pandas as pd
 import streamlit as st
 
-from config import TITLE_LIMIT, HIGHLIGHTS_LIMIT
+from config import TITLE_LIMIT as _TL_DEFAULT, HIGHLIGHTS_LIMIT as _HL_DEFAULT
 from i18n import t
 from services.db import get_conn, cfg
+from services.settings import get_setting, get_int
+from services.ai import generate_json, task_config
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
 st.header(t("nav.synthesis"))
 
-GEMINI_MODEL = "gemini-3.5-flash"
+GEMINI_MODEL = task_config("title_split")[1]
+TITLE_LIMIT = get_int("limit.title", _TL_DEFAULT)
+HIGHLIGHTS_LIMIT = get_int("limit.highlights", _HL_DEFAULT)
 GEMINI_URL = (
     "https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GEMINI_MODEL}:generateContent"
@@ -135,12 +139,7 @@ def load_keywords(asin: str, mp: str) -> pd.DataFrame:
 
 def generate_split(title: str, marketplace: str,
                    skill_text: str, keep: list[str], forbid: list[str]) -> dict | None:
-    api_key = cfg("GEMINI_API_KEY")
-    if not api_key:
-        st.error("GEMINI_API_KEY не найден в секретах — добавь его до [databricks].")
-        return None
-    api_key = str(api_key).strip()
-
+    """Генерация сплита. Провайдер и модель — из Настроек (задача title_split)."""
     kw_lines = []
     if keep:
         kw_lines.append("ОБЯЗАТЕЛЬНО сохрани дословно (в title или highlights): "
@@ -158,27 +157,7 @@ def generate_split(title: str, marketplace: str,
         title_limit=TITLE_LIMIT,
         highlights_limit=HIGHLIGHTS_LIMIT,
     )
-
-    try:
-        import requests as _rq
-        resp = _rq.post(
-            GEMINI_URL,
-            headers={"x-goog-api-key": api_key},
-            json={
-                "contents": [{"parts": [{"text": prompt}]}],
-                "generationConfig": {"responseMimeType": "application/json"},
-            },
-            timeout=60,
-        )
-        if resp.status_code != 200:
-            st.error(f"Gemini HTTP {resp.status_code}: {resp.text[:300]}")
-            return None
-        data = resp.json()
-        text = data["candidates"][0]["content"]["parts"][0]["text"]
-        return json.loads(text)
-    except Exception as e:
-        st.error(f"Ошибка генерации: {e}")
-        return None
+    return generate_json("title_split", prompt, timeout=120)
 
 
 def run_checks(new_title: str, new_hl: str,
@@ -366,4 +345,4 @@ if result and saved_for and saved_for[0] == asin and saved_for[1] == mp:
     if failed:
         st.warning(t("synth.checks_failed"))
     else:
-        st.success(t("synth.checks_ok"))
+        st.success(t("synth.checks_ok")) 
