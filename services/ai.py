@@ -127,4 +127,4 @@ def generate_json(task: str, prompt: str,
         return _call_gemini(model, prompt, imgs, timeout)
     except Exception as e:
         st.error(f"Ошибка вызова ИИ ({provider}/{model}): {e}")
-        return None
+        return None 
