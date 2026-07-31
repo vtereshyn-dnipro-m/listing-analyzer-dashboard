@@ -1,12 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-components/ui.py — визуальные компоненты Listing Suite.
+components/ui.py — визуальные компоненты Listing Suite (макет B + линейка C).
 
-Правила, выведенные из багов (не нарушать):
-1. Шрифт объявлен в CSS-переменной --ls-mono, в разметку идёт MONO = "var(--ls-mono)"
-   — строка без кавычек, поэтому вложенных кавычек в атрибутах не возникает.
-2. Любой HTML для st.markdown собирается в ОДНУ строку без переносов и отступов —
-   иначе markdown принимает отступы за блок кода и печатает разметку текстом.
+Палитра: тёплый белый #FAFAF8, чернильный #1A1815, акцент #E8590C
+(только боль и превышения).
+
+ВАЖНО про шрифт: имя "JetBrains Mono" содержит пробел и в CSS требует кавычек.
+Раньше это ломало разметку (кавычки внутри атрибута style рвали тег).
+Теперь шрифт объявлен ОДИН раз в CSS-переменной --ls-mono (см. inject_fonts),
+а в разметку подставляется MONO = "var(--ls-mono)" — строка без кавычек.
+Поэтому вложенных кавычек в атрибутах больше не возникает в принципе.
 """
 
 from __future__ import annotations
@@ -23,11 +26,12 @@ OK_BG = "#DCEEE0"
 OK_TEXT = "#2F6B3A"
 AMBER = "#EF9F27"
 AMBER_TEXT = "#854F0B"
-MUTED = "#57534A"
+MUTED = "#57534A"   # приглушённый, но хорошо читаемый
 BORDER = "#E7E4DD"
 CARD = "#FFFFFF"
 TRACK = "#F0EFEA"
 
+# безопасная подстановка шрифта в любые инлайн-стили
 MONO = "var(--ls-mono)"
 
 SEV_EDGE = {"red": "#A32D2D", "amber": ACCENT, "yellow": AMBER}
@@ -35,7 +39,12 @@ SEV_LABEL = {"red": "критично", "amber": "важно", "yellow": "пла
 
 
 def inject_fonts() -> None:
-    """Шрифт, CSS-переменные, размеры, адаптив и режим мобильного предпросмотра."""
+    """Подключает JetBrains Mono, объявляет CSS-переменные и утилитарные
+    классы. Вызывается один раз в начале каждой страницы.
+
+    ВАЖНО: строка со стилями формируется без отступов и без пустых строк —
+    иначе markdown Streamlit принимает её за блок кода и печатает как текст.
+    """
     css = (
         '<link href="https://fonts.googleapis.com/css2?'
         'family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">'
@@ -62,9 +71,9 @@ def inject_fonts() -> None:
         'section[data-testid="stSidebar"] a span{font-size:15px;}'
         "</style>"
     )
-
     mobile = bool(st.session_state.get("mobile_preview"))
 
+    # адаптив: правила для реальных узких экранов
     responsive = (
         "@media (max-width: 640px){"
         ".ls-card{flex-direction:column !important;gap:10px !important;"
@@ -77,9 +86,10 @@ def inject_fonts() -> None:
         "}"
     )
 
+    # тот же вид принудительно — тумблер «мобильный вид»
     preview = (
-        ".main .block-container{max-width:430px !important;"
-        "padding-left:12px !important;padding-right:12px !important;}"
+        ".main .block-container{max-width:430px !important;padding-left:12px "
+        "!important;padding-right:12px !important;}"
         ".ls-card{flex-direction:column !important;gap:10px !important;"
         "padding:14px 16px !important;}"
         ".ls-card img{width:100% !important;height:auto !important;"
@@ -99,12 +109,13 @@ def mobile_switch() -> None:
 
 
 def eyebrow(text: str) -> str:
-    """Мелкая моно-подпись над блоком."""
+    """Мелкая моно-подпись над блоком (стили — в классе, кавычек нет)."""
     return f'<span class="ls-eyebrow">{text}</span>'
 
 
 def verdict(title: str, subtitle_html: str, meta_right: str = "") -> None:
-    """Вердикт-блок: eyebrow + крупный заголовок + подстрока."""
+    """Вердикт-блок: eyebrow + крупный заголовок + подстрока.
+    HTML одной строкой — см. пояснение в pain_card."""
     right = (
         f'<span class="ls-mono" style="font-size:13px;color:{MUTED};">'
         f"{meta_right}</span>"
@@ -207,7 +218,11 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
               ruler_html: str, cause: str, action: str, money: str,
               image_url: str | None = None,
               fetched_label: str | None = None) -> None:
-    """Карточка боли: боль → причина → действие → деньги."""
+    """Карточка боли: боль → причина → действие → деньги.
+
+    HTML собирается в ОДНУ строку без переносов и отступов — иначе пустые
+    участки (например отсутствующая линейка) превращаются в блок кода markdown.
+    """
     edge = SEV_EDGE.get(severity, BORDER)
 
     thumb = (
