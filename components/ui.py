@@ -71,7 +71,41 @@ def inject_fonts() -> None:
         'section[data-testid="stSidebar"] a span{font-size:15px;}'
         "</style>"
     )
-    st.markdown(css, unsafe_allow_html=True)
+    mobile = bool(st.session_state.get("mobile_preview"))
+
+    # адаптив: правила для реальных узких экранов
+    responsive = (
+        "@media (max-width: 640px){"
+        ".ls-card{flex-direction:column !important;gap:10px !important;"
+        "padding:14px 16px !important;}"
+        ".ls-card img{width:100% !important;height:auto !important;"
+        "max-height:180px !important;}"
+        ".ls-card .ls-head{flex-direction:column !important;"
+        "align-items:flex-start !important;gap:2px !important;}"
+        ".stMarkdown p,[data-testid=\"stMarkdownContainer\"] p{font-size:16px;}"
+        "}"
+    )
+
+    # тот же вид принудительно — тумблер «мобильный вид»
+    preview = (
+        ".main .block-container{max-width:430px !important;padding-left:12px "
+        "!important;padding-right:12px !important;}"
+        ".ls-card{flex-direction:column !important;gap:10px !important;"
+        "padding:14px 16px !important;}"
+        ".ls-card img{width:100% !important;height:auto !important;"
+        "max-height:180px !important;}"
+        ".ls-card .ls-head{flex-direction:column !important;"
+        "align-items:flex-start !important;gap:2px !important;}"
+    ) if mobile else ""
+
+    st.markdown(css + "<style>" + responsive + preview + "</style>",
+                unsafe_allow_html=True)
+
+
+def mobile_switch() -> None:
+    """Тумблер предпросмотра мобильной вёрстки. Ставится в сайдбар."""
+    st.toggle("Мобильный вид", key="mobile_preview",
+              help="Показать интерфейс так, как он выглядит на телефоне")
 
 
 def eyebrow(text: str) -> str:
@@ -213,12 +247,12 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
     )
 
     html = (
-        f'<div style="background:{CARD};border:1px solid {BORDER};'
+        f'<div class="ls-card" style="background:{CARD};border:1px solid {BORDER};'
         f'border-left:3px solid {edge};border-radius:0 12px 12px 0;'
         f'padding:18px 22px;margin-bottom:14px;display:flex;gap:16px;">'
         f"{thumb}"
         f'<div style="flex:1;min-width:0;">'
-        f'<div style="display:flex;justify-content:space-between;'
+        f'<div class="ls-head" style="display:flex;justify-content:space-between;'
         f'align-items:baseline;margin-bottom:4px;">'
         f"{head}"
         f'<span class="ls-mono" style="font-size:14px;font-weight:600;'
