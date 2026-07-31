@@ -25,10 +25,12 @@ from components.ui import inject_fonts, eyebrow
 inject_fonts()
 
 INK = "#1A1815"
-MUTED = "#8A8578"
+MUTED = "#57534A"
 ACCENT = "#E8590C"
 OK_TEXT = "#2F6B3A"
-MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
+CARD = "#FFFFFF"
+BORDER = "#E7E4DD"
+MONO = "var(--ls-mono)"
 
 VISION_MODEL = task_config("photo_audit")[1]
 GEMINI_URL = (
@@ -503,15 +505,37 @@ for x in rows:
     title = (r["title"] or "")[:70]
     fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
                if pd.notna(r["fetched_at"]) else t("catalog.not_collected"))
-    label = (f"{sku + ' · ' if sku else ''}{asin} · {mp} · "
-             f"{t('metric.photos')} {len(imgs)} · A+ {len(apl)} · "
-             f"{x['g_grade'] or '—'}/{x['a_grade'] or '—'} · {title}")
+    thumb = (
+        f'<div style="flex:0 0 64px;"><img src="{imgs[0]}" '
+        f'style="width:64px;height:64px;object-fit:contain;background:#fff;'
+        f'border:1px solid {BORDER};border-radius:10px;"></div>'
+    ) if imgs else ""
+    edge = ("#A32D2D" if x["g_grade"] == "D"
+            else ACCENT if x["g_grade"] == "C"
+            else OK_TEXT if x["g_grade"] in ("A", "B") else BORDER)
+    head_line = (
+        f'{sku + " · " if sku else ""}'
+        f'<a href="https://www.amazon.{mp}/dp/{asin}" target="_blank">{asin}</a>'
+        f' · {MP_FLAG.get(mp, "")} {mp} · {t("matrix.collected_at")} {fetched}'
+    )
+    st.markdown(
+        f'<div class="ls-card" style="background:{CARD};border:1px solid {BORDER};'
+        f'border-left:3px solid {edge};border-radius:0 12px 12px 0;'
+        f'padding:12px 16px;margin-bottom:4px;display:flex;gap:14px;'
+        f'align-items:center;">'
+        f'{thumb}'
+        f'<div style="flex:1;min-width:0;">'
+        f'{eyebrow(head_line)}'
+        f'<div style="font-size:14px;color:{INK};margin:3px 0 6px;">{title}</div>'
+        f'<span style="font-size:12px;color:{MUTED};">'
+        f'{t("metric.photos")} {len(imgs)} · A+ {len(apl)}</span> '
+        f'{grade_chip(x["g_grade"])} {grade_chip(x["a_grade"])}'
+        f'</div></div>',
+        unsafe_allow_html=True)
 
-    with st.expander(label):
+    with st.expander(f"Аудит · {asin}"):
         st.markdown(
-            eyebrow(f"{asin} · {mp} · {t('matrix.collected_at')} {fetched} · "
-                    f"{t('synth.methodology')} v{ver_g}/{ver_a}")
-            + " " + grade_chip(x["g_grade"]) + " " + grade_chip(x["a_grade"]),
+            eyebrow(f"{t('synth.methodology')} v{ver_g} / v{ver_a}"),
             unsafe_allow_html=True)
 
         tab_g, tab_a = st.tabs([t("photo.tab_gallery"), t("photo.tab_aplus")])
@@ -618,4 +642,4 @@ for x in rows:
                 if res_a.get("designer_brief"):
                     st.markdown(f"**{t('photo.designer_brief')}**")
                     st.code(res_a["designer_brief"], language=None)
-                render_per_photo(res_a, apl) 
+                render_per_photo(res_a, apl)
