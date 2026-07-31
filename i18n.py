@@ -37,6 +37,8 @@ LANGS: dict[str, dict[str, str]] = {
         "sidebar.deadline": "title deadline: **:red[{days} d.]**  \n75-char limit from 27.07.2026",
         "sidebar.deadline_passed": "**75-char** limit is live",
         "sidebar.next_run": "next run: daily 13:00 Kyiv",
+        "sidebar.mobile": "Mobile view",
+        "sidebar.mobile_help": "Preview how the page looks on a phone",
         "common.no_data": "No data yet — run batch_fetch first",
         "common.our": "ours",
         "common.competitor": "competitor",
@@ -204,7 +206,7 @@ LANGS: dict[str, dict[str, str]] = {
         "list.next": "Next →",
         "list.page": "page",
         "list.sort_hint": "Sorting — click a column header",
-        # --- Диагноз, новые (dash.*)
+        # --- Диагноз (dash.*)
         "dash.need_attention": "products need attention",
         "dash.of": "of",
         "dash.at_risk": "At risk",
@@ -283,6 +285,8 @@ LANGS: dict[str, dict[str, str]] = {
         "sidebar.deadline": "дедлайн тайтлов: **:red[{days} дн.]**  \nлимит 75 симв. с 27.07.2026",
         "sidebar.deadline_passed": "лимит **75 симв.** действует",
         "sidebar.next_run": "след. прогон: ежедневно 13:00 Kyiv",
+        "sidebar.mobile": "Мобильный вид",
+        "sidebar.mobile_help": "Посмотреть, как страница выглядит на телефоне",
         "common.no_data": "Данных ещё нет — сначала прогони batch_fetch",
         "common.our": "наш",
         "common.competitor": "конкурент",
@@ -450,7 +454,7 @@ LANGS: dict[str, dict[str, str]] = {
         "list.next": "Вперёд →",
         "list.page": "стр.",
         "list.sort_hint": "Сортировка — клик по заголовку колонки",
-        # --- Диагноз, новые (dash.*)
+        # --- Диагноз (dash.*)
         "dash.need_attention": "товаров требуют внимания",
         "dash.of": "из",
         "dash.at_risk": "Под риском",
@@ -529,6 +533,8 @@ LANGS: dict[str, dict[str, str]] = {
         "sidebar.deadline": "дедлайн тайтлів: **:red[{days} дн.]**  \nліміт 75 симв. з 27.07.2026",
         "sidebar.deadline_passed": "ліміт **75 симв.** діє",
         "sidebar.next_run": "наст. прогін: щодня 13:00 Kyiv",
+        "sidebar.mobile": "Мобільний вигляд",
+        "sidebar.mobile_help": "Подивитися, як сторінка виглядає на телефоні",
         "common.no_data": "Даних ще немає — спочатку прожени batch_fetch",
         "common.our": "наш",
         "common.competitor": "конкурент",
@@ -553,7 +559,7 @@ LANGS: dict[str, dict[str, str]] = {
         "synth.checks_failed": "Є провалені перевірки — перегенеруй або виправ вручну.",
         "synth.checks_ok": "Всі перевірки пройдено. Чернетку збережено.",
         "synth.no_candidates": "Немає тайтлів з перевищенням — Синтезу нічого різати.",
-        # --- Методология
+        # --- Методологія
         "meth.title": "Методології",
         "meth.caption": "Правила, за якими ШІ виконує конкретну задачу. Кожна область — своя методологія і своя історія версій. Правиш текст — зберігаєш нову версію — усі наступні генерації йдуть за нею. Код не чіпається.",
         "meth.scope": "Область застосування",
@@ -566,7 +572,7 @@ LANGS: dict[str, dict[str, str]] = {
         "meth.rollback": "Відкотитися на",
         "meth.empty_scope": "Для цієї області методології ще немає — напиши текст нижче і збережи першу версію.",
         "meth.no_active": "Немає активної версії — збережи нову або відкоти стару нижче.",
-        # --- Области методологии (scopes)
+        # --- Області методології (scopes)
         "meth.scope.common": "Загальна · базові правила для всіх областей",
         "meth.scope.title_split": "Split тайтла 75/125 · сторінка Синтез",
         "meth.scope.bullets": "Булети · переписування 5 пунктів",
@@ -580,7 +586,7 @@ LANGS: dict[str, dict[str, str]] = {
         "meth.scope.review_analysis": "Відгуки · аналіз негативу та інсайти для лістингу",
         "meth.scope.competitor_teardown": "Конкуренти · розбір чужого лістингу",
         "meth.scope.ppc_negatives": "PPC · мінус-слова і структура кампаній",
-        # --- Инструкция (guide.*)
+        # --- Інструкція (guide.*)
         "guide.title": "Як це працює",
         "guide.caption": "Listing Suite знаходить проблеми в лістингах Amazon і дає готові рішення. Формула кожного знайденого болю: що болить → чому → що робити → ціна бездіяльності.",
         "guide.steps_header": "Порядок роботи",
@@ -599,7 +605,7 @@ LANGS: dict[str, dict[str, str]] = {
         "guide.step6_body": "Тексти правил, за якими працює ШІ (як різати тайтл, що заборонено). Правиш як документ → зберігаєш нову версію → наступні генерації йдуть за нею. Є загальна методологія (для всіх задач) і своя на кожну область. Будь-яку версію можна відкотити.",
         "guide.roadmap_header": "Що далі по продукту",
         "guide.roadmap_body": "Застосування спліта на Amazon в один клік (через API) · історія змін «до/після» з ефектом на продажі · автопідбір захищених фраз з пошукових запитів (SQP) · болі по фото, A+ контенту і цінах · методології для булетів і описів.",
-        # --- Инструкция: схема потока (guide.flow.*)
+        # --- Інструкція: схема потоку (guide.flow.*)
         "guide.flow.header": "Як тече потік · жива схема",
         "guide.flow.matrix": "Матриця",
         "guide.flow.matrix_ds": "ASIN'и, які моніторимо",
@@ -615,7 +621,7 @@ LANGS: dict[str, dict[str, str]] = {
         "guide.flow.human_adds": "← людина додає",
         "guide.flow.data_flows": "● дані течуть самі",
         "guide.flow.human_approves": "людина затверджує →",
-        # --- Матрица (matrix.*)
+        # --- Матриця (matrix.*)
         "matrix.caption": "Що моніторимо. Автозбір — за розкладом нижче; точковий збір — кнопкою в рядку.",
         "matrix.format_hint": "Формат — порядково, будь-який з варіантів впереміш:",
         "matrix.add": "Додати в матрицю",
@@ -674,7 +680,7 @@ LANGS: dict[str, dict[str, str]] = {
         "catalog.h_nostock": "немає в наявності",
         "catalog.not_collected": "не збирався",
         "catalog.no_data_row": "— немає даних",
-        # --- Чипы метрик (metric.*)
+        # --- Чіпи метрик (metric.*)
         "metric.title": "тайтл",
         "metric.photos": "фото",
         "metric.video": "відео",
@@ -687,7 +693,7 @@ LANGS: dict[str, dict[str, str]] = {
         "metric.yes": "є",
         "metric.no": "немає",
         "metric.in_stock": "в наявності",
-        # --- Общие для списков (list.*)
+        # --- Спільні для списків (list.*)
         "list.cards": "Картки",
         "list.table": "Таблиця",
         "list.search_pains": "Пошук: ASIN, SKU або текст болю...",
@@ -696,7 +702,7 @@ LANGS: dict[str, dict[str, str]] = {
         "list.next": "Вперед →",
         "list.page": "стор.",
         "list.sort_hint": "Сортування — клік по заголовку колонки",
-        # --- Диагноз, новые (dash.*)
+        # --- Діагноз (dash.*)
         "dash.need_attention": "товарів потребують уваги",
         "dash.of": "з",
         "dash.at_risk": "Під ризиком",
@@ -726,7 +732,7 @@ LANGS: dict[str, dict[str, str]] = {
         "photo.no_aplus": "A+ контенту немає у снапшоті.",
         "photo.skill_empty": "Методологія порожня — заповни на сторінці Методології.",
         "photo.looking": "Gemini дивиться",
-        # --- Карточка товара: блоки (card.*)
+        # --- Картка товару: блоки (card.*)
         "card.title": "Тайтл",
         "card.reviews": "Відгуки",
         "card.media": "Медіа",
@@ -734,14 +740,14 @@ LANGS: dict[str, dict[str, str]] = {
         "card.stock": "Сток",
         "card.pain": "Біль",
         "card.cause": "Причина",
-        # --- Формулировки болей (pain.*)
+        # --- Формулювання болів (pain.*)
         "pain.title_over": "Тайтл {n} симв. — Amazon перепише сам",
         "pain.low_reviews": "{n} відгуків при порозі довіри {min}+",
         "pain.few_images": "Галерея: {n} фото при нормі {min}+",
         "pain.no_video": "Немає відео на лістингу",
         "pain.no_aplus": "Немає A+ контенту",
         "pain.out_of_stock": "Товар недоступний до купівлі",
-        # --- Линейка-допуск (ruler.*)
+        # --- Лінійка-допуск (ruler.*)
         "ruler.limit": "допуск",
         "ruler.cut": "різати",
         "ruler.free": "вільно",
@@ -771,7 +777,7 @@ def t(key: str, **kwargs) -> str:
 
 
 def lang_selector() -> None:
-    """Пилюли смены языка — как в Кабинете (активная красная)."""
+    """Пилюли смены языка — активная подсвечена."""
     cur = current_lang()
     st.caption(LANG_TITLE.get(cur, "Language"))
     codes = ["ru", "uk", "en"]
