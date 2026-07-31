@@ -12,15 +12,17 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from config import TITLE_LIMIT, days_to_deadline
+from config import TITLE_LIMIT as _TL_DEFAULT, days_to_deadline
 from i18n import t
 from services.db import get_conn
+from services.settings import get_int
 from components.ui import (
     inject_fonts, verdict, limit_ruler_html, pain_card, eyebrow,
 )
 
-MIN_REVIEWS = 50
-MIN_IMAGES = 7
+TITLE_LIMIT = get_int("limit.title", _TL_DEFAULT)
+MIN_REVIEWS = get_int("threshold.min_reviews", 50)
+MIN_IMAGES = get_int("threshold.min_images", 7)
 GROUP_THRESHOLD = 1       # режим строк-групп всегда (единый вид на любом объёме)
 PAGE_SIZE = 25
 SEV_ORDER = {"red": 0, "amber": 1, "yellow": 2}
