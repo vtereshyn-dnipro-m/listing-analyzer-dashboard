@@ -70,7 +70,7 @@ with st.sidebar:
     lang_selector()
     # тумблер мобильного вида: флаг читает inject_fonts() в components/ui.py
     st.toggle("Мобильный вид", key="mobile_preview",
-              help="Показать интерфейс так, как он выглядит на телефоне")
+              help="Посмотреть, как страница выглядит на телефоне")
     st.divider()
     d = days_to_deadline()
     if d > 0:
