@@ -11,11 +11,12 @@ from __future__ import annotations
 
 import base64
 import json
+import time
 
 import pandas as pd
 import streamlit as st
 
-from i18n import t
+from i18n import t, current_lang
 from services.db import get_conn, cfg
 from services.settings import get_setting
 from services.ai import generate_json, task_config
@@ -36,6 +37,11 @@ GEMINI_URL = (
 )
 MAX_IMAGES = 10
 MAX_APLUS = 8
+
+MP_FLAG = {"com": "🇺🇸", "es": "🇪🇸", "de": "🇩🇪", "fr": "🇫🇷", "it": "🇮🇹",
+           "co.uk": "🇬🇧", "nl": "🇳🇱", "be": "🇧🇪", "ie": "🇮🇪", "se": "🇸🇪",
+           "pl": "🇵🇱", "ca": "🇨🇦"}
+PROVIDER_ICON = {"gemini": "✦ Gemini", "anthropic": "⚡ Claude"}
 
 MP_LANGUAGE = {
     "es": "испанский", "de": "немецкий", "fr": "французский",
@@ -71,7 +77,12 @@ APLUS_CHECKS = [
     ("aplus_language_match", "тексты на языке маркетплейса"),
 ]
 
+UI_LANG_NAME = {"ru": "русском", "uk": "украинском", "en": "английском"}
+
 PROMPT_TPL = """{skill}
+
+ЯЗЫК ОТВЕТА: все текстовые поля ответа (notes, designer_brief) пиши строго
+на {answer_lang} языке. Названия чек-пунктов и ключи JSON не переводи.
 
 Проанализируй изображения листинга Amazon (маркетплейс {mp}, товар: {title}).
 Ожидаемый язык всех текстов на изображениях — {lang} (язык маркетплейса {mp}).
@@ -82,10 +93,25 @@ PROMPT_TPL = """{skill}
 Ответь ТОЛЬКО валидным JSON:
 {{
   "{block}": {{{keys}}},
-  "notes": {{"<ключ_чекпункта>": "короткое замечание по-русски"}},
+  "notes": {{"<ключ_чекпункта>": "короткое замечание"}},
+  "per_photo": [
+    {{
+      "index": 1,
+      "role": "роль кадра: главное фото / инфографика / фича / комплект / применение / масштаб / совместимость / другое",
+      "score": 7,
+      "good": "что работает на продажу в этом кадре, конкретно",
+      "issue": "что мешает: чего не видно, что снижает доверие или понимание",
+      "fix": "что переснять или добавить, конкретным действием",
+      "conversion": "какое возражение покупателя кадр снимает или НЕ снимает",
+      "emotion": "какую эмоцию вызывает кадр и почему (доверие, желание, сомнение, безразличие)"
+    }}
+  ],
   "designer_brief": "ТЗ дизайнеру: что переснять/переделать, по пунктам"
 }}
-Значения всех чек-пунктов — true или false."""
+Значения всех чек-пунктов — true или false.
+В per_photo дай объект НА КАЖДОЕ изображение по порядку, score от 1 до 10.
+Оценивай как ИИ-ассистент покупателя (Amazon Rufus), который смотрит на фото
+и решает, отвечает ли оно на вопрос «подойдёт ли мне этот товар»."""
 
 
 # ---------------------------------------------------------------- данные
@@ -97,7 +123,7 @@ def load_candidates() -> pd.DataFrame:
             """
             SELECT DISTINCT ON (s.asin, s.marketplace)
                    s.asin, s.marketplace, s.title, s.raw, s.fetched_at,
-                   m.sku_group
+                   m.sku_group, m.is_competitor
             FROM listing_snapshots s
             LEFT JOIN product_matrix m
                 ON m.asin = s.asin AND m.marketplace = s.marketplace
@@ -142,10 +168,16 @@ def load_skill(scope: str) -> tuple[str, int]:
 
 
 def _img_id(url: str) -> str:
-    """ID картинки Amazon: .../I/{ID}._SIZE_.jpg -> {ID} (для дедупа размеров)."""
+    """ID картинки по имени файла — работает и для галереи, и для A+ модулей.
+
+    .../I/81EcKIG6LhL._AC_SL1500_.jpg              -> 81EcKIG6LhL
+    .../aplus-media-library-service-media/644f...__CR0,0.jpg -> 644f...
+    Раньше ID брался по пути /I/, из-за чего ВСЕ модули A+ получали
+    одинаковый ключ и схлопывались в один при дедупе.
+    """
     try:
-        tail = url.rsplit("/I/", 1)[-1]
-        return tail.split(".")[0]
+        name = url.split("?")[0].rstrip("/").split("/")[-1]
+        return name.split(".")[0]
     except Exception:
         return url
 
@@ -195,10 +227,64 @@ def analyze(images: list[str], title: str, mp: str, skill: str,
     prompt = PROMPT_TPL.format(
         skill=skill or "Оцени визуал листинга Amazon по здравому смыслу.",
         mp=mp, lang=MP_LANGUAGE.get(mp, "язык маркетплейса"),
+        answer_lang=UI_LANG_NAME.get(current_lang(), "русском"),
         title=title[:120], context=context, block=block,
         keys=", ".join(f'"{k}": true' for k, _ in checks),
     )
     return generate_json("photo_audit", prompt, images=images, timeout=300)
+
+
+def run_meta(task: str, elapsed: float) -> str:
+    """Строка метаданных прогона: провайдер, модель, длительность."""
+    prov, model = task_config(task)
+    icon = PROVIDER_ICON.get(prov, prov)
+    mins, secs = divmod(int(elapsed), 60)
+    dur = f"{mins}м {secs}с" if mins else f"{secs}с"
+    return f"{icon} · {model} · ⏱ {dur}"
+
+
+def render_per_photo(res: dict, images: list[str]) -> None:
+    """Разбор каждого кадра: оценка, что работает, что мешает, что делать."""
+    items = res.get("per_photo") or []
+    if not items:
+        return
+    st.divider()
+    st.markdown("**Разбор по кадрам**")
+    for it in items:
+        try:
+            idx = int(it.get("index", 0))
+        except (TypeError, ValueError):
+            idx = 0
+        url = images[idx - 1] if 0 < idx <= len(images) else None
+        try:
+            sc = float(it.get("score") or 0)
+        except (TypeError, ValueError):
+            sc = 0.0
+        color = OK_TEXT if sc >= 8 else (ACCENT if sc < 6 else "#854F0B")
+        verdict = "Отлично" if sc >= 8 else ("Слабо" if sc < 6 else "Хорошо")
+
+        c1, c2 = st.columns([1, 4])
+        if url:
+            c1.image(url, use_container_width=True)
+        with c2:
+            st.markdown(
+                f"<div style='font-size:15px;font-weight:700;'>Фото #{idx} — "
+                f"{it.get('role','')}</div>"
+                f"<div style='font-family:{MONO};font-size:20px;font-weight:700;"
+                f"color:{color};'>{sc:.0f}/10 "
+                f"<span style='font-size:13px;font-weight:400;'>{verdict}</span></div>",
+                unsafe_allow_html=True)
+            if it.get("good"):
+                st.markdown(f"✅ {it['good']}")
+            if it.get("issue"):
+                st.markdown(f"⚠️ {it['issue']}")
+            if it.get("fix"):
+                st.markdown(f"🛠 **Что делать** — {it['fix']}")
+            if it.get("conversion"):
+                st.markdown(f"🎯 **Конверсия** — {it['conversion']}")
+            if it.get("emotion"):
+                st.markdown(f"😶 **Эмоция** — {it['emotion']}")
+        st.markdown("---")
 
 
 def grade_from(score: float) -> str:
@@ -239,13 +325,61 @@ def render_checks(res: dict, block: str, checks: list[tuple[str, str]],
                     + (f" — {note}" if note and not ok else ""))
 
 
-def show_grade(grade: str, detail: str) -> None:
+def show_grade(grade: str, detail: str, score: int | None = None) -> None:
     color = OK_TEXT if grade in ("A", "B") else ACCENT
+    score_part = (f"<span style='font-family:{MONO};color:{color};'> {score}/100</span>"
+                  if score is not None else "")
     st.markdown(
         f"<div style='font-size:22px;font-weight:700;color:{INK};'>{t('photo.grade')} "
-        f"<span style='color:{color};font-family:{MONO};'>{grade}</span>"
+        f"<span style='color:{color};font-family:{MONO};'>{grade}</span>{score_part}"
         f"<span style='font-size:13px;color:{MUTED};font-weight:400;'> · {detail}"
         f"</span></div>", unsafe_allow_html=True)
+
+
+def failed_reasons(res: dict, block: str,
+                   checks: list[tuple[str, str]]) -> list[str]:
+    data = res.get(block, {}) or {}
+    return [label for k, label in checks if data.get(k) is not True]
+
+
+
+# ---------------------------------------------------------------- аудиты
+@st.cache_data(ttl=120)
+def load_audits() -> pd.DataFrame:
+    """Последний аудит по каждому товару и типу (галерея / A+)."""
+    try:
+        conn = get_conn()
+        df_a = pd.read_sql(
+            """
+            SELECT DISTINCT ON (asin, marketplace, analysis_type)
+                   asin, marketplace, analysis_type, grade,
+                   score_main, score_gallery, created_at, model
+            FROM photo_analysis
+            ORDER BY asin, marketplace, analysis_type, created_at DESC
+            """,
+            conn,
+        )
+        conn.close()
+        return df_a
+    except Exception:
+        return pd.DataFrame()
+
+
+def audit_of(audits: pd.DataFrame, asin: str, mp: str, kind: str):
+    if audits.empty:
+        return None
+    row = audits[(audits["asin"] == asin) & (audits["marketplace"] == mp)
+                 & (audits["analysis_type"] == kind)]
+    return None if row.empty else row.iloc[0]
+
+
+def grade_chip(g: str | None) -> str:
+    if not g:
+        return f'<span style="background:#F1EFE8;color:{MUTED};border-radius:7px;padding:2px 8px;font-size:11px;">без аудита</span>'
+    color = OK_TEXT if g in ("A", "B") else ACCENT
+    bg = "#DCEEE0" if g in ("A", "B") else "#FCE8DC"
+    return (f'<span style="background:{bg};color:{color};border-radius:7px;'
+            f'padding:2px 8px;font-size:11px;font-weight:600;">{g}</span>')
 
 
 # ---------------------------------------------------------------- UI
@@ -254,109 +388,234 @@ st.caption(t("photo.caption"))
 
 cands = load_candidates()
 if cands.empty:
-    st.info("Нет собранных листингов — прогони сбор в Матрице товаров.")
+    st.info(t("common.no_data"))
     st.stop()
 
-opts = {f"{r['sku_group'] or r['asin']} · {r['asin']} · {r['marketplace']}": i
-        for i, r in cands.iterrows()}
-choice = st.selectbox(t("photo.product"), list(opts.keys()))
-row = cands.loc[opts[choice]]
-asin, mp, title = row["asin"], row["marketplace"], row["title"]
-_f = row.get("fetched_at")
-fetched_part = (
-    f" · {t('matrix.collected_at')} "
-    f"{pd.to_datetime(_f).strftime('%d.%m %H:%M')}"
-    if _f is not None and not pd.isna(_f) else ""
-)
+audits = load_audits()
+skill_g, ver_g = load_skill("photo_brief")
+skill_a, ver_a = load_skill("aplus")
+gallery_ready = bool(skill_g) and ver_g > 0
+aplus_ready = bool(skill_a) and ver_a > 0
 
-tab_gallery, tab_aplus = st.tabs([t("photo.tab_gallery"), t("photo.tab_aplus")])
+if not gallery_ready or not aplus_ready:
+    miss = []
+    if not gallery_ready:
+        miss.append("«Фото · ТЗ дизайнеру»")
+    if not aplus_ready:
+        miss.append("«A+ контент»")
+    st.warning("Не заполнены методологии: " + ", ".join(miss)
+               + ". Пока они пустые, анализ по ним недоступен.")
+    st.page_link("pages/methodology.py", label="Перейти в Методологии",
+                 icon=":material/menu_book:")
 
-# ---- галерея
-with tab_gallery:
-    skill, ver = load_skill("photo_brief")
-    if not skill:
-        st.warning(t("photo.skill_empty"))
-    images = extract_images(row["raw"])
-    st.markdown(
-        eyebrow(f"{asin} · {mp}{fetched_part} · "
-                f"{t('metric.photos')}: {len(images)} · "
-                f"{t('synth.methodology')} v{ver}"),
-        unsafe_allow_html=True)
-    if images:
-        cols = st.columns(min(len(images), 6))
-        for i, url in enumerate(images[:6]):
-            cols[i].image(url, use_container_width=True)
-    else:
-        st.warning(t("photo.no_images"))
+# ---- фильтры
+f1, f2, f3 = st.columns([2, 2, 1.6])
+who = f1.segmented_control(
+    "кто", ["all", "ours", "comp"], default="all",
+    format_func=lambda k: {"all": t("catalog.all"), "ours": t("catalog.ours"),
+                           "comp": t("catalog.competitors")}[k],
+    selection_mode="single", label_visibility="collapsed", key="ph-who") or "all"
+mps = sorted(cands["marketplace"].unique())
+mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
+                        placeholder=t("list.all_mp"))
+try:
+    mode = f3.segmented_control(
+        "вид", ["cards", "table"], default="cards",
+        format_func=lambda k: t("list.cards") if k == "cards" else t("list.table"),
+        selection_mode="single", label_visibility="collapsed", key="ph-mode")
+except AttributeError:
+    mode = f3.radio("вид", ["cards", "table"], horizontal=True,
+                    label_visibility="collapsed", key="ph-mode")
+mode = mode or "cards"
 
-    if st.button(t("photo.analyze_gallery"), type="primary",
-                 disabled=not images, key="btn-gallery"):
-        with st.spinner(f"{t('photo.looking')} {len(images)}..."):
-            res = analyze(
-                images, title, mp, skill, MAIN_CHECKS + GALLERY_CHECKS, "main",
-                "Первое изображение — ГЛАВНОЕ фото, остальные — галерея. "
-                "Ключи main_* относятся к главному фото, role_* — к галерее в целом.",
-            )
-        if res:
-            main = {k: v for k, v in (res.get("main", {}) or {}).items()}
-            m = sum(1 for k, _ in MAIN_CHECKS if main.get(k) is True)
-            g = sum(1 for k, _ in GALLERY_CHECKS if main.get(k) is True)
-            score = m / len(MAIN_CHECKS) * 0.6 + g / len(GALLERY_CHECKS) * 0.4
-            grade = grade_from(score)
-            st.session_state["res_gallery"] = (asin, mp, res, grade, m, g)
-            save(asin, mp, res, grade, m, g, len(images), ver, "gallery")
+q1, q2 = st.columns([4, 2])
+query = q1.text_input("Поиск", label_visibility="collapsed",
+                      placeholder=t("catalog.search"))
+only_new = q2.checkbox("Только без аудита")
 
-    saved = st.session_state.get("res_gallery")
-    if saved and saved[0] == asin and saved[1] == mp:
-        _, _, res, grade, m, g = saved
-        st.divider()
-        show_grade(grade, f"главное {m}/{len(MAIN_CHECKS)} · "
-                          f"галерея {g}/{len(GALLERY_CHECKS)}")
-        c1, c2 = st.columns(2)
-        with c1:
-            render_checks(res, "main", MAIN_CHECKS, t("photo.main_photo"))
-        with c2:
-            render_checks(res, "main", GALLERY_CHECKS, t("photo.gallery_roles"))
-        if res.get("designer_brief"):
-            st.markdown(f"**{t('photo.designer_brief')}**")
-            st.code(res["designer_brief"], language=None)
+view = cands.copy()
+if who == "ours":
+    view = view[~view["is_competitor"].fillna(False)]
+elif who == "comp":
+    view = view[view["is_competitor"].fillna(False)]
+if mp_sel:
+    view = view[view["marketplace"].isin(mp_sel)]
+if query.strip():
+    ql = query.strip().lower()
+    view = view[
+        view["asin"].str.lower().str.contains(ql, na=False)
+        | view["sku_group"].astype(str).str.lower().str.contains(ql, na=False)
+        | view["title"].astype(str).str.lower().str.contains(ql, na=False)
+    ]
 
-# ---- A+ контент
-with tab_aplus:
-    skill_a, ver_a = load_skill("aplus")
-    if not skill_a:
-        st.warning(t("photo.skill_empty"))
-    aplus = extract_aplus(row["raw"])
-    st.markdown(
-        eyebrow(f"{asin} · {mp}{fetched_part} · "
-                f"A+: {len(aplus)} · {t('synth.methodology')} v{ver_a}"),
-        unsafe_allow_html=True)
-    if aplus:
-        for url in aplus[:4]:
-            st.image(url, use_container_width=True)
-    else:
-        st.info(t("photo.no_aplus"))
+rows = []
+for _, r in view.iterrows():
+    imgs = extract_images(r["raw"])
+    apl = extract_aplus(r["raw"])
+    ag = audit_of(audits, r["asin"], r["marketplace"], "gallery")
+    aa = audit_of(audits, r["asin"], r["marketplace"], "aplus")
+    rows.append({"r": r, "imgs": imgs, "apl": apl,
+                 "g_grade": None if ag is None else ag["grade"],
+                 "a_grade": None if aa is None else aa["grade"],
+                 "g_at": None if ag is None else ag["created_at"],
+                 "a_at": None if aa is None else aa["created_at"]})
 
-    if st.button(t("photo.analyze_aplus"), type="primary",
-                 disabled=not aplus, key="btn-aplus"):
-        with st.spinner(f"{t('photo.looking')} {len(aplus)} A+..."):
-            res_a = analyze(
-                aplus, title, mp, skill_a, APLUS_CHECKS, "aplus",
-                "Это модули A+ контента листинга, по порядку сверху вниз.",
-            )
-        if res_a:
-            block = res_a.get("aplus", {}) or {}
-            a = sum(1 for k, _ in APLUS_CHECKS if block.get(k) is True)
-            grade_a = grade_from(a / len(APLUS_CHECKS))
-            st.session_state["res_aplus"] = (asin, mp, res_a, grade_a, a)
-            save(asin, mp, res_a, grade_a, a, 0, len(aplus), ver_a, "aplus")
+if only_new:
+    rows = [x for x in rows if x["g_grade"] is None and x["a_grade"] is None]
 
-    saved_a = st.session_state.get("res_aplus")
-    if saved_a and saved_a[0] == asin and saved_a[1] == mp:
-        _, _, res_a, grade_a, a = saved_a
-        st.divider()
-        show_grade(grade_a, f"{a}/{len(APLUS_CHECKS)} пунктов")
-        render_checks(res_a, "aplus", APLUS_CHECKS, t("photo.tab_aplus"))
-        if res_a.get("designer_brief"):
-            st.markdown(f"**{t('photo.designer_brief')}**")
-            st.code(res_a["designer_brief"], language=None) 
+if not rows:
+    st.caption(t("catalog.nothing"))
+    st.stop()
+
+order = {"D": 0, "C": 1, "B": 2, "A": 3, None: 4}
+rows.sort(key=lambda x: (order.get(x["g_grade"], 4), -len(x["imgs"])))
+st.markdown(f"{len(rows)} {t('catalog.products')}")
+
+# ---- таблица
+if mode == "table":
+    tv = pd.DataFrame([{
+        "фото": (x["imgs"][0] if x["imgs"] else None),
+        "SKU": x["r"]["sku_group"], "ASIN": x["r"]["asin"],
+        "MP": x["r"]["marketplace"],
+        "фото, шт": len(x["imgs"]), "A+, модулей": len(x["apl"]),
+        "грейд галереи": x["g_grade"] or "—",
+        "грейд A+": x["a_grade"] or "—",
+        "аудит": (pd.to_datetime(x["g_at"]).strftime("%d.%m %H:%M")
+                  if x["g_at"] is not None else "—"),
+        "название": (x["r"]["title"] or "")[:70],
+        "ссылка": f"https://www.amazon.{x['r']['marketplace']}/dp/{x['r']['asin']}",
+    } for x in rows])
+    st.dataframe(
+        tv,
+        column_config={
+            "фото": st.column_config.ImageColumn("Фото", width="small"),
+            "ссылка": st.column_config.LinkColumn("Листинг", display_text="открыть"),
+        },
+        hide_index=True, use_container_width=True, height=520)
+    st.caption(t("list.sort_hint"))
+    st.stop()
+
+# ---- карточки
+for x in rows:
+    r, imgs, apl = x["r"], x["imgs"], x["apl"]
+    asin, mp = r["asin"], r["marketplace"]
+    sku = r["sku_group"] if r["sku_group"] and r["sku_group"] != asin else ""
+    title = (r["title"] or "")[:70]
+    fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
+               if pd.notna(r["fetched_at"]) else t("catalog.not_collected"))
+    label = (f"{sku + ' · ' if sku else ''}{asin} · {mp} · "
+             f"{t('metric.photos')} {len(imgs)} · A+ {len(apl)} · "
+             f"{x['g_grade'] or '—'}/{x['a_grade'] or '—'} · {title}")
+
+    with st.expander(label):
+        st.markdown(
+            eyebrow(f"{asin} · {mp} · {t('matrix.collected_at')} {fetched} · "
+                    f"{t('synth.methodology')} v{ver_g}/{ver_a}")
+            + " " + grade_chip(x["g_grade"]) + " " + grade_chip(x["a_grade"]),
+            unsafe_allow_html=True)
+
+        tab_g, tab_a = st.tabs([t("photo.tab_gallery"), t("photo.tab_aplus")])
+
+        with tab_g:
+            if imgs:
+                per_row = 5
+                for start in range(0, len(imgs), per_row):
+                    cols = st.columns(per_row)
+                    for i, url in enumerate(imgs[start:start + per_row]):
+                        cols[i].image(url, use_container_width=True,
+                                      caption=f"{start + i + 1}")
+            else:
+                st.warning(t("photo.no_images"))
+
+            if st.button(t("photo.analyze_gallery"), type="primary",
+                         disabled=not imgs or not gallery_ready,
+                         key=f"g-{asin}-{mp}"):
+                _t0 = time.time()
+                with st.spinner(f"{t('photo.looking')} {len(imgs)}..."):
+                    res = analyze(
+                        imgs, r["title"], mp, skill_g,
+                        MAIN_CHECKS + GALLERY_CHECKS, "main",
+                        "Первое изображение — ГЛАВНОЕ фото, остальные — галерея. "
+                        "Ключи main_* относятся к главному фото, role_* и "
+                        "gallery_* — к галерее в целом.")
+                if res:
+                    main = res.get("main", {}) or {}
+                    m = sum(1 for k, _ in MAIN_CHECKS if main.get(k) is True)
+                    g = sum(1 for k, _ in GALLERY_CHECKS if main.get(k) is True)
+                    score = m / len(MAIN_CHECKS) * 0.6 + g / len(GALLERY_CHECKS) * 0.4
+                    grade = grade_from(score)
+                    save(asin, mp, res, grade, m, g, len(imgs), ver_g, "gallery")
+                    st.session_state[f"res-g-{asin}-{mp}"] = (
+                        res, grade, m, g, run_meta("photo_audit", time.time() - _t0))
+                    st.cache_data.clear()
+
+            saved = st.session_state.get(f"res-g-{asin}-{mp}")
+            if saved:
+                res, grade, m, g, meta = saved
+                st.divider()
+                st.markdown(
+                    eyebrow(f"{MP_FLAG.get(mp,'')} {mp} · {asin} · {meta}"),
+                    unsafe_allow_html=True)
+                show_grade(grade, f"{t('photo.main_photo')} {m}/{len(MAIN_CHECKS)} · "
+                                  f"{t('photo.gallery_roles')} {g}/{len(GALLERY_CHECKS)}",
+                           round((m / len(MAIN_CHECKS) * 0.6
+                                  + g / len(GALLERY_CHECKS) * 0.4) * 100))
+                fails = failed_reasons(res, "main", MAIN_CHECKS + GALLERY_CHECKS)
+                if fails:
+                    st.markdown("Не выполнено: " + " · ".join(fails))
+                c1, c2 = st.columns(2)
+                with c1:
+                    render_checks(res, "main", MAIN_CHECKS, t("photo.main_photo"))
+                with c2:
+                    render_checks(res, "main", GALLERY_CHECKS, t("photo.gallery_roles"))
+                if res.get("designer_brief"):
+                    st.markdown(f"**{t('photo.designer_brief')}**")
+                    st.code(res["designer_brief"], language=None)
+                render_per_photo(res, imgs)
+
+        with tab_a:
+            if apl:
+                for i, url in enumerate(apl, 1):
+                    st.image(url, use_container_width=True, caption=f"A+ {i}")
+            else:
+                if _raw_dict(r.get("raw")).get("aplus"):
+                    st.warning("Amazon сообщает, что A+ есть, но модули не пришли "
+                               "в снапшоте — пересобери товар в Матрице.")
+                else:
+                    st.info(t("photo.no_aplus"))
+
+            if st.button(t("photo.analyze_aplus"), type="primary",
+                         disabled=not apl or not aplus_ready,
+                         key=f"a-{asin}-{mp}"):
+                _ta = time.time()
+                with st.spinner(f"{t('photo.looking')} {len(apl)} A+..."):
+                    res_a = analyze(apl, r["title"], mp, skill_a, APLUS_CHECKS,
+                                    "aplus",
+                                    "Это модули A+ контента листинга, "
+                                    "по порядку сверху вниз.")
+                if res_a:
+                    block = res_a.get("aplus", {}) or {}
+                    a = sum(1 for k, _ in APLUS_CHECKS if block.get(k) is True)
+                    grade_a = grade_from(a / len(APLUS_CHECKS))
+                    save(asin, mp, res_a, grade_a, a, 0, len(apl), ver_a, "aplus")
+                    st.session_state[f"res-a-{asin}-{mp}"] = (
+                        res_a, grade_a, a, run_meta("photo_audit", time.time() - _ta))
+                    st.cache_data.clear()
+
+            saved_a = st.session_state.get(f"res-a-{asin}-{mp}")
+            if saved_a:
+                res_a, grade_a, a, meta_a = saved_a
+                st.divider()
+                st.markdown(
+                    eyebrow(f"{MP_FLAG.get(mp,'')} {mp} · {asin} · {meta_a}"),
+                    unsafe_allow_html=True)
+                show_grade(grade_a, f"{a}/{len(APLUS_CHECKS)}",
+                           round(a / len(APLUS_CHECKS) * 100))
+                fails_a = failed_reasons(res_a, "aplus", APLUS_CHECKS)
+                if fails_a:
+                    st.markdown("Не выполнено: " + " · ".join(fails_a))
+                render_checks(res_a, "aplus", APLUS_CHECKS, t("photo.tab_aplus"))
+                if res_a.get("designer_brief"):
+                    st.markdown(f"**{t('photo.designer_brief')}**")
+                    st.code(res_a["designer_brief"], language=None)
+                render_per_photo(res_a, apl) 
