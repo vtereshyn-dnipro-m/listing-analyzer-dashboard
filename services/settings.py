@@ -68,4 +68,4 @@ def save_setting(key: str, value: str) -> None:
             "updated_at = now()",
             (key, str(value)))
     conn.close()
-    st.cache_data.clear()
+    st.cache_data.clear() 
