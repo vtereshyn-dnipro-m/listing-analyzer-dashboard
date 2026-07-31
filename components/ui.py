@@ -59,6 +59,15 @@ def inject_fonts() -> None:
         ".ls-eyebrow a{color:var(--ls-muted);text-decoration:none;"
         "border-bottom:1px dotted var(--ls-muted);}"
         '[data-testid="stStatusWidget"]{visibility:hidden;}'
+        '[data-testid="stToolbar"]{display:none !important;}'
+        '[data-testid="stToolbarActions"]{display:none !important;}'
+        '[data-testid="stActionButtonIcon"]{display:none !important;}'
+        '[data-testid="stAppDeployButton"]{display:none !important;}'
+        '[data-testid="stMainMenu"]{display:none !important;}'
+        '[data-testid="manage-app-button"]{display:none !important;}'
+        ".viewerBadge_container__1QSob{display:none !important;}"
+        "header{background:transparent !important;}"
+        "footer{visibility:hidden !important;}"
         ".stMarkdown p,.stMarkdown li,"
         '[data-testid="stMarkdownContainer"] p{font-size:15px;}'
         '[data-testid="stCaptionContainer"],'
