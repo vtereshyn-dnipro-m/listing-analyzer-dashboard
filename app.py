@@ -8,6 +8,7 @@ app.py — точка входа Listing Suite. Три языка: EN / RU / UA 
 import streamlit as st
 
 from config import APP_NAME, days_to_deadline
+from components.ui import mobile_switch
 from i18n import t, lang_selector
 
 st.set_page_config(
@@ -68,6 +69,7 @@ nav = st.navigation(
 with st.sidebar:
     st.markdown(f"**{APP_NAME}**  \n{t('app.tagline')}")
     lang_selector()
+    mobile_switch()
     st.divider()
     d = days_to_deadline()
     if d > 0:
