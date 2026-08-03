@@ -41,6 +41,7 @@ RULE_GROUP = {
 MUTED = "#8A8578"
 
 inject_fonts()
+st.title(t("nav.dashboard"))
 
 
 # ---------------------------------------------------------------- данные
@@ -139,7 +140,7 @@ def load_delta() -> tuple[int, int]:
 
 def money_fmt(v) -> str:
     try:
-        return f"€{float(v):,.0f}".replace(",", " ") + "/мес"
+        return f"€{float(v):,.0f}".replace(",", " ")
     except (TypeError, ValueError):
         return "не оценено"
 
@@ -240,7 +241,6 @@ if not titles.empty:
                  for _, r in titles.iterrows()}
 
 if diag.empty:
-    st.header(t("nav.dashboard"))
     st.info(t("common.no_data"))
     st.stop()
 
@@ -265,7 +265,7 @@ total_risk = (diag.groupby(["asin", "marketplace"])["_money"].max().sum()
 
 risk_html = (
     f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>"
-    f"€{total_risk:,.0f}</span>/мес"
+    f"€{total_risk:,.0f}</span>"
     if total_risk else
     f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>—</span> "
     "<span style='color:#57534A;'>(нет данных о выручке по этим товарам)</span>"
@@ -484,15 +484,11 @@ if total_products:
         parts.append(f"<span style='color:#2F6B3A;'>✓ {healthy} "
                      f"{t('dash.healthy_products')}</span>")
     if not_collected:
-        parts.append(f"<span style='color:{MUTED};'>○ {not_collected} ещё "
-                     f"не собирались — данных по ним нет</span>")
+        parts.append(f"<span style='color:{MUTED};'>○ {not_collected} "
+                     f"{t('dash.not_collected_yet')}</span>")
     if parts:
         st.markdown(
             f"<div style='font-size:13px;'>{' · '.join(parts)}</div>",
             unsafe_allow_html=True)
     if not_collected:
-        st.caption(
-            "Автосбор идёт по расписанию: товары появятся в Диагнозе "
-            "после первого снапшота. Нужно быстрее — «↻ Собрать выбранные» "
-            "в Матрице товаров."
-        )
+        st.caption(t("dash.autocollect_hint"))
