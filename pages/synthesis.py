@@ -623,13 +623,14 @@ with tab_queue:
         view.sort(key=lambda z: (-z["risk"], -z["over"]))
 
         if q_mode == "table":
+            # ключи словаря = имена колонок, все обязаны быть разными
             _c = {
-                "img": t("metric.photos"), "sku": "SKU", "asin": "ASIN",
-                "mp": "MP", "len": t("metric.title"),
-                "over": t("ruler.excess"), "risk": t("synth.at_risk_line"),
+                "img": "IMG", "sku": "SKU", "asin": "ASIN", "mp": "MP",
+                "len": "LEN", "over": t("ruler.excess"),
+                "risk": f"{t('synth.at_risk_line')}, €",
                 "sqp": "SQP", "drafts": t("synth.drafts_n"),
                 "cov": "Coverage", "acc": t("work.accepted"),
-                "title": t("card.title"), "link": t("matrix.collect"),
+                "title": t("card.title"), "link": "→",
             }
             _sqp_txt = {"ready": t("metric.yes"), "queued": t("work.no_draft"),
                         "off": t("metric.no")}
@@ -657,13 +658,15 @@ with tab_queue:
                 tv,
                 column_config={
                     _c["img"]: st.column_config.ImageColumn(
-                        _c["img"], width="small"),
+                        t("metric.photos"), width="small"),
+                    _c["len"]: st.column_config.NumberColumn(
+                        t("metric.title"), width="small"),
                     _c["risk"]: st.column_config.NumberColumn(
-                        f"{_c['risk']}, €", format="%.0f", width="small"),
+                        _c["risk"], format="%.0f", width="small"),
                     _c["cov"]: st.column_config.NumberColumn(
                         "Coverage, %", format="%.0f", width="small"),
                     _c["link"]: st.column_config.LinkColumn(
-                        _c["link"], display_text="→"),
+                        t("matrix.collect"), display_text="→"),
                     _c["title"]: st.column_config.TextColumn(
                         _c["title"], width="large"),
                 },
@@ -862,8 +865,12 @@ with tab_any:
         else:
             with st.expander(f"{t('list.table')} ({len(av)})"):
                 atv = av.copy()
-                _len_c, _over_c = t("metric.title"), t("ruler.excess")
+                # имена колонок должны быть уникальными: pyarrow падает на дублях
+                _len_c = f'{t("metric.title")}, {t("meth.limit_title").split(",")[-1].strip()}'
+                _over_c = t("ruler.excess")
                 _got_c = t("matrix.collected_at")
+                _img_c = "IMG"
+                _title_c = t("card.title")
                 atv[_len_c] = atv["title"].astype(str).str.len().where(
                     atv["title"].notna(), None)
                 atv[_over_c] = (atv[_len_c] - TITLE_LIMIT).clip(lower=0)
@@ -876,17 +883,17 @@ with tab_any:
                 st.dataframe(
                     atv[["main_image", "sku_group", "asin", "marketplace",
                          _len_c, _over_c, _got_c, "title", _link_c]]
-                    .rename(columns={"main_image": t("metric.photos"),
+                    .rename(columns={"main_image": _img_c,
                                      "sku_group": "SKU", "asin": "ASIN",
                                      "marketplace": "MP",
-                                     "title": t("card.title")}),
+                                     "title": _title_c}),
                     column_config={
-                        t("metric.photos"): st.column_config.ImageColumn(
+                        _img_c: st.column_config.ImageColumn(
                             t("metric.photos"), width="small"),
                         _link_c: st.column_config.LinkColumn(
-                            _link_c, display_text="→"),
-                        t("card.title"): st.column_config.TextColumn(
-                            t("card.title"), width="large"),
+                            t("matrix.collect"), display_text="→"),
+                        _title_c: st.column_config.TextColumn(
+                            _title_c, width="large"),
                     },
                     hide_index=True, use_container_width=True, height=420)
                 st.caption(t("list.sort_hint"))
