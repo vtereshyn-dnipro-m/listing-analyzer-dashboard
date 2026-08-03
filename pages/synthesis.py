@@ -33,6 +33,7 @@ from services.seo import (
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
+st.title(t("nav.synthesis"))
 
 GEMINI_MODEL = task_config("title_split")[1]
 TITLE_LIMIT = get_int("limit.title", _TL_DEFAULT)
@@ -551,7 +552,7 @@ with tab_queue:
     b3.caption("Партия берёт товары с наибольшими деньгами под риском, "
                "у которых ещё нет черновика. Ничего не применяется.")
 
-    f1, f2, f3 = st.columns([3, 2, 2])
+    f1, f2, f3, f4 = st.columns([2.6, 1.7, 2.2, 1.5])
     query = f1.text_input("Поиск", label_visibility="collapsed",
                           placeholder="Поиск: ASIN, SKU или тайтл...")
     mps = sorted({x["r"]["marketplace"] for x in rows})
@@ -564,12 +565,31 @@ with tab_queue:
                                    "todo": "без черновика",
                                    "done": "принято"}[k],
             selection_mode="single", label_visibility="collapsed",
-            key="syn-scope")
+            key="syn-scope",
+            help="все — вся очередь · с SQP — только там, где есть данные "
+                 "Brand Analytics · без черновика — ещё не генерировали · "
+                 "принято — правка уже записана")
     except AttributeError:
         scope = f3.radio("фильтр", ["all", "sqp", "todo", "done"],
                          horizontal=True,
                          label_visibility="collapsed", key="syn-scope")
     scope = scope or "all"
+    try:
+        q_mode = f4.segmented_control(
+            "вид", ["cards", "table"], default="cards",
+            format_func=lambda k: t("list.cards") if k == "cards"
+            else t("list.table"),
+            selection_mode="single", label_visibility="collapsed",
+            key="syn-mode")
+    except AttributeError:
+        q_mode = f4.radio("вид", ["cards", "table"], horizontal=True,
+                          label_visibility="collapsed", key="syn-mode")
+    q_mode = q_mode or "cards"
+
+    st.caption(
+        "все — вся очередь · с SQP — есть данные Brand Analytics · "
+        "без черновика — ещё не генерировали · принято — правка записана"
+    )
 
     view = rows
     if mp_sel:
@@ -591,6 +611,45 @@ with tab_queue:
         st.caption(t("catalog.nothing"))
     else:
         view.sort(key=lambda z: (-z["risk"], -z["over"]))
+
+        if q_mode == "table":
+            tv = pd.DataFrame([{
+                "фото": (None if pd.isna(z["r"].get("main_image"))
+                         else z["r"].get("main_image")),
+                "SKU": z["r"]["sku_group"], "ASIN": z["r"]["asin"],
+                "MP": z["r"]["marketplace"],
+                "симв.": len(z["r"]["title"] or ""),
+                "превышение": z["over"],
+                "под риском, €": round(z["risk"]) if z["risk"] else None,
+                "SQP": {"ready": "есть", "queued": "в очереди",
+                        "off": "не собирается"}[z["sqp_state"]],
+                "черновиков": (int(z["draft"]["drafts"])
+                               if z["draft"].get("drafts") else 0),
+                "Coverage": (int(z["draft"]["coverage"])
+                             if z["draft"].get("coverage") is not None
+                             and not pd.isna(z["draft"].get("coverage"))
+                             else None),
+                "принято": ("да" if z["accepted"] else ""),
+                "тайтл": (z["r"]["title"] or "")[:70],
+                "ссылка": f"https://www.amazon.{z['r']['marketplace']}"
+                          f"/dp/{z['r']['asin']}",
+            } for z in view])
+            st.dataframe(
+                tv,
+                column_config={
+                    "фото": st.column_config.ImageColumn("Фото", width="small"),
+                    "под риском, €": st.column_config.NumberColumn(
+                        "Под риском, €", format="%.0f", width="small"),
+                    "Coverage": st.column_config.NumberColumn(
+                        "Coverage, %", format="%.0f", width="small"),
+                    "ссылка": st.column_config.LinkColumn(
+                        "Листинг", display_text="открыть"),
+                    "тайтл": st.column_config.TextColumn("Тайтл", width="large"),
+                },
+                hide_index=True, use_container_width=True, height=520)
+            st.caption(t("list.sort_hint"))
+            st.stop()
+
         for x in view[:30]:
             r = x["r"]
             asin, mp = r["asin"], r["marketplace"]
@@ -787,6 +846,33 @@ with tab_any:
         if av.empty:
             st.caption(t("catalog.nothing"))
         else:
+            with st.expander(f"Таблица всех товаров ({len(av)})"):
+                atv = av.copy()
+                atv["симв."] = atv["title"].astype(str).str.len().where(
+                    atv["title"].notna(), None)
+                atv["превышение"] = (atv["симв."] - TITLE_LIMIT).clip(lower=0)
+                atv["собрано"] = pd.to_datetime(
+                    atv["fetched_at"], errors="coerce").dt.strftime("%d.%m %H:%M")
+                atv["ссылка"] = atv.apply(
+                    lambda z: f"https://www.amazon.{z['marketplace']}"
+                              f"/dp/{z['asin']}", axis=1)
+                st.dataframe(
+                    atv[["main_image", "sku_group", "asin", "marketplace",
+                         "симв.", "превышение", "собрано", "title", "ссылка"]]
+                    .rename(columns={"main_image": "фото", "sku_group": "SKU",
+                                     "asin": "ASIN", "marketplace": "MP",
+                                     "title": "тайтл"}),
+                    column_config={
+                        "фото": st.column_config.ImageColumn("Фото",
+                                                             width="small"),
+                        "ссылка": st.column_config.LinkColumn(
+                            "Листинг", display_text="открыть"),
+                        "тайтл": st.column_config.TextColumn("Тайтл",
+                                                             width="large"),
+                    },
+                    hide_index=True, use_container_width=True, height=420)
+                st.caption(t("list.sort_hint"))
+
             opts = {}
             for _, r in av.head(300).iterrows():
                 ttl = r["title"] or "— не собирался"
