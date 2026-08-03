@@ -69,8 +69,8 @@ with st.sidebar:
     st.markdown(f"**{APP_NAME}**  \n{t('app.tagline')}")
     lang_selector()
     # тумблер мобильного вида: флаг читает inject_fonts() в components/ui.py
-    st.toggle("Мобильный вид", key="mobile_preview",
-              help="Посмотреть, как страница выглядит на телефоне")
+    st.toggle(t("sidebar.mobile"), key="mobile_preview",
+              help=t("sidebar.mobile_help"))
     st.divider()
     d = days_to_deadline()
     if d > 0:
@@ -79,4 +79,4 @@ with st.sidebar:
         st.markdown(t("sidebar.deadline_passed"))
 
 # ---------------------------------------------------------------- запуск
-nav.run()
+nav.run() 
