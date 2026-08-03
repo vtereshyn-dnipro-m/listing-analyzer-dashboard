@@ -113,4 +113,4 @@ def has_work(w: dict | None) -> bool:
         v = w.get(k)
         if v is not None and not (isinstance(v, float) and pd.isna(v)):
             return True
-    return False
+    return False 
