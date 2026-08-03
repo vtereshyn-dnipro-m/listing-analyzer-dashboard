@@ -122,10 +122,17 @@ with st.expander(f"{t('matrix.import_header')} ({len(src)})",
         # сводка по маркетплейсам
         stat = (src.groupby("marketplace")
                 .agg(total=("asin", "size"), new=("_new", "sum"))
-                .reset_index().rename(columns={
-                    "marketplace": "MP", "total": t("catalog.products"),
-                    "new": t("matrix.import_new")}))
-        st.dataframe(stat, hide_index=True, use_container_width=True)
+                .reset_index())
+        st.dataframe(
+            stat,
+            column_config={
+                "marketplace": st.column_config.TextColumn("MP", width="small"),
+                "total": st.column_config.NumberColumn(t("catalog.products"),
+                                                       width="small"),
+                "new": st.column_config.NumberColumn(t("matrix.import_new"),
+                                                     width="small"),
+            },
+            hide_index=True, use_container_width=True)
 
         ic1, ic2 = st.columns([3, 2])
         mps_all = sorted(src["marketplace"].unique())
@@ -470,38 +477,50 @@ else:
     # ---- табличный режим (с выбором строк)
     if view_mode == "table":
         tv = chunk.copy()
-        tv["статус"] = tv.apply(
-            lambda x: "✓ ok" if x["last_ok"] is True
-            else ("✗ err" if x["last_ok"] is False else "—"), axis=1)
-        tv["последний сбор"] = pd.to_datetime(
+        tv["status"] = tv.apply(
+            lambda x: "✓" if x["last_ok"] is True
+            else ("✗" if x["last_ok"] is False else "—"), axis=1)
+        tv["got"] = pd.to_datetime(
             tv["last_fetch"], errors="coerce").dt.strftime("%d.%m %H:%M").fillna("—")
-        tv["боли"] = tv.apply(
+        tv["pains"] = tv.apply(
             lambda x: int(0 if pd.isna(x["red"]) else x["red"])
             + int(0 if pd.isna(x["amber"]) else x["amber"])
             + int(0 if pd.isna(x["yellow"]) else x["yellow"]), axis=1)
-        tv["ссылка"] = tv.apply(
-            lambda x: f"https://www.amazon.{x['marketplace']}/dp/{x['asin']}", axis=1)
-        tv.insert(0, "выбрать", False)
+        tv["link"] = tv.apply(
+            lambda x: f"https://www.amazon.{x['marketplace']}/dp/{x['asin']}",
+            axis=1)
+        tv.insert(0, "pick", False)
 
         edited = st.data_editor(
-            tv[["выбрать", "main_image", "sku_group", "asin", "marketplace",
-                "статус", "последний сбор", "боли", "title", "ссылка"]],
+            tv[["pick", "main_image", "sku_group", "asin", "marketplace",
+                "status", "got", "pains", "title", "link"]],
             column_config={
-                "выбрать": st.column_config.CheckboxColumn("", width="small"),
-                "main_image": st.column_config.ImageColumn("Фото", width="small"),
-                "sku_group": st.column_config.TextColumn("SKU", width="small", disabled=True),
-                "asin": st.column_config.TextColumn("ASIN", width="small", disabled=True),
-                "marketplace": st.column_config.TextColumn("MP", width="small", disabled=True),
-                "статус": st.column_config.TextColumn("Статус", width="small", disabled=True),
-                "последний сбор": st.column_config.TextColumn("Собрано", disabled=True),
-                "боли": st.column_config.NumberColumn("Болей", width="small", disabled=True),
-                "title": st.column_config.TextColumn("Название", width="large", disabled=True),
-                "ссылка": st.column_config.LinkColumn("Листинг", display_text="открыть"),
+                "pick": st.column_config.CheckboxColumn("", width="small"),
+                "main_image": st.column_config.ImageColumn(
+                    t("metric.photos"), width="small"),
+                "sku_group": st.column_config.TextColumn("SKU", width="small",
+                                                         disabled=True),
+                "asin": st.column_config.TextColumn("ASIN", width="small",
+                                                    disabled=True),
+                "marketplace": st.column_config.TextColumn("MP", width="small",
+                                                           disabled=True),
+                "status": st.column_config.TextColumn("OK", width="small",
+                                                      disabled=True),
+                "got": st.column_config.TextColumn(t("matrix.collected_at"),
+                                                   disabled=True),
+                "pains": st.column_config.NumberColumn(t("card.pain"),
+                                                       width="small",
+                                                       disabled=True),
+                "title": st.column_config.TextColumn(t("card.title"),
+                                                     width="large",
+                                                     disabled=True),
+                "link": st.column_config.LinkColumn(t("matrix.collect"),
+                                                    display_text="→"),
             },
             hide_index=True, use_container_width=True, height=460,
             key=f"matrix-table-{page}",
         )
-        sel = edited[edited["выбрать"]]
+        sel = edited[edited["pick"]]
         sel_keys = [(r["asin"], r["marketplace"]) for _, r in sel.iterrows()]
 
         ta1, ta2, _ = st.columns([2, 2, 3])
@@ -517,8 +536,8 @@ else:
                 with conn, conn.cursor() as cur:
                     for a, m in sel_keys:
                         cur.execute(
-                            "DELETE FROM product_matrix WHERE asin = %s AND marketplace = %s",
-                            (a, m))
+                            "DELETE FROM product_matrix "
+                            "WHERE asin = %s AND marketplace = %s", (a, m))
                 conn.close()
                 st.cache_data.clear()
                 st.success(f"{t('matrix.deleted')} {len(sel_keys)}")
