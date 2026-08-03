@@ -16,6 +16,9 @@ from config import TITLE_LIMIT as _TL_DEFAULT, days_to_deadline
 from i18n import t
 from services.db import get_conn
 from services.settings import get_int
+from services.economics import (
+    econ_map, money_at_risk, fmt_money, fmt_conversion,
+)
 from components.ui import (
     inject_fonts, verdict, limit_ruler_html, pain_card, eyebrow,
 )
@@ -145,6 +148,9 @@ def money_fmt(v) -> str:
 def build_card_args(r: pd.Series, product_title: str | None) -> dict:
     rule = r.get("rule_id", "")
     money = money_fmt(r.get("money_impact"))
+    _e = ECON.get((r["asin"], r["marketplace"]))
+    _risk = money_at_risk(rule, _e.get("revenue_30d")) if _e else 0.0
+    risk_txt = fmt_money(_risk) if _risk else ""
     digits = [int(s) for s in str(r["pain"]).split() if s.isdigit()]
 
     if rule == "title_over_limit":
@@ -157,7 +163,8 @@ def build_card_args(r: pd.Series, product_title: str | None) -> dict:
                 current, TITLE_LIMIT,
                 left_label=f"{TITLE_LIMIT} {t('ruler.limit')}",
                 right_label=f"+{over} {t('ruler.cut')}"),
-            money=f"{current} / {TITLE_LIMIT} · {t('ruler.excess')} {over}",
+            money=(f"{current} / {TITLE_LIMIT} · {t('ruler.excess')} {over}"
+                   + (f" · {risk_txt}" if risk_txt else "")),
         )
     if rule == "low_reviews":
         current = digits[0] if digits else 0
@@ -169,7 +176,8 @@ def build_card_args(r: pd.Series, product_title: str | None) -> dict:
                 left_label=f"{current} {t('ruler.now')}",
                 right_label=f"{t('ruler.goal')} {MIN_REVIEWS}",
                 over_style=False),
-            money=f"{current} / {MIN_REVIEWS}",
+            money=(f"{current} / {MIN_REVIEWS}"
+                   + (f" · {risk_txt}" if risk_txt else "")),
         )
     if rule == "few_images":
         current = digits[0] if digits else 0
@@ -181,17 +189,20 @@ def build_card_args(r: pd.Series, product_title: str | None) -> dict:
                 left_label=f"{current} {t('ruler.photos')}",
                 right_label=f"{t('ruler.norm')} {MIN_IMAGES}+",
                 over_style=False),
-            money=f"{current} / {MIN_IMAGES}",
+            money=(f"{current} / {MIN_IMAGES}"
+                   + (f" · {risk_txt}" if risk_txt else "")),
         )
     if rule == "no_video":
         return dict(kind_label=t("card.media"), headline=t("pain.no_video"),
-                    ruler_html="", money=t("ruler.video_no"))
+                    ruler_html="",
+                    money=risk_txt or t("ruler.video_no"))
     if rule == "no_aplus":
         return dict(kind_label=t("card.content"), headline=t("pain.no_aplus"),
-                    ruler_html="", money=t("ruler.aplus_no"))
+                    ruler_html="",
+                    money=risk_txt or t("ruler.aplus_no"))
     if rule == "out_of_stock":
         return dict(kind_label=t("card.stock"), headline=t("pain.out_of_stock"),
-                    ruler_html="", money=money)
+                    ruler_html="", money=risk_txt or money)
     return dict(kind_label=t("card.pain"), headline=str(r["pain"]),
                 ruler_html="", money=money)
 
@@ -219,6 +230,7 @@ def render_pain(r: pd.Series, title_map: dict) -> None:
 diag = load_diagnosis()
 titles = load_titles()
 title_map, image_map, fetch_map = {}, {}, {}
+ECON = econ_map()
 if not titles.empty:
     title_map = {(r["asin"], r["marketplace"]): r["title"]
                  for _, r in titles.iterrows()}
@@ -237,13 +249,27 @@ added, closed = load_delta()
 affected = diag.groupby(["asin", "marketplace"]).ngroups
 run_label = pd.to_datetime(diag["created_at"].max()).strftime("%d.%m %H:%M")
 
-money_at_risk = pd.to_numeric(diag.get("money_impact"), errors="coerce").sum()
+def pain_money(row) -> float:
+    """Деньги под риском по конкретной боли: выручка ASIN × коэффициент правила."""
+    e = ECON.get((row["asin"], row["marketplace"]))
+    if not e:
+        return 0.0
+    return money_at_risk(row.get("rule_id", ""), e.get("revenue_30d"))
+
+
+diag = diag.copy()
+diag["_money"] = diag.apply(pain_money, axis=1)
+# по товару берём максимальный риск, а не сумму: проблемы пересекаются
+total_risk = (diag.groupby(["asin", "marketplace"])["_money"].max().sum()
+              if not diag.empty else 0.0)
+
 risk_html = (
-    f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>€{money_at_risk:,.0f}</span>/мес"
-    if money_at_risk else
-    f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>н/д</span> "
-    "<span style='color:#8A8578;'>(заполни sku_economics)</span>"
-)
+    f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>"
+    f"€{total_risk:,.0f}</span>/мес"
+    if total_risk else
+    f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>—</span> "
+    "<span style='color:#57534A;'>(нет данных о выручке по этим товарам)</span>"
+).replace(",", " ")
 delta_html = ""
 if added or closed:
     delta_html = (
@@ -349,16 +375,25 @@ if mode == "table":
     tbl["болей"] = tbl["_cnt"]
     tbl["ссылка"] = tbl.apply(
         lambda r: f"https://www.amazon.{r['marketplace']}/dp/{r['asin']}", axis=1)
+    tbl["под риском"] = tbl["_money"].round(0)
+    tbl["выручка 30д"] = tbl.apply(
+        lambda r: (ECON.get((r["asin"], r["marketplace"])) or {}).get("revenue_30d"),
+        axis=1)
 
     st.dataframe(
         tbl[["товар", "asin", "marketplace", "название", "болей",
-             "важность", "_group", "pain", "action", "ссылка"]],
+             "важность", "_group", "под риском", "выручка 30д",
+             "pain", "action", "ссылка"]],
         column_config={
             "товар": st.column_config.TextColumn("Товар", width="small"),
             "asin": st.column_config.TextColumn("ASIN", width="small"),
             "marketplace": st.column_config.TextColumn("MP", width="small"),
             "название": st.column_config.TextColumn("Название", width="medium"),
             "болей": st.column_config.NumberColumn("Болей", width="small"),
+            "под риском": st.column_config.NumberColumn(
+                "Под риском, €", width="small", format="%.0f"),
+            "выручка 30д": st.column_config.NumberColumn(
+                "Выручка 30д, €", width="small", format="%.0f"),
             "важность": st.column_config.TextColumn("Важность", width="small"),
             "_group": st.column_config.TextColumn("Тип", width="small"),
             "pain": st.column_config.TextColumn("Боль", width="large"),
@@ -383,9 +418,10 @@ else:
             "worst": int(g["_o"].min()),
             "counts": {s: int((g["severity"] == s).sum()) for s in SEV_ORDER},
             "sku": g.iloc[0].get("sku_group") or asin,
-            "money": pd.to_numeric(g.get("money_impact"), errors="coerce").sum(),
+            "money": float(pd.to_numeric(g.get("_money"), errors="coerce").max() or 0),
         })
-    groups.sort(key=lambda x: (x["worst"], -(x["money"] or 0)))
+    # сначала по деньгам под риском, внутри — по тяжести
+    groups.sort(key=lambda x: (-(x["money"] or 0), x["worst"]))
 
     pages = max(1, (len(groups) + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(st.session_state.get("diag_page", 1), pages)
@@ -401,7 +437,13 @@ else:
         short = ptitle[:55] + ("…" if len(ptitle) > 55 else "")
         head = (f"{grp['sku']} · {grp['asin']}"
                 if grp["sku"] and grp["sku"] != grp["asin"] else grp["asin"])
-        label = (f"{head} · {grp['mp']} · {dots}"
+        _e = ECON.get((grp["asin"], grp["mp"])) or {}
+        econ_part = ""
+        if grp["money"]:
+            econ_part = f" · {fmt_money(grp['money'])}"
+        elif _e.get("sessions_30d"):
+            econ_part = f" · {int(_e['sessions_30d'])} сессий"
+        label = (f"{head} · {grp['mp']} · {dots}{econ_part}"
                  + (f" · {short}" if short else ""))
         with st.expander(label, expanded=(i == 0 and page == 1)):
             for _, r in grp["rows"].sort_values(
