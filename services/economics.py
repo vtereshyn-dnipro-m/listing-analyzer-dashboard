@@ -67,7 +67,7 @@ def money_at_risk(rule_id: str, revenue_30d) -> float:
     return rev * RULE_RISK.get(rule_id, 0.03)
 
 
-def fmt_money(v, suffix: str = "/мес") -> str:
+def fmt_money(v, suffix: str = "") -> str:
     try:
         val = float(v or 0)
     except (TypeError, ValueError):
@@ -88,4 +88,4 @@ def fmt_conversion(v) -> str:
         return "—"
     # значение может прийти как доля (0.16) или как проценты (16.7)
     pct = val * 100 if val <= 1 else val
-    return f"{pct:.1f}%".replace(".", ",") 
+    return f"{pct:.1f}%".replace(".", ",")
