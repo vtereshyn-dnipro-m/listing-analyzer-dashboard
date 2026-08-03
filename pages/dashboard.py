@@ -463,13 +463,36 @@ else:
             st.session_state["diag_page"] = page + 1
             st.rerun()
 
-# ---- здоровые товары
+# ---- остальной каталог: здоровые отдельно от несобранных
 if total_products:
-    healthy = total_products - affected
-    if healthy > 0:
-        st.divider()
+    try:
+        conn = get_conn()
+        collected = pd.read_sql(
+            "SELECT count(DISTINCT (asin, marketplace)) AS n "
+            "FROM listing_snapshots WHERE ok = TRUE", conn).iloc[0]["n"]
+        conn.close()
+        collected = int(collected or 0)
+    except Exception:
+        collected = 0
+
+    healthy = max(0, collected - affected)
+    not_collected = max(0, total_products - collected)
+
+    st.divider()
+    parts = []
+    if healthy:
+        parts.append(f"<span style='color:#2F6B3A;'>✓ {healthy} "
+                     f"{t('dash.healthy_products')}</span>")
+    if not_collected:
+        parts.append(f"<span style='color:{MUTED};'>○ {not_collected} ещё "
+                     f"не собирались — данных по ним нет</span>")
+    if parts:
         st.markdown(
-            f"<div style='color:{MUTED};font-size:13px;'>"
-            f"{healthy} {t('dash.healthy_products')} · "
-            f"<span style='color:#2F6B3A;'>✓ здоровы</span></div>",
+            f"<div style='font-size:13px;'>{' · '.join(parts)}</div>",
             unsafe_allow_html=True)
+    if not_collected:
+        st.caption(
+            "Автосбор идёт по расписанию: товары появятся в Диагнозе "
+            "после первого снапшота. Нужно быстрее — «↻ Собрать выбранные» "
+            "в Матрице товаров."
+        )
