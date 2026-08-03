@@ -365,40 +365,41 @@ if mode == "table":
     tbl = tbl.sort_values(["_worst", "_cnt", "asin", "_o"],
                           ascending=[True, False, True, True])
 
-    tbl["товар"] = tbl.apply(
+    tbl["prod"] = tbl.apply(
         lambda r: (r["sku_group"] if r["sku_group"] and r["sku_group"] != r["asin"]
                    else r["asin"]), axis=1)
-    tbl["название"] = tbl.apply(
+    tbl["name"] = tbl.apply(
         lambda r: (title_map.get((r["asin"], r["marketplace"])) or "")[:60], axis=1)
-    tbl["важность"] = tbl["severity"].map(
-        {"red": "🔴 критично", "amber": "🟠 важно", "yellow": "🟡 план"})
-    tbl["болей"] = tbl["_cnt"]
-    tbl["ссылка"] = tbl.apply(
+    tbl["sev"] = tbl["severity"].map(
+        {"red": "🔴", "amber": "🟠", "yellow": "🟡"})
+    tbl["cnt"] = tbl["_cnt"]
+    tbl["link"] = tbl.apply(
         lambda r: f"https://www.amazon.{r['marketplace']}/dp/{r['asin']}", axis=1)
-    tbl["под риском"] = tbl["_money"].round(0)
-    tbl["выручка 30д"] = tbl.apply(
+    tbl["risk"] = tbl["_money"].round(0)
+    tbl["rev"] = tbl.apply(
         lambda r: (ECON.get((r["asin"], r["marketplace"])) or {}).get("revenue_30d"),
         axis=1)
 
     st.dataframe(
-        tbl[["товар", "asin", "marketplace", "название", "болей",
-             "важность", "_group", "под риском", "выручка 30д",
-             "pain", "action", "ссылка"]],
+        tbl[["prod", "asin", "marketplace", "name", "cnt", "sev", "_group",
+             "risk", "rev", "pain", "action", "link"]],
         column_config={
-            "товар": st.column_config.TextColumn("Товар", width="small"),
+            "prod": st.column_config.TextColumn("SKU", width="small"),
             "asin": st.column_config.TextColumn("ASIN", width="small"),
             "marketplace": st.column_config.TextColumn("MP", width="small"),
-            "название": st.column_config.TextColumn("Название", width="medium"),
-            "болей": st.column_config.NumberColumn("Болей", width="small"),
-            "под риском": st.column_config.NumberColumn(
-                "Под риском, €", width="small", format="%.0f"),
-            "выручка 30д": st.column_config.NumberColumn(
-                "Выручка 30д, €", width="small", format="%.0f"),
-            "важность": st.column_config.TextColumn("Важность", width="small"),
-            "_group": st.column_config.TextColumn("Тип", width="small"),
-            "pain": st.column_config.TextColumn("Боль", width="large"),
-            "action": st.column_config.TextColumn("Действие", width="medium"),
-            "ссылка": st.column_config.LinkColumn("Листинг", display_text="открыть"),
+            "name": st.column_config.TextColumn(t("card.title"), width="medium"),
+            "cnt": st.column_config.NumberColumn(t("card.pain"), width="small"),
+            "sev": st.column_config.TextColumn("!", width="small"),
+            "_group": st.column_config.TextColumn(t("card.media"), width="small"),
+            "risk": st.column_config.NumberColumn(
+                f"{t('dash.at_risk')}, EUR", format="%.0f", width="small"),
+            "rev": st.column_config.NumberColumn(
+                f"{t('metric.revenue')}, EUR", format="%.0f", width="small"),
+            "pain": st.column_config.TextColumn(t("card.pain"), width="large"),
+            "action": st.column_config.TextColumn(t("pain.fix_now"),
+                                                  width="medium"),
+            "link": st.column_config.LinkColumn(t("matrix.collect"),
+                                                display_text="→"),
         },
         hide_index=True, use_container_width=True, height=560,
     )
