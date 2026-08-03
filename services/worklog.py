@@ -11,6 +11,8 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from i18n import t
+
 from services.db import get_conn
 
 
@@ -86,13 +88,14 @@ def work_badges(w: dict | None) -> str:
         cov_s = f" {int(cov)}%" if cov is not None and not pd.isna(cov) else ""
         parts.append(
             f'<span style="background:#DCEEE0;color:#2F6B3A;border-radius:5px;'
-            f'padding:1px 7px;font-size:11px;">✓ правка {d}{cov_s}</span>')
+            f'padding:1px 7px;font-size:11px;">{t("work.change_badge")} {d}{cov_s}</span>')
     elif w.get("drafts") and not pd.isna(w.get("drafts")):
         parts.append(
             f'<span style="background:#FAEEDA;color:#854F0B;border-radius:5px;'
-            f'padding:1px 7px;font-size:11px;">✂ черновик '
+            f'padding:1px 7px;font-size:11px;">{t("work.draft_badge")} '
             f'{int(w["drafts"])}</span>')
-    for key, label in (("photo_grade", "фото"), ("aplus_grade", "A+")):
+    for key, label in (("photo_grade", t("metric.photos")),
+                   ("aplus_grade", t("metric.aplus"))):
         g = w.get(key)
         if g and not pd.isna(g):
             ok = str(g) in ("A", "B")
