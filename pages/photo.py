@@ -348,14 +348,19 @@ def failed_reasons(res: dict, block: str,
 # ---------------------------------------------------------------- аудиты
 @st.cache_data(ttl=120)
 def load_audits() -> pd.DataFrame:
-    """Последний аудит по каждому товару и типу (галерея / A+)."""
+    """Последний аудит по каждому товару и типу — с полным результатом.
+
+    Раньше результат жил только в session_state и пропадал при перезагрузке,
+    из-за чего анализ приходилось гонять заново. Теперь читаем сохранённый.
+    """
     try:
         conn = get_conn()
         df_a = pd.read_sql(
             """
             SELECT DISTINCT ON (asin, marketplace, analysis_type)
                    asin, marketplace, analysis_type, grade,
-                   score_main, score_gallery, created_at, model
+                   score_main, score_gallery, created_at, model,
+                   designer_brief, images_analyzed, skill_version, raw
             FROM photo_analysis
             ORDER BY asin, marketplace, analysis_type, created_at DESC
             """,
@@ -365,6 +370,29 @@ def load_audits() -> pd.DataFrame:
         return df_a
     except Exception:
         return pd.DataFrame()
+
+
+def saved_result(audits: pd.DataFrame, asin: str, mp: str,
+                 kind: str) -> tuple[dict | None, dict | None]:
+    """Возвращает (результат анализа, метаданные) из сохранённого аудита."""
+    row = audit_of(audits, asin, mp, kind)
+    if row is None:
+        return None, None
+    raw = row.get("raw")
+    try:
+        res = raw if isinstance(raw, dict) else json.loads(raw or "{}")
+    except Exception:
+        return None, None
+    if not res:
+        return None, None
+    meta = {
+        "grade": row.get("grade"),
+        "created_at": row.get("created_at"),
+        "model": row.get("model"),
+        "images": row.get("images_analyzed"),
+        "skill_version": row.get("skill_version"),
+    }
+    return res, meta
 
 
 def audit_of(audits: pd.DataFrame, asin: str, mp: str, kind: str):
@@ -551,7 +579,22 @@ for x in rows:
             else:
                 st.warning(t("photo.no_images"))
 
-            if st.button(t("photo.analyze_gallery"), type="primary",
+            saved_g, meta_g = saved_result(audits, asin, mp, "gallery")
+            has_saved_g = saved_g is not None
+            btn_label_g = ("Переанализировать галерею" if has_saved_g
+                           else t("photo.analyze_gallery"))
+            if has_saved_g:
+                st.caption(
+                    f"Аудит от "
+                    f"{pd.to_datetime(meta_g['created_at']).strftime('%d.%m %H:%M')}"
+                    f" · {meta_g.get('model') or ''}"
+                    f" · методология v{meta_g.get('skill_version') or 0}"
+                    f" · {meta_g.get('images') or 0} фото. "
+                    "Повторный анализ нужен только после смены фото "
+                    "или правки методологии."
+                )
+
+            if st.button(btn_label_g, type="primary" if not has_saved_g else "secondary",
                          disabled=not imgs or not gallery_ready,
                          key=f"g-{asin}-{mp}"):
                 _t0 = time.time()
@@ -574,6 +617,15 @@ for x in rows:
                     st.cache_data.clear()
 
             saved = st.session_state.get(f"res-g-{asin}-{mp}")
+            if not saved and has_saved_g:
+                _main = saved_g.get("main", {}) or {}
+                _m = sum(1 for k, _ in MAIN_CHECKS if _main.get(k) is True)
+                _g = sum(1 for k, _ in GALLERY_CHECKS if _main.get(k) is True)
+                saved = (saved_g, meta_g.get("grade") or grade_from(
+                    _m / len(MAIN_CHECKS) * 0.6 + _g / len(GALLERY_CHECKS) * 0.4),
+                    _m, _g,
+                    f"{meta_g.get('model') or ''} · "
+                    f"{pd.to_datetime(meta_g['created_at']).strftime('%d.%m %H:%M')}")
             if saved:
                 res, grade, m, g, meta = saved
                 st.divider()
@@ -608,7 +660,20 @@ for x in rows:
                 else:
                     st.info(t("photo.no_aplus"))
 
-            if st.button(t("photo.analyze_aplus"), type="primary",
+            saved_a_db, meta_a = saved_result(audits, asin, mp, "aplus")
+            has_saved_a = saved_a_db is not None
+            btn_label_a = ("Переанализировать A+" if has_saved_a
+                           else t("photo.analyze_aplus"))
+            if has_saved_a:
+                st.caption(
+                    f"Аудит от "
+                    f"{pd.to_datetime(meta_a['created_at']).strftime('%d.%m %H:%M')}"
+                    f" · {meta_a.get('model') or ''}"
+                    f" · методология v{meta_a.get('skill_version') or 0}"
+                )
+
+            if st.button(btn_label_a,
+                         type="primary" if not has_saved_a else "secondary",
                          disabled=not apl or not aplus_ready,
                          key=f"a-{asin}-{mp}"):
                 _ta = time.time()
@@ -627,11 +692,19 @@ for x in rows:
                     st.cache_data.clear()
 
             saved_a = st.session_state.get(f"res-a-{asin}-{mp}")
+            if not saved_a and has_saved_a:
+                _blk = saved_a_db.get("aplus", {}) or {}
+                _n = sum(1 for k, _ in APLUS_CHECKS if _blk.get(k) is True)
+                saved_a = (saved_a_db,
+                           meta_a.get("grade") or grade_from(_n / len(APLUS_CHECKS)),
+                           _n,
+                           f"{meta_a.get('model') or ''} · "
+                           f"{pd.to_datetime(meta_a['created_at']).strftime('%d.%m %H:%M')}")
             if saved_a:
-                res_a, grade_a, a, meta_a = saved_a
+                res_a, grade_a, a, meta_a_txt = saved_a
                 st.divider()
                 st.markdown(
-                    eyebrow(f"{MP_FLAG.get(mp,'')} {mp} · {asin} · {meta_a}"),
+                    eyebrow(f"{MP_FLAG.get(mp,'')} {mp} · {asin} · {meta_a_txt}"),
                     unsafe_allow_html=True)
                 show_grade(grade_a, f"{a}/{len(APLUS_CHECKS)}",
                            round(a / len(APLUS_CHECKS) * 100))
