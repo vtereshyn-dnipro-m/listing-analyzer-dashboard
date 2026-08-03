@@ -441,6 +441,12 @@ if result and saved_for and saved_for[0] == asin and saved_for[1] == mp:
                 f'<span style="font-size:13px;font-weight:400;color:#57534A;">'
                 f'· {verdict_txt}</span></div>',
                 unsafe_allow_html=True)
+            st.caption(
+                "Сколько поискового веса сохранилось после сжатия. Считается "
+                "кодом по данным Brand Analytics за 4 недели: покупка весит "
+                "как 20 кликов, клик — как 200 показов. Фразы FORBID в расчёт "
+                "не входят. 100% — ничего значимого не потеряно."
+            )
 
             if cov["lost"]:
                 st.markdown("**Потеряно:**")
