@@ -46,8 +46,7 @@ st.caption(t("matrix.caption"))
 
 # ================================================================ ввод пачкой
 st.markdown(
-    t("matrix.format_hint") + "  \n"
-    "`SKU, ASIN, маркетплейс[, конкурент]` · `SKU, ссылка` · голый `ASIN` · ссылка amazon"
+    t("matrix.format_hint") + "  \n" + t("matrix.format_example")
 )
 
 text = st.text_area(
