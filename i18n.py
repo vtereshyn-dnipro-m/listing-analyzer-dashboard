@@ -360,6 +360,7 @@ LANGS: dict[str, dict[str, str]] = {
         "matrix.report_from": "Amazon report from",
         "matrix.synced_at": "synced",
         "matrix.format_example": "`SKU, ASIN, marketplace[, competitor]` · `SKU, link` · bare `ASIN` · amazon link",
+        "synth.search": "Search: ASIN, SKU or title...",
     },
     "ru": {
         "app.tagline": "диагностика листингов",
@@ -706,6 +707,7 @@ LANGS: dict[str, dict[str, str]] = {
         "matrix.report_from": "Отчёт Amazon от",
         "matrix.synced_at": "синхронизировано",
         "matrix.format_example": "`SKU, ASIN, маркетплейс[, конкурент]` · `SKU, ссылка` · голый `ASIN` · ссылка amazon",
+        "synth.search": "Поиск: ASIN, SKU или тайтл...",
     },
     "uk": {
         "app.tagline": "діагностика лістингів",
@@ -1052,6 +1054,7 @@ LANGS: dict[str, dict[str, str]] = {
         "matrix.report_from": "Звіт Amazon від",
         "matrix.synced_at": "синхронізовано",
         "matrix.format_example": "`SKU, ASIN, маркетплейс[, конкурент]` · `SKU, посилання` · голий `ASIN` · посилання amazon",
+        "synth.search": "Пошук: ASIN, SKU або тайтл...",
     },
 }
 
