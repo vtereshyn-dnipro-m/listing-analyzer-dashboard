@@ -95,15 +95,15 @@ def load_catalog_source() -> pd.DataFrame:
 
 src = load_catalog_source()
 
-with st.expander(f"Импорт из каталога Amazon ({len(src)} товаров в источнике)",
+with st.expander(f"{t('matrix.import_header')} ({len(src)})",
                  expanded=False):
     if src.empty:
-        st.caption("Источник пуст — прогони синхронизацию каталога в Databricks "
-                   "(ноутбук Sync Catalog).")
+        st.caption(t("matrix.import_empty"))
     else:
         synced = pd.to_datetime(src["synced_at"].max()).strftime("%d.%m %H:%M")
         rep = pd.to_datetime(src["report_date"].max()).strftime("%d.%m.%Y")
-        st.caption(f"Отчёт Amazon от {rep} · синхронизировано {synced}")
+        st.caption(f"{t('matrix.report_from')} {rep} · "
+                   f"{t('matrix.synced_at')} {synced}")
 
         # что уже в матрице
         try:
@@ -122,18 +122,17 @@ with st.expander(f"Импорт из каталога Amazon ({len(src)} тов�
 
         # сводка по маркетплейсам
         stat = (src.groupby("marketplace")
-                .agg(всего=("asin", "size"), новых=("_new", "sum"))
-                .reset_index().rename(columns={"marketplace": "MP"}))
+                .agg(total=("asin", "size"), new=("_new", "sum"))
+                .reset_index().rename(columns={
+                    "marketplace": "MP", "total": t("catalog.products"),
+                    "new": t("matrix.import_new")}))
         st.dataframe(stat, hide_index=True, use_container_width=True)
 
         ic1, ic2 = st.columns([3, 2])
         mps_all = sorted(src["marketplace"].unique())
         mp_pick = ic1.multiselect(
-            "Маркетплейсы", mps_all, default=mps_all,
-            help="Какие маркетплейсы импортировать")
-        fba_only = ic2.checkbox(
-            "Только FBA", value=False,
-            help="Импортировать только листинги на складе Amazon")
+            t("list.all_mp"), mps_all, default=mps_all)
+        fba_only = ic2.checkbox("FBA", value=False)
 
         pick = src[src["marketplace"].isin(mp_pick)]
         if fba_only:
@@ -142,10 +141,10 @@ with st.expander(f"Импорт из каталога Amazon ({len(src)} тов�
         new_rows = pick[pick["_new"]]
 
         st.markdown(
-            f"К импорту: **{len(new_rows)}** новых · "
-            f"уже в матрице: {len(pick) - len(new_rows)}")
+            f"{t('matrix.import_new')}: **{len(new_rows)}** · "
+            f"{t('matrix.import_existing')}: {len(pick) - len(new_rows)}")
 
-        if st.button(f"Импортировать в матрицу ({len(new_rows)})",
+        if st.button(f"{t('matrix.import_button')} ({len(new_rows)})",
                      type="primary", disabled=new_rows.empty):
             try:
                 conn = get_conn()
@@ -164,15 +163,12 @@ with st.expander(f"Импорт из каталога Amazon ({len(src)} тов�
                         added += cur.rowcount
                 conn.close()
                 st.cache_data.clear()
-                st.success(f"Импортировано: {added}")
+                st.success(f"{t('matrix.import_button')}: {added}")
                 st.rerun()
             except Exception as e:
                 st.error(f"Ошибка импорта: {e}")
 
-        st.caption(
-            "Существующие товары не затрагиваются — история и боли сохраняются. "
-            "Автосбор пойдёт по всем товарам матрицы: "
-            f"{len(have) + len(new_rows)} × 5 кредитов ScrapingDog в день.")
+        st.caption(t("matrix.import_note"))
 
 # ================================================================ данные
 @st.cache_data(ttl=120)
@@ -408,17 +404,19 @@ else:
     try:
         work_scope = f4.segmented_control(
             "работа", ["all", "done", "todo", "pains"], default="all",
-            format_func=lambda k: {"all": "все", "done": "в работе",
-                                   "todo": "не тронуты",
-                                   "pains": "с болями"}[k],
+            format_func=lambda k: {"all": t("work.all"),
+                                   "done": t("work.in_progress"),
+                                   "todo": t("work.untouched"),
+                                   "pains": t("work.with_pains")}[k],
             selection_mode="single", label_visibility="collapsed",
             key="matrix-work")
     except AttributeError:
         work_scope = f4.radio(
             "работа", ["all", "done", "todo", "pains"], horizontal=True,
-            format_func=lambda k: {"all": "все", "done": "в работе",
-                                   "todo": "не тронуты",
-                                   "pains": "с болями"}[k],
+            format_func=lambda k: {"all": t("work.all"),
+                                   "done": t("work.in_progress"),
+                                   "todo": t("work.untouched"),
+                                   "pains": t("work.with_pains")}[k],
             label_visibility="collapsed", key="matrix-work")
     work_scope = work_scope or "all"
     try:
@@ -462,8 +460,9 @@ else:
 
     _in_work = sum(1 for _, r in view.iterrows()
                    if has_work(WORK.get((r["asin"], r["marketplace"]))))
-    st.caption(f"{t('matrix.found')} {len(view)} · в работе {_in_work} · "
-               f"не тронуто {len(view) - _in_work}")
+    st.caption(f"{t('matrix.found')} {len(view)} · "
+               f"{t('work.in_work_count')} {_in_work} · "
+               f"{t('work.untouched_count')} {len(view) - _in_work}")
 
     pages = max(1, (len(view) + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(st.session_state.get("matrix-page", 1), pages)
