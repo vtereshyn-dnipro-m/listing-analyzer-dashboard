@@ -14,6 +14,7 @@ import streamlit as st
 
 from i18n import t
 from services.db import get_conn, add_matrix_rows, parse_asin_lines, cfg
+from services.worklog import worklog_map, work_badges, has_work
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
@@ -76,6 +77,102 @@ if st.button(t("matrix.add"), type="primary", disabled=not text.strip()):
             st.error(f"БД недоступна: {e}")
 
 st.divider()
+
+# ================================================================ импорт из каталога
+@st.cache_data(ttl=120)
+def load_catalog_source() -> pd.DataFrame:
+    """Зеркало каталога Amazon (синхронизируется ноутбуком)."""
+    try:
+        conn = get_conn()
+        df_c = pd.read_sql(
+            "SELECT asin, marketplace, sku_group, fulfillment, report_date, "
+            "synced_at FROM catalog_source", conn)
+        conn.close()
+        return df_c
+    except Exception:
+        return pd.DataFrame()
+
+
+src = load_catalog_source()
+
+with st.expander(f"Импорт из каталога Amazon ({len(src)} товаров в источнике)",
+                 expanded=False):
+    if src.empty:
+        st.caption("Источник пуст — прогони синхронизацию каталога в Databricks "
+                   "(ноутбук Sync Catalog).")
+    else:
+        synced = pd.to_datetime(src["synced_at"].max()).strftime("%d.%m %H:%M")
+        rep = pd.to_datetime(src["report_date"].max()).strftime("%d.%m.%Y")
+        st.caption(f"Отчёт Amazon от {rep} · синхронизировано {synced}")
+
+        # что уже в матрице
+        try:
+            conn = get_conn()
+            in_matrix = pd.read_sql(
+                "SELECT asin, marketplace FROM product_matrix", conn)
+            conn.close()
+        except Exception:
+            in_matrix = pd.DataFrame(columns=["asin", "marketplace"])
+        have = set(zip(in_matrix["asin"], in_matrix["marketplace"])) \
+            if not in_matrix.empty else set()
+
+        src = src.copy()
+        src["_new"] = ~src.apply(
+            lambda r: (r["asin"], r["marketplace"]) in have, axis=1)
+
+        # сводка по маркетплейсам
+        stat = (src.groupby("marketplace")
+                .agg(всего=("asin", "size"), новых=("_new", "sum"))
+                .reset_index().rename(columns={"marketplace": "MP"}))
+        st.dataframe(stat, hide_index=True, use_container_width=True)
+
+        ic1, ic2 = st.columns([3, 2])
+        mps_all = sorted(src["marketplace"].unique())
+        mp_pick = ic1.multiselect(
+            "Маркетплейсы", mps_all, default=mps_all,
+            help="Какие маркетплейсы импортировать")
+        fba_only = ic2.checkbox(
+            "Только FBA", value=False,
+            help="Импортировать только листинги на складе Amazon")
+
+        pick = src[src["marketplace"].isin(mp_pick)]
+        if fba_only:
+            pick = pick[pick["fulfillment"].astype(str)
+                        .str.upper().str.startswith("AMAZON")]
+        new_rows = pick[pick["_new"]]
+
+        st.markdown(
+            f"К импорту: **{len(new_rows)}** новых · "
+            f"уже в матрице: {len(pick) - len(new_rows)}")
+
+        if st.button(f"Импортировать в матрицу ({len(new_rows)})",
+                     type="primary", disabled=new_rows.empty):
+            try:
+                conn = get_conn()
+                added = 0
+                with conn, conn.cursor() as cur:
+                    for _, r in new_rows.iterrows():
+                        cur.execute(
+                            """
+                            INSERT INTO product_matrix
+                                (sku_group, asin, marketplace, is_competitor)
+                            VALUES (%s, %s, %s, FALSE)
+                            ON CONFLICT (asin, marketplace) DO NOTHING
+                            """,
+                            (r["sku_group"] or r["asin"], r["asin"],
+                             r["marketplace"]))
+                        added += cur.rowcount
+                conn.close()
+                st.cache_data.clear()
+                st.success(f"Импортировано: {added}")
+                st.rerun()
+            except Exception as e:
+                st.error(f"Ошибка импорта: {e}")
+
+        st.caption(
+            "Существующие товары не затрагиваются — история и боли сохраняются. "
+            "Автосбор пойдёт по всем товарам матрицы: "
+            f"{len(have) + len(new_rows)} × 5 кредитов ScrapingDog в день.")
 
 # ================================================================ данные
 @st.cache_data(ttl=120)
@@ -279,6 +376,7 @@ def collect_rows(rows: pd.DataFrame) -> None:
 
 
 # ================================================================ список
+WORK = worklog_map()
 df = load_matrix()
 
 if df.empty:
@@ -299,7 +397,7 @@ else:
 
     data = df[~df.is_competitor] if seg == "ours" else df[df.is_competitor]
 
-    f1, f2, f3, f4 = st.columns([3, 2, 2, 1.6])
+    f1, f2, f3, f4, f5 = st.columns([2.6, 1.8, 1.8, 2.2, 1.4])
     query = f1.text_input("Поиск", key="matrix-q", label_visibility="collapsed",
                           placeholder=t("matrix.search_placeholder"))
     mps = sorted(data["marketplace"].unique()) if not data.empty else []
@@ -308,7 +406,23 @@ else:
                             label_visibility="collapsed")
     only_stale = f3.checkbox(t("matrix.only_stale"), key="matrix-stale")
     try:
-        view_mode = f4.segmented_control(
+        work_scope = f4.segmented_control(
+            "работа", ["all", "done", "todo", "pains"], default="all",
+            format_func=lambda k: {"all": "все", "done": "в работе",
+                                   "todo": "не тронуты",
+                                   "pains": "с болями"}[k],
+            selection_mode="single", label_visibility="collapsed",
+            key="matrix-work")
+    except AttributeError:
+        work_scope = f4.radio(
+            "работа", ["all", "done", "todo", "pains"], horizontal=True,
+            format_func=lambda k: {"all": "все", "done": "в работе",
+                                   "todo": "не тронуты",
+                                   "pains": "с болями"}[k],
+            label_visibility="collapsed", key="matrix-work")
+    work_scope = work_scope or "all"
+    try:
+        view_mode = f5.segmented_control(
             "Вид", ["cards", "table"], default="cards",
             format_func=lambda k: t("list.cards") if k == "cards" else t("list.table"),
             selection_mode="single", label_visibility="collapsed", key="matrix-mode")
@@ -333,7 +447,23 @@ else:
         lf = pd.to_datetime(view["last_fetch"], utc=True, errors="coerce")
         view = view[lf.isna() | (lf < cutoff) | (view["last_ok"] == False)]  # noqa: E712
 
-    st.caption(f"{t('matrix.found')} {len(view)}")
+    if work_scope == "done":
+        view = view[view.apply(
+            lambda r: has_work(WORK.get((r["asin"], r["marketplace"]))), axis=1)]
+    elif work_scope == "todo":
+        view = view[~view.apply(
+            lambda r: has_work(WORK.get((r["asin"], r["marketplace"]))), axis=1)]
+    elif work_scope == "pains":
+        def _has_pain(r) -> bool:
+            return any(
+                (r.get(k) is not None and not pd.isna(r.get(k)) and r.get(k))
+                for k in ("red", "amber", "yellow"))
+        view = view[view.apply(_has_pain, axis=1)]
+
+    _in_work = sum(1 for _, r in view.iterrows()
+                   if has_work(WORK.get((r["asin"], r["marketplace"]))))
+    st.caption(f"{t('matrix.found')} {len(view)} · в работе {_in_work} · "
+               f"не тронуто {len(view) - _in_work}")
 
     pages = max(1, (len(view) + PAGE_SIZE - 1) // PAGE_SIZE)
     page = min(st.session_state.get("matrix-page", 1), pages)
@@ -443,6 +573,7 @@ else:
             f"style='color:{MUTED};text-decoration:none;"
             f"border-bottom:1px dotted {MUTED};'>{asin}</a> · {mp}</span>"
         )
+        badges = work_badges(WORK.get((asin, mp)))
         img = None if pd.isna(r.get("main_image")) else r.get("main_image")
         thumb_html = (
             f"<img src='{img}' style='width:40px;height:40px;object-fit:contain;"
@@ -462,6 +593,7 @@ else:
               <div>
               <div style="font-size:14px;font-weight:600;color:{INK};">{name_html}</div>
               <div style="font-size:12px;color:{MUTED};">{title_line} · {fetch_line} {('· ' + pains) if pains else ''}</div>
+              {('<div style="margin-top:3px;">' + badges + '</div>') if badges else ''}
               </div>
               </div>
             </div>
