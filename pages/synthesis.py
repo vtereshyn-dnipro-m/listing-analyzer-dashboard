@@ -33,7 +33,6 @@ from services.seo import (
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
-st.header(t("nav.synthesis"))
 
 GEMINI_MODEL = task_config("title_split")[1]
 TITLE_LIMIT = get_int("limit.title", _TL_DEFAULT)
@@ -411,6 +410,33 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
     return {"done": done, "failed": failed}
 
 
+@st.cache_data(ttl=300)
+def load_all_products() -> pd.DataFrame:
+    """Все товары матрицы со свежим снапшотом — для работы с любым тайтлом,
+    а не только с теми, у кого сработало правило title_over_limit."""
+    try:
+        conn = get_conn()
+        df = pd.read_sql(
+            """
+            SELECT m.asin, m.marketplace, m.sku_group,
+                   s.title, s.fetched_at, s.main_image
+            FROM product_matrix m
+            LEFT JOIN LATERAL (
+                SELECT title, fetched_at, raw->>'main_image' AS main_image
+                FROM listing_snapshots s
+                WHERE s.asin = m.asin AND s.marketplace = m.marketplace
+                  AND s.ok = TRUE AND s.title <> ''
+                ORDER BY s.fetched_at DESC LIMIT 1
+            ) s ON TRUE
+            WHERE m.is_competitor = FALSE
+            ORDER BY m.sku_group, m.asin, m.marketplace
+            """, conn)
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
 # ================================================================ UI
 SQP_MARKETPLACES = {"es", "de", "it"}
 SQP_LABEL = {
@@ -420,7 +446,6 @@ SQP_LABEL = {
 }
 Q_COLOR = {"green": "#2F6B3A", "amber": "#854F0B", "red": "#A32D2D"}
 
-st.header(t("nav.synthesis"))
 st.caption("Сжатие тайтла под лимит без потери поискового веса. "
            "Приоритет — по деньгам под риском.")
 
@@ -459,8 +484,12 @@ st.markdown(
     unsafe_allow_html=True)
 
 pending = load_drafts_for_review()
-tab_queue, tab_review = st.tabs([
-    f"Очередь · {len(rows)}", f"Разбор черновиков · {len(pending)}"])
+all_products = load_all_products()
+tab_queue, tab_review, tab_any = st.tabs([
+    f"Очередь · {len(rows)}",
+    f"Разбор черновиков · {len(pending)}",
+    f"Любой товар · {len(all_products)}",
+])
 
 
 def render_card_head(x: dict) -> None:
@@ -722,3 +751,187 @@ with tab_review:
                             kw, res.get("title", ""), res.get("highlights", "")))
                     st.cache_data.clear()
                     st.rerun()
+
+
+# ================================================================ любой товар
+with tab_any:
+    st.caption(
+        "Все товары матрицы, а не только те, у кого сработало правило "
+        "превышения. Можно поработать с тайтлом, который в лимит "
+        "укладывается — например, усилить поисковые фразы."
+    )
+    if all_products.empty:
+        st.info("Матрица пуста — добавь товары на странице «Матрица товаров».")
+    else:
+        aq1, aq2 = st.columns([3, 2])
+        any_query = aq1.text_input(
+            "Поиск", label_visibility="collapsed", key="any-q",
+            placeholder="Поиск: ASIN, SKU или название...")
+        any_mps = sorted(all_products["marketplace"].dropna().unique())
+        any_mp = aq2.multiselect("MP", any_mps, default=[],
+                                 label_visibility="collapsed",
+                                 placeholder=t("list.all_mp"), key="any-mp")
+
+        av = all_products
+        if any_mp:
+            av = av[av["marketplace"].isin(any_mp)]
+        if any_query.strip():
+            q = any_query.strip().lower()
+            av = av[
+                av["asin"].str.lower().str.contains(q, na=False)
+                | av["sku_group"].astype(str).str.lower().str.contains(q, na=False)
+                | av["title"].astype(str).str.lower().str.contains(q, na=False)
+            ]
+
+        st.caption(f"{t('matrix.found')} {len(av)}")
+        if av.empty:
+            st.caption(t("catalog.nothing"))
+        else:
+            opts = {}
+            for _, r in av.head(300).iterrows():
+                ttl = r["title"] or "— не собирался"
+                sku = (f"{r['sku_group']} · " if r["sku_group"]
+                       and r["sku_group"] != r["asin"] else "")
+                ln = f" · {len(r['title'])} симв." if r["title"] else ""
+                opts[f"{sku}{r['asin']} · {r['marketplace']}{ln} · "
+                     f"{str(ttl)[:60]}"] = (r["asin"], r["marketplace"])
+
+            pick = st.selectbox("Товар", list(opts.keys()), key="any-pick")
+            a_asin, a_mp = opts[pick]
+            arow = av[(av["asin"] == a_asin)
+                      & (av["marketplace"] == a_mp)].iloc[0]
+            a_title = arow["title"] or ""
+
+            if not a_title:
+                st.warning(
+                    "По этому товару нет снапшота — собери его в Матрице "
+                    "кнопкой «↻ Собрать», иначе резать нечего.")
+            else:
+                over = max(0, len(a_title) - TITLE_LIMIT)
+                fetched = (pd.to_datetime(arow["fetched_at"]).strftime("%d.%m %H:%M")
+                           if pd.notna(arow["fetched_at"]) else "—")
+                st.markdown(
+                    eyebrow(f"{t('synth.original')} · {len(a_title)} симв. · "
+                            f"{t('matrix.collected_at')} {fetched} · "
+                            f"{t('synth.methodology')} v{skill_version}"),
+                    unsafe_allow_html=True)
+                st.code(a_title, language=None)
+                st.markdown(
+                    limit_ruler_html(
+                        len(a_title), TITLE_LIMIT,
+                        left_label=f"{TITLE_LIMIT} {t('ruler.limit')}",
+                        right_label=(f"+{over} {t('ruler.cut')}" if over
+                                     else f"{t('ruler.free')} "
+                                          f"{TITLE_LIMIT - len(a_title)}")),
+                    unsafe_allow_html=True)
+                if not over:
+                    st.caption(
+                        "Тайтл в лимите. Сплит всё равно возможен: часть фраз "
+                        "можно перенести в Item Highlights и освободить место "
+                        "под ключевые."
+                    )
+
+                st.markdown(eyebrow("Ключевые фразы · Brand Analytics"),
+                            unsafe_allow_html=True)
+                a_kw = build_keyword_table(a_asin, a_mp, a_title)
+                a_edit = pd.DataFrame()
+                if a_kw.empty:
+                    st.caption("Данных Brand Analytics по этому товару нет — "
+                               "генерация пойдёт по методологии.")
+                else:
+                    v = a_kw.rename(columns={
+                        "search_query": "фраза", "volume": "спрос",
+                        "impressions": "показы", "clicks": "клики",
+                        "purchases": "покупки", "weight": "вес",
+                        "in_title": "в тайтле", "tier": "тип"})
+                    v["вес"] = v["вес"].round(1)
+                    a_edit = st.data_editor(
+                        v[["фраза", "спрос", "показы", "клики", "покупки",
+                           "вес", "в тайтле", "тип"]],
+                        column_config={
+                            "тип": st.column_config.SelectboxColumn(
+                                "Тип", options=TIERS, required=True),
+                            "в тайтле": st.column_config.CheckboxColumn(
+                                "В тайтле", disabled=True),
+                            "фраза": st.column_config.TextColumn(
+                                "Фраза", width="large", disabled=True),
+                        },
+                        hide_index=True, use_container_width=True, height=280,
+                        key=f"any-kw-{a_asin}-{a_mp}")
+                    cnt = a_edit["тип"].value_counts().to_dict()
+                    st.markdown(" · ".join(f"{TIER_LABEL[k]} {cnt.get(k, 0)}"
+                                           for k in TIERS))
+
+                a_keep, a_forbid = [], []
+                if not a_edit.empty:
+                    o = a_edit.sort_values("вес", ascending=False)
+                    a_keep = o.loc[o["тип"].isin(["must_keep", "preferred"]),
+                                   "фраза"].tolist()
+                    a_forbid = o.loc[o["тип"] == "forbid", "фраза"].tolist()
+
+                if st.button(t("synth.generate"), type="primary",
+                             key=f"any-gen-{a_asin}-{a_mp}"):
+                    with st.spinner(f"Режу по методологии v{skill_version}..."):
+                        ares = generate_split(a_title, a_mp, skill_text,
+                                              a_keep, a_forbid)
+                    if ares:
+                        save_draft(a_asin, a_mp, a_title, ares, skill_version)
+                        if not a_kw.empty:
+                            save_coverage(a_asin, a_mp, coverage(
+                                a_kw, ares.get("title", ""),
+                                ares.get("highlights", "")))
+                        st.session_state[f"any-res-{a_asin}-{a_mp}"] = ares
+                        st.cache_data.clear()
+                        st.rerun()
+
+                ares = st.session_state.get(f"any-res-{a_asin}-{a_mp}")
+                if ares:
+                    a_new = ares.get("title", "")
+                    a_hl = ares.get("highlights", "")
+                    st.divider()
+                    a_cov = None
+                    if not a_edit.empty:
+                        cdf = a_kw.copy()
+                        tmap = dict(zip(a_edit["фраза"], a_edit["тип"]))
+                        cdf["tier"] = cdf["search_query"].map(tmap).fillna("compress")
+                        cv = coverage(cdf, a_new, a_hl)
+                        a_cov = cv["score"]
+                        if a_cov is not None:
+                            col = ("#2F6B3A" if a_cov >= 85
+                                   else "#854F0B" if a_cov >= 65 else "#A32D2D")
+                            st.markdown(
+                                f'<div style="font-size:19px;font-weight:700;">'
+                                f'SEO Coverage <span style="color:{col};'
+                                f'font-family:var(--ls-mono);">{a_cov}%</span>'
+                                f'</div>', unsafe_allow_html=True)
+                            if cv["lost"]:
+                                st.markdown("**Потеряно:** " + " · ".join(
+                                    f"`{p}`" for p, _, _ in cv["lost"][:6]))
+
+                    st.markdown(f"**title** · {len(a_new)}/{TITLE_LIMIT}")
+                    st.code(a_new, language=None)
+                    st.markdown(f"**item highlights** · {len(a_hl)}/{HIGHLIGHTS_LIMIT}")
+                    st.code(a_hl, language=None)
+                    if ares.get("dropped"):
+                        st.markdown(f"**{t('synth.dropped')}:** "
+                                    + " · ".join(f"`{w}`"
+                                                 for w in ares["dropped"]))
+
+                    a_checks = run_checks(a_new, a_hl, a_keep, a_forbid)
+                    a_failed = [m for ok, m in a_checks if not ok]
+                    st.markdown(" · ".join(("✅ " if ok else "❌ ") + m
+                                           for ok, m in a_checks))
+
+                    ac1, ac2 = st.columns([1.4, 1])
+                    if ac1.button("✓ Принять и записать", type="primary",
+                                  disabled=bool(a_failed),
+                                  key=f"any-acc-{a_asin}-{a_mp}"):
+                        if accept_change(a_asin, a_mp, a_title, ares, a_cov,
+                                         skill_version, GEMINI_MODEL):
+                            st.success("Правка записана. Вставь текст "
+                                       "в Seller Central.")
+                            st.rerun()
+                    if ac2.button("Перегенерировать",
+                                  key=f"any-re-{a_asin}-{a_mp}"):
+                        st.session_state.pop(f"any-res-{a_asin}-{a_mp}", None)
+                        st.rerun()
