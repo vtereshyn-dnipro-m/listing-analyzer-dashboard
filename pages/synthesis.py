@@ -580,4 +580,4 @@ for x in view[:30]:
                 st.rerun()
 
 if len(view) > 30:
-    st.caption(f"показано 30 из {len(view)} — уточни фильтры")
+    st.caption(f"показано 30 из {len(view)} — уточни фильтры") 
