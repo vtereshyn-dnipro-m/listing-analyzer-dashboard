@@ -88,4 +88,4 @@ def fmt_conversion(v) -> str:
         return "—"
     # значение может прийти как доля (0.16) или как проценты (16.7)
     pct = val * 100 if val <= 1 else val
-    return f"{pct:.1f}%".replace(".", ",")
+    return f"{pct:.1f}%".replace(".", ",") 
