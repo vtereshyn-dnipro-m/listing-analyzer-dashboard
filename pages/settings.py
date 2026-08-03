@@ -17,12 +17,12 @@ from services.settings import get_setting, get_int, get_float, save_setting
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
+st.title(t("set.title"))
 
 OK_TEXT = "#2F6B3A"
 ERR_TEXT = "#A32D2D"
 MUTED = "#57534A"
 
-st.header("Настройки")
 st.caption("Подключения, модели ИИ и пороги правил. "
            "Ключи API хранятся в защищённых секретах и здесь не отображаются.")
 
@@ -190,6 +190,16 @@ for task, label, prov_default in tasks:
         save_setting(model_key, model_choice)
         st.success(f"{label}: {PROVIDERS[prov_choice]} · {model_choice}")
         st.rerun()
+
+fb_on = str(get_setting("ai.fallback", "off")).lower() == "on"
+fb = st.toggle(
+    "Автопереключение при перегрузке", value=fb_on,
+    help="Если основной провайдер недоступен (429/503), запрос уйдёт ко "
+         "второму автоматически. Выключено — предложим кнопку «Повторить», "
+         "чтобы смена модели не была незаметной.")
+if fb != fb_on:
+    save_setting("ai.fallback", "on" if fb else "off")
+    st.rerun()
 
 st.caption(
     "Провайдер и модель применяются сразу к следующей генерации. "
