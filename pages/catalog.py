@@ -15,9 +15,11 @@ import re
 import pandas as pd
 import streamlit as st
 
-from config import TITLE_LIMIT
+from config import TITLE_LIMIT as _TL_DEFAULT
 from i18n import t
 from services.db import get_conn
+from services.settings import get_int, get_float
+from services.economics import econ_map, fmt_money, fmt_conversion
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
@@ -35,11 +37,12 @@ ERR_BG = "#FCEBEB"
 ERR_TEXT = "#A32D2D"
 MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
 
-MIN_REVIEWS = 50          # отзывы: ниже — жёлтый
-CRIT_REVIEWS = 10         # отзывы: ниже — красный
-RATING_RED = 4.3          # рейтинг: <4.3 красный
-RATING_GREEN = 4.4        # рейтинг: >=4.4 зелёный, между — жёлтый
-MIN_IMAGES = 7
+TITLE_LIMIT = get_int("limit.title", _TL_DEFAULT)
+MIN_REVIEWS = get_int("threshold.min_reviews", 50)
+CRIT_REVIEWS = 10
+RATING_RED = get_float("threshold.rating_red", 4.3)
+RATING_GREEN = get_float("threshold.rating_green", 4.4)
+MIN_IMAGES = get_int("threshold.min_images", 7)
 PAGE_SIZE = 20
 
 
@@ -128,6 +131,7 @@ def metrics(row: pd.Series) -> dict:
         "bsr": bsr,
         "in_stock": bool(row.get("in_stock")),
         "seller": d.get("sold_by") or "",
+        "econ": {},
         "main_img": main_img,
         "coupon": bool(d.get("is_coupon_exists")),
     }
@@ -177,6 +181,7 @@ def chip(label: str, value: str, state: str) -> str:
 st.header(t("nav.catalog"))
 st.caption(t("catalog.caption"))
 
+ECON = econ_map()
 df = load_catalog()
 if df.empty:
     st.caption(t("common.no_data"))
@@ -238,7 +243,16 @@ if not rows:
     st.stop()
 
 order = {"red": 0, "amber": 1, "yellow": 2, "ok": 3, "comp": 4}
-rows.sort(key=lambda x: (order[x["lvl"]], -(x["mx"]["title_len"] or 0)))
+def _rev(x) -> float:
+    e = ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+    try:
+        return float(e.get("revenue_30d") or 0)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+rows.sort(key=lambda x: (order[x["lvl"]], -_rev(x),
+                         -(x["mx"]["title_len"] or 0)))
 
 healthy = sum(1 for x in rows if x["lvl"] == "ok")
 st.markdown(
@@ -257,6 +271,12 @@ exp = pd.DataFrame([{
     "рейтинг": x["mx"]["rating"], "цена": x["mx"]["price"],
     "bsr": x["mx"]["bsr"][0] if x["mx"]["bsr"] else None,
     "в_наличии": x["mx"]["in_stock"], "название": x["mx"]["title"],
+    "выручка_30д": (ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                    ).get("revenue_30d"),
+    "сессии_30д": (ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                   ).get("sessions_30d"),
+    "шаблон_доставки": (ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                        ).get("shipping_template"),
 } for x in rows])
 st.download_button(t("catalog.export"), exp.to_csv(index=False).encode("utf-8-sig"),
                    file_name="catalog.csv", mime="text/csv")
@@ -299,6 +319,7 @@ for x in chunk:
     head = f"{sku} · " if sku else ""
     who_lbl = t("common.competitor") if r["is_competitor"] else t("common.our")
 
+    _ec = ECON.get((asin, mp)) or {}
     chips = "".join([
         chip(t("metric.title"), f"{mx['title_len']}/{TITLE_LIMIT}",
              "err" if mx["title_len"] > TITLE_LIMIT else "ok"),
@@ -321,7 +342,15 @@ for x in chunk:
                      if mx["bsr"] else "—"), "neutral"),
         chip(t("metric.stock"), t("metric.in_stock") if mx["in_stock"] else t("metric.no"),
              "ok" if mx["in_stock"] else "err"),
-    ])
+    ] + ([
+        chip("выручка 30д", fmt_money(_ec.get("revenue_30d"), ""), "neutral"),
+        chip("сессии", str(int(_ec.get("sessions_30d") or 0)), "neutral"),
+        chip("конверсия", fmt_conversion(_ec.get("conversion_rate")),
+             "ok" if float(_ec.get("conversion_rate") or 0) > 0 else "neutral"),
+        chip("доставка",
+             str(_ec.get("shipping_template") or "не задан")[:22],
+             "ok" if _ec.get("shipping_template") else "warn"),
+    ] if _ec else []))
 
     ruler = limit_ruler_html(
         mx["title_len"], TITLE_LIMIT, left_label=f"{TITLE_LIMIT}",
@@ -345,7 +374,7 @@ for x in chunk:
           <div style="flex:1;min-width:0;">
           <div style="display:flex;justify-content:space-between;align-items:baseline;">
             {eyebrow(f"{head}<a href='https://www.amazon.{mp}/dp/{asin}' target='_blank' style='color:{MUTED};'>{asin}</a> · {mp} · {who_lbl}")}
-            <span style="font-family:{MONO};font-size:12px;color:{color};">{label} · {fetched}</span>
+            <span style='font-family:{MONO};font-size:12px;color:{color};'>{label} · {fetched}</span>
           </div>
           <div style="font-size:13px;color:{INK};margin:6px 0 8px;">{short or t("catalog.no_data_row")}</div>
           {ruler}
