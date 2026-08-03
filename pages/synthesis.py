@@ -313,8 +313,112 @@ def accept_change(asin: str, mp: str, before: str, result: dict,
         return False
 
 
+@st.cache_data(ttl=30)
+def load_drafts_for_review() -> pd.DataFrame:
+    """Черновики без принятой правки — очередь на разбор."""
+    try:
+        conn = get_conn()
+        df = pd.read_sql(
+            """
+            SELECT DISTINCT ON (d.asin, d.marketplace)
+                   d.id, d.asin, d.marketplace, d.created_at,
+                   d.title_before, d.title_after, d.highlights_after,
+                   d.dropped, d.skill_version, c.coverage_score
+            FROM synthesis_drafts d
+            LEFT JOIN LATERAL (
+                SELECT coverage_score FROM synthesis_coverage c
+                WHERE c.asin = d.asin AND c.marketplace = d.marketplace
+                ORDER BY c.created_at DESC LIMIT 1
+            ) c ON TRUE
+            WHERE NOT EXISTS (
+                SELECT 1 FROM listing_changes lc
+                WHERE lc.asin = d.asin AND lc.marketplace = d.marketplace
+            )
+            ORDER BY d.asin, d.marketplace, d.created_at DESC
+            """, conn)
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def draft_quality(cov, checks_failed: int) -> tuple[str, str]:
+    """Зелёный — принимать бегло, красный — смотреть глазами."""
+    try:
+        v = float(cov) if cov is not None and not pd.isna(cov) else None
+    except (TypeError, ValueError):
+        v = None
+    if checks_failed:
+        return "red", "проверки не пройдены"
+    if v is None:
+        return "amber", "Coverage не считался — нет данных SQP"
+    if v < 70:
+        return "red", f"Coverage {v:.0f}% — потеряно много веса"
+    if v >= 85:
+        return "green", f"Coverage {v:.0f}%"
+    return "amber", f"Coverage {v:.0f}%"
+
+
+def save_coverage(asin: str, mp: str, cov: dict) -> None:
+    if cov.get("score") is None:
+        return
+    try:
+        conn = get_conn()
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO synthesis_coverage
+                    (asin, marketplace, coverage_score, weight_total,
+                     weight_kept, kept_phrases, lost_phrases)
+                VALUES (%s,%s,%s,%s,%s,%s,%s)
+                """,
+                (asin, mp, cov["score"], cov["weight_total"], cov["weight_kept"],
+                 "; ".join(p for p, _, _ in cov["kept"][:30]),
+                 "; ".join(p for p, _, _ in cov["lost"][:30])))
+        conn.close()
+    except Exception:
+        pass
+
+
+def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
+    """Пакетная генерация: только черновики, ничего не применяется."""
+    done, failed = 0, 0
+    bar = st.progress(0.0, text="Готовлю партию...")
+    for i, x in enumerate(items, 1):
+        r = x["r"]
+        asin, mp, title = r["asin"], r["marketplace"], r["title"] or ""
+        bar.progress(i / len(items), text=f"[{i}/{len(items)}] {asin} ({mp})")
+        kw = build_keyword_table(asin, mp, title)
+        keep, forbid = [], []
+        if not kw.empty:
+            keep = kw.loc[kw["tier"].isin(["must_keep", "preferred"]),
+                          "search_query"].tolist()
+            forbid = kw.loc[kw["tier"] == "forbid", "search_query"].tolist()
+        try:
+            res = generate_split(title, mp, skill_text, keep, forbid)
+        except Exception:
+            res = None
+        if res:
+            save_draft(asin, mp, title, res, skill_version)
+            if not kw.empty:
+                save_coverage(asin, mp, coverage(
+                    kw, res.get("title", ""), res.get("highlights", "")))
+            done += 1
+        else:
+            failed += 1
+    bar.empty()
+    st.cache_data.clear()
+    return {"done": done, "failed": failed}
+
+
 # ================================================================ UI
-SQP_MARKETPLACES = {"es", "de", "it"}   # где загрузчик SQP собирает данные
+SQP_MARKETPLACES = {"es", "de", "it"}
+SQP_LABEL = {
+    "ready": "SQP по товару собран",
+    "queued": "○ SQP в очереди — загрузчик идёт по каталогу",
+    "off": "○ SQP не собирается для этого маркетплейса",
+}
+Q_COLOR = {"green": "#2F6B3A", "amber": "#854F0B", "red": "#A32D2D"}
 
 st.header(t("nav.synthesis"))
 st.caption("Сжатие тайтла под лимит без потери поискового веса. "
@@ -330,21 +434,20 @@ ECON = econ_map()
 DRAFTS = load_draft_stats()
 ACCEPTED = load_accepted()
 
-# ---- сводка и фильтры
 rows = []
 for _, r in candidates.iterrows():
     key = (r["asin"], r["marketplace"])
     e = ECON.get(key) or {}
-    risk = money_at_risk("title_over_limit", e.get("revenue_30d"))
     rows.append({
-        "r": r, "risk": risk,
+        "r": r,
+        "risk": money_at_risk("title_over_limit", e.get("revenue_30d")),
         "over": max(0, len(r["title"] or "") - TITLE_LIMIT),
         "econ": e,
         "draft": DRAFTS.get(key) or {},
         "accepted": ACCEPTED.get(key),
         "sqp_state": ("ready" if r["marketplace"] in SQP_MARKETPLACES
-                      and e.get("sessions_30d") else
-                      "queued" if r["marketplace"] in SQP_MARKETPLACES
+                      and e.get("sessions_30d")
+                      else "queued" if r["marketplace"] in SQP_MARKETPLACES
                       else "off"),
     })
 
@@ -355,77 +458,30 @@ st.markdown(
     f"{len(rows)} тайтлов сверх лимита · SQP есть у {n_ready}",
     unsafe_allow_html=True)
 
-f1, f2, f3 = st.columns([3, 2, 2])
-query = f1.text_input("Поиск", label_visibility="collapsed",
-                      placeholder="Поиск: ASIN, SKU или тайтл...")
-mps = sorted({x["r"]["marketplace"] for x in rows})
-mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
-                        placeholder=t("list.all_mp"))
-try:
-    scope = f3.segmented_control(
-        "фильтр", ["all", "sqp", "todo"], default="all",
-        format_func=lambda k: {"all": "все", "sqp": "с SQP",
-                               "todo": "без черновика"}[k],
-        selection_mode="single", label_visibility="collapsed", key="syn-scope")
-except AttributeError:
-    scope = f3.radio("фильтр", ["all", "sqp", "todo"], horizontal=True,
-                     label_visibility="collapsed", key="syn-scope")
-scope = scope or "all"
+pending = load_drafts_for_review()
+tab_queue, tab_review = st.tabs([
+    f"Очередь · {len(rows)}", f"Разбор черновиков · {len(pending)}"])
 
-view = rows
-if mp_sel:
-    view = [x for x in view if x["r"]["marketplace"] in mp_sel]
-if scope == "sqp":
-    view = [x for x in view if x["sqp_state"] == "ready"]
-elif scope == "todo":
-    view = [x for x in view if not x["draft"].get("drafts")]
-if query.strip():
-    q = query.strip().lower()
-    view = [x for x in view
-            if q in str(x["r"]["asin"]).lower()
-            or q in str(x["r"].get("sku_group") or "").lower()
-            or q in str(x["r"]["title"] or "").lower()]
 
-if not view:
-    st.caption(t("catalog.nothing"))
-    st.stop()
-
-view.sort(key=lambda x: (-x["risk"], -x["over"]))
-
-SQP_LABEL = {
-    "ready": "",
-    "queued": "○ SQP в очереди — загрузчик идёт по каталогу",
-    "off": "○ SQP не собирается для этого маркетплейса",
-}
-
-# ---- карточки
-for x in view[:30]:
+def render_card_head(x: dict) -> None:
+    """Строка товара: фото, ASIN, превышение, деньги, состояние работы."""
     r = x["r"]
     asin, mp = r["asin"], r["marketplace"]
     title = r["title"] or ""
     sku = r["sku_group"] if r["sku_group"] and r["sku_group"] != asin else ""
-    fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
-               if pd.notna(r["fetched_at"]) else "—")
     img = None if pd.isna(r.get("main_image")) else r.get("main_image")
-    edge = ACCENT if x["risk"] else "#E7E4DD"
-
     thumb = (f'<div style="flex:0 0 42px;"><img src="{img}" '
              f'style="width:42px;height:42px;object-fit:contain;background:#fff;'
              f'border:1px solid #E7E4DD;border-radius:7px;"></div>') if img else ""
-
-    sub_parts = []
-    if x["sqp_state"] == "ready":
-        sub_parts.append(f"SQP по товару собран")
-    else:
-        sub_parts.append(SQP_LABEL[x["sqp_state"]])
+    sub = [SQP_LABEL[x["sqp_state"]]]
     if x["draft"].get("drafts"):
         cov = x["draft"].get("coverage")
-        sub_parts.append(f"черновиков {int(x['draft']['drafts'])}"
-                         + (f" · Coverage {int(cov)}%" if pd.notna(cov) else ""))
+        sub.append(f"черновиков {int(x['draft']['drafts'])}"
+                   + (f" · Coverage {int(cov)}%" if pd.notna(cov) else ""))
     if x["accepted"]:
-        sub_parts.append("✓ правка принята "
-                         + pd.to_datetime(x["accepted"]["accepted_at"]).strftime("%d.%m"))
-
+        sub.append("✓ правка принята "
+                   + pd.to_datetime(x["accepted"]["accepted_at"]).strftime("%d.%m"))
+    edge = ACCENT if x["risk"] else "#E7E4DD"
     st.markdown(
         f'<div class="ls-card" style="background:#fff;border:1px solid #E7E4DD;'
         f'border-left:3px solid {edge};border-radius:0 10px 10px 0;'
@@ -438,146 +494,231 @@ for x in view[:30]:
         f'style="color:#1A1815;text-decoration:none;'
         f'border-bottom:1px dotted #57534A;">{asin}</a> '
         f'<span style="font-weight:400;color:#57534A;">· {mp} · '
-        f'{len(title)}/{TITLE_LIMIT} · +{x["over"]} · {title[:60]}…</span></div>'
-        f'<div style="font-size:11.5px;color:#57534A;">{" · ".join(p for p in sub_parts if p)}</div>'
-        f'</div>'
-        f'<span class="ls-mono" style="font-size:13px;font-weight:700;'
+        f'{len(title)}/{TITLE_LIMIT} · +{x["over"]} · {title[:58]}…</span></div>'
+        f'<div style="font-size:11.5px;color:#57534A;">{" · ".join(sub)}</div>'
+        f'</div><span class="ls-mono" style="font-size:13px;font-weight:700;'
         f'color:{ACCENT if x["risk"] else "#57534A"};">'
         f'{fmt_money(x["risk"]) if x["risk"] else "нет данных"}</span></div>',
         unsafe_allow_html=True)
 
-    with st.expander(f"Работа с тайтлом · {asin}"):
-        st.markdown(
-            eyebrow(f"{t('synth.original')} · {len(title)} симв. · "
-                    f"{t('matrix.collected_at')} {fetched} · "
-                    f"{t('synth.methodology')} v{skill_version}"),
-            unsafe_allow_html=True)
-        st.code(title, language=None)
-        st.markdown(
-            limit_ruler_html(len(title), TITLE_LIMIT,
-                             left_label=f"{TITLE_LIMIT} {t('ruler.limit')}",
-                             right_label=f"+{x['over']} {t('ruler.cut')}"),
-            unsafe_allow_html=True)
 
-        # ---- ключевые фразы
-        st.markdown(eyebrow("Ключевые фразы · Brand Analytics"),
-                    unsafe_allow_html=True)
-        kw_sqp = build_keyword_table(asin, mp, title)
-        kw_edit = pd.DataFrame()
-
-        if kw_sqp.empty:
-            st.caption(
-                SQP_LABEL.get(x["sqp_state"]) or
-                "Данных Brand Analytics по этому товару пока нет. "
-                "Генерация пойдёт по методологии, без весов фраз.")
+# ================================================================ очередь
+with tab_queue:
+    b1, b2, b3 = st.columns([1.6, 2, 3])
+    batch_n = b1.selectbox("партия", [10, 20, 50], index=1,
+                           format_func=lambda n: f"топ-{n}",
+                           label_visibility="collapsed", key="batch-n")
+    if b2.button(f"Сгенерировать партию ({batch_n})", type="primary"):
+        top = [x for x in sorted(rows, key=lambda z: -z["risk"])
+               if not x["draft"].get("drafts")][:batch_n]
+        if not top:
+            st.info("У всех товаров очереди уже есть черновики — "
+                    "загляни во вкладку «Разбор черновиков».")
         else:
-            v = kw_sqp.rename(columns={
-                "search_query": "фраза", "volume": "спрос",
-                "impressions": "показы", "clicks": "клики",
-                "purchases": "покупки", "weight": "вес",
-                "in_title": "в тайтле", "tier": "тип"})
-            v["вес"] = v["вес"].round(1)
-            kw_edit = st.data_editor(
-                v[["фраза", "спрос", "показы", "клики", "покупки", "вес",
-                   "в тайтле", "тип"]],
-                column_config={
-                    "тип": st.column_config.SelectboxColumn(
-                        "Тип", options=TIERS, required=True),
-                    "в тайтле": st.column_config.CheckboxColumn(
-                        "В тайтле", disabled=True),
-                    "фраза": st.column_config.TextColumn(
-                        "Фраза", width="large", disabled=True),
-                    "спрос": st.column_config.NumberColumn("Спрос", disabled=True),
-                    "показы": st.column_config.NumberColumn("Показы", disabled=True),
-                    "клики": st.column_config.NumberColumn("Клики", disabled=True),
-                    "покупки": st.column_config.NumberColumn("Покупки", disabled=True),
-                    "вес": st.column_config.NumberColumn("Вес", disabled=True),
-                },
-                hide_index=True, use_container_width=True, height=300,
-                key=f"kw-{asin}-{mp}")
-            cnt = kw_edit["тип"].value_counts().to_dict()
-            st.markdown(" · ".join(f"{TIER_LABEL[k]} {cnt.get(k, 0)}"
-                                   for k in TIERS))
+            res = batch_generate(top, skill_text, skill_version)
+            st.success(f"Готово: {res['done']} черновиков, ошибок "
+                       f"{res['failed']}. Открой «Разбор черновиков».")
+            st.rerun()
+    b3.caption("Партия берёт товары с наибольшими деньгами под риском, "
+               "у которых ещё нет черновика. Ничего не применяется.")
 
-        keep_list, forbid_list = [], []
-        if not kw_edit.empty:
-            o = kw_edit.sort_values("вес", ascending=False)
-            keep_list = o.loc[o["тип"].isin(["must_keep", "preferred"]),
-                              "фраза"].tolist()
-            forbid_list = o.loc[o["тип"] == "forbid", "фраза"].tolist()
+    f1, f2, f3 = st.columns([3, 2, 2])
+    query = f1.text_input("Поиск", label_visibility="collapsed",
+                          placeholder="Поиск: ASIN, SKU или тайтл...")
+    mps = sorted({x["r"]["marketplace"] for x in rows})
+    mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
+                            placeholder=t("list.all_mp"))
+    try:
+        scope = f3.segmented_control(
+            "фильтр", ["all", "sqp", "todo", "done"], default="all",
+            format_func=lambda k: {"all": "все", "sqp": "с SQP",
+                                   "todo": "без черновика",
+                                   "done": "принято"}[k],
+            selection_mode="single", label_visibility="collapsed",
+            key="syn-scope")
+    except AttributeError:
+        scope = f3.radio("фильтр", ["all", "sqp", "todo", "done"],
+                         horizontal=True,
+                         label_visibility="collapsed", key="syn-scope")
+    scope = scope or "all"
 
-        # ---- генерация
-        if st.button(t("synth.generate"), type="primary", key=f"gen-{asin}-{mp}"):
-            with st.spinner(f"Режу тайтл по методологии v{skill_version}..."):
-                res = generate_split(title, mp, skill_text, keep_list, forbid_list)
-            if res:
-                st.session_state[f"res-{asin}-{mp}"] = res
-                save_draft(asin, mp, title, res, skill_version)
-                st.cache_data.clear()
+    view = rows
+    if mp_sel:
+        view = [x for x in view if x["r"]["marketplace"] in mp_sel]
+    if scope == "sqp":
+        view = [x for x in view if x["sqp_state"] == "ready"]
+    elif scope == "todo":
+        view = [x for x in view if not x["draft"].get("drafts")]
+    elif scope == "done":
+        view = [x for x in view if x["accepted"]]
+    if query.strip():
+        q = query.strip().lower()
+        view = [x for x in view
+                if q in str(x["r"]["asin"]).lower()
+                or q in str(x["r"].get("sku_group") or "").lower()
+                or q in str(x["r"]["title"] or "").lower()]
 
-        res = st.session_state.get(f"res-{asin}-{mp}")
-        if res:
-            new_title = res.get("title", "")
-            new_hl = res.get("highlights", "")
-            dropped = res.get("dropped", []) or []
+    if not view:
+        st.caption(t("catalog.nothing"))
+    else:
+        view.sort(key=lambda z: (-z["risk"], -z["over"]))
+        for x in view[:30]:
+            r = x["r"]
+            asin, mp = r["asin"], r["marketplace"]
+            title = r["title"] or ""
+            render_card_head(x)
 
-            st.divider()
-            cov_score = None
-            if not kw_edit.empty:
-                cov_df = kw_sqp.copy()
-                tmap = dict(zip(kw_edit["фраза"], kw_edit["тип"]))
-                cov_df["tier"] = cov_df["search_query"].map(tmap).fillna("compress")
-                cov = coverage(cov_df, new_title, new_hl)
-                cov_score = cov["score"]
-                if cov_score is not None:
-                    col = ("#2F6B3A" if cov_score >= 85
-                           else "#854F0B" if cov_score >= 65 else "#A32D2D")
-                    vtxt = ("поисковый вес сохранён" if cov_score >= 85
-                            else "часть веса потеряна" if cov_score >= 65
-                            else "потеряно слишком много")
-                    st.markdown(
-                        f'<div style="font-size:19px;font-weight:700;">'
-                        f'SEO Coverage <span style="color:{col};'
-                        f'font-family:var(--ls-mono);">{cov_score}%</span> '
-                        f'<span style="font-size:13px;font-weight:400;'
-                        f'color:#57534A;">· {vtxt}</span></div>',
-                        unsafe_allow_html=True)
-                    st.caption(
-                        "Покупка весит как 20 кликов, клик — как 200 показов. "
-                        "Фразы FORBID не считаются.")
-                    if cov["lost"]:
-                        lost_txt = " · ".join(
-                            f"`{p}` ({TIER_LABEL.get(tr, tr)})"
-                            for p, _, tr in cov["lost"][:6])
-                        st.markdown(f"**Потеряно:** {lost_txt}")
+            with st.expander(f"Работа с тайтлом · {asin} · {mp}"):
+                fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
+                           if pd.notna(r["fetched_at"]) else "—")
+                st.markdown(
+                    eyebrow(f"{t('synth.original')} · {len(title)} симв. · "
+                            f"{t('matrix.collected_at')} {fetched} · "
+                            f"{t('synth.methodology')} v{skill_version}"),
+                    unsafe_allow_html=True)
+                st.code(title, language=None)
+                st.markdown(
+                    limit_ruler_html(len(title), TITLE_LIMIT,
+                                     left_label=f"{TITLE_LIMIT} {t('ruler.limit')}",
+                                     right_label=f"+{x['over']} {t('ruler.cut')}"),
+                    unsafe_allow_html=True)
 
-            st.markdown(f"**title** · {len(new_title)}/{TITLE_LIMIT}")
-            st.code(new_title, language=None)
-            st.markdown(f"**item highlights** · {len(new_hl)}/{HIGHLIGHTS_LIMIT}")
-            st.code(new_hl, language=None)
-            if dropped:
-                st.markdown(f"**{t('synth.dropped')}:** "
-                            + " · ".join(f"`{w}`" for w in dropped))
+                st.markdown(eyebrow("Ключевые фразы · Brand Analytics"),
+                            unsafe_allow_html=True)
+                kw = build_keyword_table(asin, mp, title)
+                kw_edit = pd.DataFrame()
+                if kw.empty:
+                    st.caption(SQP_LABEL[x["sqp_state"]] + ". Генерация пойдёт "
+                               "по методологии, без весов фраз.")
+                else:
+                    v = kw.rename(columns={
+                        "search_query": "фраза", "volume": "спрос",
+                        "impressions": "показы", "clicks": "клики",
+                        "purchases": "покупки", "weight": "вес",
+                        "in_title": "в тайтле", "tier": "тип"})
+                    v["вес"] = v["вес"].round(1)
+                    kw_edit = st.data_editor(
+                        v[["фраза", "спрос", "показы", "клики", "покупки",
+                           "вес", "в тайтле", "тип"]],
+                        column_config={
+                            "тип": st.column_config.SelectboxColumn(
+                                "Тип", options=TIERS, required=True),
+                            "в тайтле": st.column_config.CheckboxColumn(
+                                "В тайтле", disabled=True),
+                            "фраза": st.column_config.TextColumn(
+                                "Фраза", width="large", disabled=True),
+                        },
+                        hide_index=True, use_container_width=True, height=280,
+                        key=f"kw-{asin}-{mp}")
+                    cnt = kw_edit["тип"].value_counts().to_dict()
+                    st.markdown(" · ".join(f"{TIER_LABEL[k]} {cnt.get(k, 0)}"
+                                           for k in TIERS))
 
-            checks = run_checks(new_title, new_hl, keep_list, forbid_list)
-            failed = [m for ok, m in checks if not ok]
-            st.markdown(" · ".join(("✅ " if ok else "❌ ") + m
-                                   for ok, m in checks))
-            if failed:
-                st.warning(t("synth.checks_failed"))
+                keep_list, forbid_list = [], []
+                if not kw_edit.empty:
+                    o = kw_edit.sort_values("вес", ascending=False)
+                    keep_list = o.loc[o["тип"].isin(["must_keep", "preferred"]),
+                                      "фраза"].tolist()
+                    forbid_list = o.loc[o["тип"] == "forbid", "фраза"].tolist()
 
-            a1, a2 = st.columns([1.4, 1])
-            if a1.button("✓ Принять и записать", type="primary",
-                         disabled=bool(failed), key=f"acc-{asin}-{mp}"):
-                if accept_change(asin, mp, title, res, cov_score,
-                                 skill_version, GEMINI_MODEL):
-                    st.success(
-                        "Правка записана. Вставь title и highlights в Seller "
-                        "Central — эффект замерим по sessions и продажам.")
+                if st.button(t("synth.generate"), type="primary",
+                             key=f"gen-{asin}-{mp}"):
+                    with st.spinner(f"Режу по методологии v{skill_version}..."):
+                        res = generate_split(title, mp, skill_text,
+                                             keep_list, forbid_list)
+                    if res:
+                        save_draft(asin, mp, title, res, skill_version)
+                        if not kw.empty:
+                            save_coverage(asin, mp, coverage(
+                                kw, res.get("title", ""),
+                                res.get("highlights", "")))
+                        st.session_state[f"res-{asin}-{mp}"] = res
+                        st.cache_data.clear()
+                        st.rerun()
+
+    if len(view) > 30:
+        st.caption(f"показано 30 из {len(view)} — уточни фильтры")
+
+
+# ================================================================ разбор
+with tab_review:
+    if pending.empty:
+        st.info("Черновиков нет. Сгенерируй партию во вкладке «Очередь».")
+    else:
+        st.caption(
+            "Черновики ждут решения. Зелёные можно принимать бегло, "
+            "красные — открыть и посмотреть: там ИИ потерял поисковый вес "
+            "или не прошли проверки."
+        )
+        econ_sorted = []
+        for _, d in pending.iterrows():
+            e = ECON.get((d["asin"], d["marketplace"])) or {}
+            econ_sorted.append((money_at_risk("title_over_limit",
+                                              e.get("revenue_30d")), d))
+        econ_sorted.sort(key=lambda z: -z[0])
+
+        for risk, d in econ_sorted:
+            asin, mp = d["asin"], d["marketplace"]
+            before = d["title_before"] or ""
+            after = d["title_after"] or ""
+            hl = d["highlights_after"] or ""
+            checks = run_checks(after, hl, [], [])
+            n_failed = sum(1 for ok, _ in checks if not ok)
+            qual, qtext = draft_quality(d.get("coverage_score"), n_failed)
+            color = Q_COLOR[qual]
+
+            st.markdown(
+                f'<div class="ls-card" style="background:#fff;'
+                f'border:1px solid #E7E4DD;border-left:3px solid {color};'
+                f'border-radius:0 10px 10px 0;padding:10px 14px;'
+                f'margin-bottom:4px;">'
+                f'<div style="display:flex;justify-content:space-between;">'
+                f'<span style="font-size:13px;font-weight:700;">{asin} · {mp}'
+                f'<span style="font-weight:400;color:#57534A;"> · '
+                f'{len(before)} → {len(after)} симв.</span></span>'
+                f'<span class="ls-mono" style="font-size:12.5px;color:{color};">'
+                f'{qtext}{" · " + fmt_money(risk) if risk else ""}</span></div>'
+                f'<div style="font-size:12.5px;color:#1A1815;margin-top:4px;'
+                f'font-family:var(--ls-mono);">{after}</div></div>',
+                unsafe_allow_html=True)
+
+            with st.expander(f"Детали · {asin} · {mp}"):
+                st.markdown("**Было**")
+                st.code(before, language=None)
+                st.markdown(f"**title** · {len(after)}/{TITLE_LIMIT}")
+                st.code(after, language=None)
+                st.markdown(f"**item highlights** · {len(hl)}/{HIGHLIGHTS_LIMIT}")
+                st.code(hl, language=None)
+                if d.get("dropped"):
+                    st.markdown(f"**{t('synth.dropped')}:** {d['dropped']}")
+                st.markdown(" · ".join(("✅ " if ok else "❌ ") + m
+                                       for ok, m in checks))
+
+            c1, c2, c3 = st.columns([1.3, 1.2, 4])
+            if c1.button("✓ Принять", type="primary", disabled=bool(n_failed),
+                         key=f"acc-{asin}-{mp}-{d['id']}"):
+                if accept_change(asin, mp, before,
+                                 {"title": after, "highlights": hl,
+                                  "dropped": (d.get("dropped") or "").split("; ")},
+                                 d.get("coverage_score"),
+                                 int(d.get("skill_version") or 0),
+                                 GEMINI_MODEL):
+                    st.success("Правка записана. Вставь текст в Seller Central.")
                     st.rerun()
-            if a2.button("Перегенерировать", key=f"regen-{asin}-{mp}"):
-                st.session_state.pop(f"res-{asin}-{mp}", None)
-                st.rerun()
-
-if len(view) > 30:
-    st.caption(f"показано 30 из {len(view)} — уточни фильтры") 
+            if c2.button("Перегенерировать", key=f"re-{asin}-{mp}-{d['id']}"):
+                kw = build_keyword_table(asin, mp, before)
+                keep = forbid = []
+                if not kw.empty:
+                    keep = kw.loc[kw["tier"].isin(["must_keep", "preferred"]),
+                                  "search_query"].tolist()
+                    forbid = kw.loc[kw["tier"] == "forbid",
+                                    "search_query"].tolist()
+                with st.spinner("Генерирую заново..."):
+                    res = generate_split(before, mp, skill_text, keep, forbid)
+                if res:
+                    save_draft(asin, mp, before, res, skill_version)
+                    if not kw.empty:
+                        save_coverage(asin, mp, coverage(
+                            kw, res.get("title", ""), res.get("highlights", "")))
+                    st.cache_data.clear()
+                    st.rerun()
