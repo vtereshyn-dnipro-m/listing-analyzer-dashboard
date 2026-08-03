@@ -24,6 +24,7 @@ from services.worklog import worklog_map, work_badges
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
+st.title(t("nav.catalog"))
 
 INK = "#1A1815"
 MUTED = "#8A8578"
@@ -179,7 +180,6 @@ def chip(label: str, value: str, state: str) -> str:
     )
 
 
-st.header(t("nav.catalog"))
 st.caption(t("catalog.caption"))
 
 ECON = econ_map()
@@ -291,22 +291,60 @@ chunk = rows[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
 # ---- таблица
 if mode == "table":
     tv = exp.copy()
-    tv["фото"] = [x["mx"]["main_img"] for x in rows]
-    tv["ссылка"] = [f"https://www.amazon.{x['r']['marketplace']}/dp/{x['r']['asin']}"
-                    for x in rows]
-    tv["bsr_кат"] = [x["mx"]["bsr"][1] if x["mx"]["bsr"] else "" for x in rows]
+    tv["img"] = [x["mx"]["main_img"] for x in rows]
+    tv["link"] = [f"https://www.amazon.{x['r']['marketplace']}/dp/{x['r']['asin']}"
+                  for x in rows]
+    tv["bsr_cat"] = [x["mx"]["bsr"][1] if x["mx"]["bsr"] else "" for x in rows]
+    tv = tv.rename(columns={
+        "sku": "sku", "asin": "asin", "mp": "mp", "кто": "who",
+        "здоровье": "health", "тайтл_симв": "len", "фото_шт": "photos",
+        "видео": "video", "aplus": "aplus", "отзывы": "reviews",
+        "рейтинг": "rating", "цена": "price", "bsr": "bsr",
+        "в_наличии": "stock", "название": "name",
+        "выручка_30д": "rev", "сессии_30д": "sess",
+        "шаблон_доставки": "ship"})
+    cols = [c for c in ["img", "sku", "asin", "mp", "who", "health", "len",
+                        "photos", "video", "aplus", "reviews", "rating",
+                        "price", "bsr", "bsr_cat", "stock", "rev", "sess",
+                        "ship", "name", "link"] if c in tv.columns]
     st.dataframe(
-        tv[["фото", "sku", "asin", "mp", "кто", "здоровье", "тайтл_симв",
-            "фото_шт", "видео", "aplus", "отзывы", "рейтинг", "цена",
-            "bsr", "bsr_кат", "в_наличии", "название", "ссылка"]].rename(columns={
-                "sku": "SKU", "asin": "ASIN", "mp": "MP",
-                "тайтл_симв": "тайтл, симв.", "фото_шт": "фото, шт",
-                "bsr_кат": "категория BSR"}),
+        tv[cols],
         column_config={
-            "фото": st.column_config.ImageColumn("Фото", width="small"),
-            "ссылка": st.column_config.LinkColumn("Листинг", display_text="открыть"),
-            "здоровье": st.column_config.TextColumn("Здоровье", width="small"),
-            "название": st.column_config.TextColumn("Название", width="large"),
+            "img": st.column_config.ImageColumn(t("metric.photos"),
+                                                width="small"),
+            "sku": st.column_config.TextColumn("SKU", width="small"),
+            "asin": st.column_config.TextColumn("ASIN", width="small"),
+            "mp": st.column_config.TextColumn("MP", width="small"),
+            "who": st.column_config.TextColumn(t("common.our"), width="small"),
+            "health": st.column_config.TextColumn(t("catalog.h_ok"),
+                                                  width="small"),
+            "len": st.column_config.NumberColumn(t("metric.title"),
+                                                 width="small"),
+            "photos": st.column_config.NumberColumn(t("metric.photos"),
+                                                    width="small"),
+            "video": st.column_config.TextColumn(t("metric.video"),
+                                                 width="small"),
+            "aplus": st.column_config.TextColumn(t("metric.aplus"),
+                                                 width="small"),
+            "reviews": st.column_config.NumberColumn(t("metric.reviews"),
+                                                     width="small"),
+            "rating": st.column_config.NumberColumn(t("metric.rating"),
+                                                    width="small"),
+            "price": st.column_config.TextColumn(t("metric.price"),
+                                                 width="small"),
+            "bsr": st.column_config.NumberColumn("BSR", width="small"),
+            "bsr_cat": st.column_config.TextColumn("BSR cat", width="small"),
+            "stock": st.column_config.TextColumn(t("metric.stock"),
+                                                 width="small"),
+            "rev": st.column_config.NumberColumn(
+                f"{t('metric.revenue')}, EUR", format="%.0f", width="small"),
+            "sess": st.column_config.NumberColumn(t("metric.sessions"),
+                                                  width="small"),
+            "ship": st.column_config.TextColumn(t("metric.shipping"),
+                                                width="medium"),
+            "name": st.column_config.TextColumn(t("card.title"), width="large"),
+            "link": st.column_config.LinkColumn(t("matrix.collect"),
+                                                display_text="→"),
         },
         hide_index=True, use_container_width=True, height=560,
     )
