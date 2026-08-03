@@ -13,6 +13,7 @@ from i18n import t
 from components.ui import inject_fonts
 
 inject_fonts()
+st.title(t("guide.title"))
 
 # локальный безопасный eyebrow: стили в классе, кавычек в атрибутах нет
 st.markdown(
@@ -68,7 +69,6 @@ def step_card(num: int, title: str, page: str, body: str, auto: bool = False) ->
     )
 
 
-st.header(t("guide.title"))
 st.caption(t("guide.caption"))
 
 st.markdown("")
