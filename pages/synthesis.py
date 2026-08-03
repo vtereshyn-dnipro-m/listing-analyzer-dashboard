@@ -25,6 +25,10 @@ from i18n import t
 from services.db import get_conn, cfg
 from services.settings import get_setting, get_int
 from services.ai import generate_json, task_config
+from services.seo import (
+    build_keyword_table, coverage, compress_phrase,
+    TIER_LABEL, TIER_COLOR, TIERS,
+)
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
@@ -50,7 +54,18 @@ BASE_PROMPT = """Ты эксперт по Amazon-листингам бренда
 Исходный тайтл (маркетплейс {marketplace}):
 {title}
 
-Задача — сплит: title максимум {title_limit} символов, highlights максимум {highlights_limit} символов, dropped — что выброшено на ревью человеку.
+ЗАДАЧА — сплит с сохранением поискового веса, а не просто обрезка:
+- title максимум {title_limit} символов
+- highlights максимум {highlights_limit} символов
+- dropped — что выброшено на ревью человеку
+
+ПОРЯДОК ПРИОРИТЕТОВ:
+1. Фразы MUST KEEP обязаны попасть в title дословно — по ним идут реальные покупки.
+2. Фразы PREFERRED — в title, если помещаются; иначе в highlights.
+3. Фразы COMPRESS можно сокращать без потери смысла: 1500 mAh → 1,5 Ah,
+   milímetros → mm, Newton-metros → Nm, voltios → V. Сокращай, а не выбрасывай.
+4. Фразы FORBID не должны появиться ни в title, ни в highlights.
+5. Всё, что не влезло, перечисли в dropped — человек решит.
 
 Ответь ТОЛЬКО валидным JSON без markdown:
 {{"title": "...", "highlights": "...", "dropped": ["...", "..."]}}"""
@@ -253,51 +268,121 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# ---- защищённые фразы
-st.markdown(f"**{t('synth.protected')}** — {t('synth.protected_hint')}")
-kw = load_keywords(asin, mp)
+# ---- ключевые фразы: факты Brand Analytics + ручные правки
+st.markdown(eyebrow("Ключевые фразы · Brand Analytics"), unsafe_allow_html=True)
 
-if not kw.empty:
-    for _, k in kw.iterrows():
-        c1, c2 = st.columns([6, 1])
-        icon = "🔒" if k["phrase_type"] == "keep" else "🚫"
-        c1.markdown(f"{icon} `{k['phrase']}` · {k['source']}")
-        if c2.button("✕", key=f"del-kw-{k['id']}"):
-            try:
-                conn = get_conn()
-                with conn, conn.cursor() as cur:
-                    cur.execute("DELETE FROM protected_keywords WHERE id = %s",
-                                (int(k["id"]),))
-                conn.close()
-                st.rerun()
-            except Exception as e:
-                st.error(f"Не удалилось: {e}")
+kw_sqp = build_keyword_table(asin, mp, title)
+kw_manual = load_keywords(asin, mp)
 
-nc1, nc2, nc3 = st.columns([4, 2, 1])
-new_phrase = nc1.text_input("Новая фраза", key="new-kw",
-                            label_visibility="collapsed",
-                            placeholder="например: taladro atornillador")
-new_type = nc2.selectbox("тип", ["keep", "forbid"], label_visibility="collapsed")
-if nc3.button(t("synth.add")) and new_phrase.strip():
-    try:
-        conn = get_conn()
-        with conn, conn.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO protected_keywords (asin, marketplace, phrase, phrase_type, source)
-                VALUES (%s, %s, %s, %s, 'manual')
-                ON CONFLICT (asin, marketplace, phrase) DO UPDATE
-                    SET phrase_type = EXCLUDED.phrase_type
-                """,
-                (asin, mp, new_phrase.strip().lower(), new_type),
-            )
-        conn.close()
-        st.rerun()
-    except Exception as e:
-        st.error(f"Не добавилось: {e}")
+if kw_sqp.empty:
+    st.caption(
+        "Данных Brand Analytics по этому товару пока нет — загрузчик SQP "
+        "идёт по каталогу по очереди. Генерация пойдёт по методологии, "
+        "без весов поисковых фраз."
+    )
+    kw_edit = pd.DataFrame()
+else:
+    st.caption(
+        f"{len(kw_sqp)} фраз за 4 недели. Тип проставлен по фактам: покупки → "
+        "Must Keep, клики → Preferred, чужой бренд или чужая категория → "
+        "Forbid. Правь вручную, если не согласен."
+    )
+    view = kw_sqp.rename(columns={
+        "search_query": "фраза", "volume": "спрос", "impressions": "показы",
+        "clicks": "клики", "purchases": "покупки", "weight": "вес",
+        "in_title": "в тайтле", "tier": "тип"})
+    view["вес"] = view["вес"].round(1)
+    kw_edit = st.data_editor(
+        view[["фраза", "спрос", "показы", "клики", "покупки", "вес",
+              "в тайтле", "тип"]],
+        column_config={
+            "тип": st.column_config.SelectboxColumn(
+                "Тип", options=TIERS, required=True,
+                help="must_keep — терять нельзя · preferred — желательно · "
+                     "compress — можно сжать · forbid — не пускать"),
+            "в тайтле": st.column_config.CheckboxColumn("В тайтле", disabled=True),
+            "фраза": st.column_config.TextColumn("Фраза", width="large",
+                                                 disabled=True),
+            "спрос": st.column_config.NumberColumn("Спрос", disabled=True),
+            "показы": st.column_config.NumberColumn("Показы", disabled=True),
+            "клики": st.column_config.NumberColumn("Клики", disabled=True),
+            "покупки": st.column_config.NumberColumn("Покупки", disabled=True),
+            "вес": st.column_config.NumberColumn("Вес", disabled=True),
+        },
+        hide_index=True, use_container_width=True, height=340,
+        key=f"kw-{asin}-{mp}")
 
-keep_list = kw[kw["phrase_type"] == "keep"]["phrase"].tolist() if not kw.empty else []
-forbid_list = kw[kw["phrase_type"] == "forbid"]["phrase"].tolist() if not kw.empty else []
+    counts = kw_edit["тип"].value_counts().to_dict()
+    st.markdown(" · ".join(f"{TIER_LABEL[k]} {counts.get(k, 0)}" for k in TIERS))
+
+    compress_list = kw_edit.loc[kw_edit["тип"] == "compress", "фраза"].tolist()
+    if compress_list:
+        with st.expander(f"Сжатие без потери смысла ({len(compress_list)})"):
+            for p in compress_list:
+                short = compress_phrase(p)
+                st.markdown(f"`{p}` → `{short}`"
+                            + (f" · −{len(p) - len(short)} симв."
+                               if short != p else " · сжатие не требуется"))
+
+# ---- ручные фразы поверх фактов
+with st.expander(f"Ручные фразы ({len(kw_manual)})"):
+    if not kw_manual.empty:
+        for _, k in kw_manual.iterrows():
+            c1, c2 = st.columns([6, 1])
+            icon = "🚫" if k["phrase_type"] == "forbid" else "🔒"
+            c1.markdown(f"{icon} `{k['phrase']}` · {k['source']}")
+            if c2.button("✕", key=f"del-kw-{k['id']}"):
+                try:
+                    conn = get_conn()
+                    with conn, conn.cursor() as cur:
+                        cur.execute("DELETE FROM protected_keywords WHERE id = %s",
+                                    (int(k["id"]),))
+                    conn.close()
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Не удалилось: {e}")
+
+    nc1, nc2, nc3 = st.columns([4, 2, 1])
+    new_phrase = nc1.text_input("Новая фраза", key="new-kw",
+                                label_visibility="collapsed",
+                                placeholder="например: taladro atornillador")
+    new_type = nc2.selectbox("тип", ["keep", "forbid"],
+                             label_visibility="collapsed")
+    if nc3.button(t("synth.add")) and new_phrase.strip():
+        try:
+            conn = get_conn()
+            with conn, conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO protected_keywords
+                        (asin, marketplace, phrase, phrase_type, tier, source)
+                    VALUES (%s,%s,%s,%s,%s,'manual')
+                    ON CONFLICT (asin, marketplace, phrase) DO UPDATE
+                        SET phrase_type = EXCLUDED.phrase_type,
+                            tier = EXCLUDED.tier
+                    """,
+                    (asin, mp, new_phrase.strip().lower(), new_type,
+                     "forbid" if new_type == "forbid" else "must_keep"),
+                )
+            conn.close()
+            st.rerun()
+        except Exception as e:
+            st.error(f"Не добавилось: {e}")
+
+# ---- итоговые списки для промпта и проверок
+keep_list, forbid_list = [], []
+if not kw_edit.empty:
+    ordered = kw_edit.sort_values("вес", ascending=False)
+    keep_list = ordered.loc[
+        ordered["тип"].isin(["must_keep", "preferred"]), "фраза"].tolist()
+    forbid_list = ordered.loc[ordered["тип"] == "forbid", "фраза"].tolist()
+if not kw_manual.empty:
+    keep_list += kw_manual.loc[kw_manual["phrase_type"] == "keep",
+                               "phrase"].tolist()
+    forbid_list += kw_manual.loc[kw_manual["phrase_type"] == "forbid",
+                                 "phrase"].tolist()
+keep_list = list(dict.fromkeys(keep_list))
+forbid_list = list(dict.fromkeys(forbid_list))
 
 st.divider()
 
@@ -335,6 +420,60 @@ if result and saved_for and saved_for[0] == asin and saved_for[1] == mp:
         st.markdown(f"**{t('synth.dropped')}:**")
         st.markdown(" · ".join(f"`{w}`" for w in dropped))
 
+    # ---- SEO Coverage Score: считается кодом по весам SQP
+    if not kw_edit.empty:
+        cov_df = kw_sqp.copy()
+        tier_map = dict(zip(kw_edit["фраза"], kw_edit["тип"]))
+        cov_df["tier"] = cov_df["search_query"].map(tier_map).fillna("compress")
+        cov = coverage(cov_df, new_title, new_hl)
+        score = cov["score"]
+
+        if score is not None:
+            color = ("#2F6B3A" if score >= 85
+                     else "#854F0B" if score >= 65 else "#A32D2D")
+            verdict_txt = ("поисковый вес сохранён" if score >= 85
+                           else "часть веса потеряна" if score >= 65
+                           else "потеряно слишком много")
+            st.markdown(
+                f'<div style="font-size:20px;font-weight:700;">SEO Coverage '
+                f'<span style="color:{color};font-family:var(--ls-mono);">'
+                f'{score}%</span> '
+                f'<span style="font-size:13px;font-weight:400;color:#57534A;">'
+                f'· {verdict_txt}</span></div>',
+                unsafe_allow_html=True)
+
+            if cov["lost"]:
+                st.markdown("**Потеряно:**")
+                for phrase, wgt, tier in cov["lost"][:8]:
+                    src = kw_sqp[kw_sqp["search_query"] == phrase]
+                    pur = int(src.iloc[0]["purchases"] or 0) if not src.empty else 0
+                    imp = int(src.iloc[0]["impressions"] or 0) if not src.empty else 0
+                    risk = ("⚠️ по фразе есть покупки" if pur
+                            else f"показов {imp}" if imp else "")
+                    st.markdown(f"· `{phrase}` — {TIER_LABEL.get(tier, tier)}"
+                                + (f", {risk}" if risk else ""))
+            if cov["kept"]:
+                with st.expander(f"Сохранено ({len(cov['kept'])})"):
+                    for phrase, wgt, tier in cov["kept"][:15]:
+                        st.markdown(f"· `{phrase}` — {TIER_LABEL.get(tier, tier)}")
+
+            try:
+                conn = get_conn()
+                with conn, conn.cursor() as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO synthesis_coverage
+                            (asin, marketplace, coverage_score, weight_total,
+                             weight_kept, kept_phrases, lost_phrases)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s)
+                        """,
+                        (asin, mp, score, cov["weight_total"], cov["weight_kept"],
+                         "; ".join(p for p, _, _ in cov["kept"][:30]),
+                         "; ".join(p for p, _, _ in cov["lost"][:30])))
+                conn.close()
+            except Exception:
+                pass
+
     # ---- пост-проверки кодом
     st.markdown(f"**{t('synth.checks')}:**")
     checks = run_checks(new_title, new_hl, keep_list, forbid_list)
@@ -345,4 +484,4 @@ if result and saved_for and saved_for[0] == asin and saved_for[1] == mp:
     if failed:
         st.warning(t("synth.checks_failed"))
     else:
-        st.success(t("synth.checks_ok")) 
+        st.success(t("synth.checks_ok"))
