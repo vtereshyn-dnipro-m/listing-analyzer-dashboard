@@ -441,14 +441,13 @@ def load_all_products() -> pd.DataFrame:
 # ================================================================ UI
 SQP_MARKETPLACES = {"es", "de", "it"}
 SQP_LABEL = {
-    "ready": "SQP по товару собран",
-    "queued": "○ SQP в очереди — загрузчик идёт по каталогу",
-    "off": "○ SQP не собирается для этого маркетплейса",
+    "ready": t("synth.sqp_ready"),
+    "queued": t("synth.sqp_queued"),
+    "off": t("synth.sqp_off"),
 }
 Q_COLOR = {"green": "#2F6B3A", "amber": "#854F0B", "red": "#A32D2D"}
 
-st.caption("Сжатие тайтла под лимит без потери поискового веса. "
-           "Приоритет — по деньгам под риском.")
+st.caption(t("synth.caption"))
 
 candidates = load_candidates()
 if candidates.empty:
@@ -480,16 +479,17 @@ for _, r in candidates.iterrows():
 total_risk = sum(x["risk"] for x in rows)
 n_ready = sum(1 for x in rows if x["sqp_state"] == "ready")
 st.markdown(
-    f"Под риском <b style='color:{ACCENT}'>{fmt_money(total_risk, '')}</b>/мес · "
-    f"{len(rows)} тайтлов сверх лимита · SQP есть у {n_ready}",
+    f"{t('synth.at_risk_line')} <b style='color:{ACCENT}'>"
+    f"{fmt_money(total_risk, '')}</b>/мес · "
+    f"{len(rows)} {t('synth.summary')} {n_ready}",
     unsafe_allow_html=True)
 
 pending = load_drafts_for_review()
 all_products = load_all_products()
 tab_queue, tab_review, tab_any = st.tabs([
-    f"Очередь · {len(rows)}",
-    f"Разбор черновиков · {len(pending)}",
-    f"Любой товар · {len(all_products)}",
+    f"{t('synth.tab_queue')} · {len(rows)}",
+    f"{t('synth.tab_review')} · {len(pending)}",
+    f"{t('synth.tab_any')} · {len(all_products)}",
 ])
 
 
@@ -536,21 +536,19 @@ def render_card_head(x: dict) -> None:
 with tab_queue:
     b1, b2, b3 = st.columns([1.6, 2, 3])
     batch_n = b1.selectbox("партия", [10, 20, 50], index=1,
-                           format_func=lambda n: f"топ-{n}",
+                           format_func=lambda n: f"top-{n}",
                            label_visibility="collapsed", key="batch-n")
-    if b2.button(f"Сгенерировать партию ({batch_n})", type="primary"):
+    if b2.button(f"{t('synth.batch_run')} ({batch_n})", type="primary"):
         top = [x for x in sorted(rows, key=lambda z: -z["risk"])
                if not x["draft"].get("drafts")][:batch_n]
         if not top:
-            st.info("У всех товаров очереди уже есть черновики — "
-                    "загляни во вкладку «Разбор черновиков».")
+            st.info(t("synth.batch_none"))
         else:
             res = batch_generate(top, skill_text, skill_version)
-            st.success(f"Готово: {res['done']} черновиков, ошибок "
-                       f"{res['failed']}. Открой «Разбор черновиков».")
+            st.success(t("synth.batch_done", done=res["done"],
+                         failed=res["failed"]))
             st.rerun()
-    b3.caption("Партия берёт товары с наибольшими деньгами под риском, "
-               "у которых ещё нет черновика. Ничего не применяется.")
+    b3.caption(t("synth.batch_hint"))
 
     f1, f2, f3, f4 = st.columns([2.6, 1.7, 2.2, 1.5])
     query = f1.text_input("Поиск", label_visibility="collapsed",
@@ -561,9 +559,10 @@ with tab_queue:
     try:
         scope = f3.segmented_control(
             "фильтр", ["all", "sqp", "todo", "done"], default="all",
-            format_func=lambda k: {"all": "все", "sqp": "с SQP",
-                                   "todo": "без черновика",
-                                   "done": "принято"}[k],
+            format_func=lambda k: {"all": t("work.all"),
+                                   "sqp": t("work.with_sqp"),
+                                   "todo": t("work.no_draft"),
+                                   "done": t("work.accepted")}[k],
             selection_mode="single", label_visibility="collapsed",
             key="syn-scope",
             help="все — вся очередь · с SQP — только там, где есть данные "
@@ -586,10 +585,7 @@ with tab_queue:
                           label_visibility="collapsed", key="syn-mode")
     q_mode = q_mode or "cards"
 
-    st.caption(
-        "все — вся очередь · с SQP — есть данные Brand Analytics · "
-        "без черновика — ещё не генерировали · принято — правка записана"
-    )
+    st.caption(t("synth.batch_hint"))
 
     view = rows
     if mp_sel:
@@ -656,7 +652,7 @@ with tab_queue:
             title = r["title"] or ""
             render_card_head(x)
 
-            with st.expander(f"Работа с тайтлом · {asin} · {mp}"):
+            with st.expander(f"{t('synth.work_with')} · {asin} · {mp}"):
                 fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
                            if pd.notna(r["fetched_at"]) else "—")
                 st.markdown(
@@ -671,13 +667,13 @@ with tab_queue:
                                      right_label=f"+{x['over']} {t('ruler.cut')}"),
                     unsafe_allow_html=True)
 
-                st.markdown(eyebrow("Ключевые фразы · Brand Analytics"),
+                st.markdown(eyebrow(t("synth.keywords")),
                             unsafe_allow_html=True)
                 kw = build_keyword_table(asin, mp, title)
                 kw_edit = pd.DataFrame()
                 if kw.empty:
-                    st.caption(SQP_LABEL[x["sqp_state"]] + ". Генерация пойдёт "
-                               "по методологии, без весов фраз.")
+                    st.caption(SQP_LABEL[x["sqp_state"]] + " · "
+                               + t("synth.no_sqp"))
                 else:
                     v = kw.rename(columns={
                         "search_query": "фраза", "volume": "спрос",
@@ -731,13 +727,9 @@ with tab_queue:
 # ================================================================ разбор
 with tab_review:
     if pending.empty:
-        st.info("Черновиков нет. Сгенерируй партию во вкладке «Очередь».")
+        st.info(t("synth.no_drafts"))
     else:
-        st.caption(
-            "Черновики ждут решения. Зелёные можно принимать бегло, "
-            "красные — открыть и посмотреть: там ИИ потерял поисковый вес "
-            "или не прошли проверки."
-        )
+        st.caption(t("synth.review_hint"))
         econ_sorted = []
         for _, d in pending.iterrows():
             e = ECON.get((d["asin"], d["marketplace"])) or {}
@@ -770,8 +762,8 @@ with tab_review:
                 f'font-family:var(--ls-mono);">{after}</div></div>',
                 unsafe_allow_html=True)
 
-            with st.expander(f"Детали · {asin} · {mp}"):
-                st.markdown("**Было**")
+            with st.expander(f"{t('synth.details')} · {asin} · {mp}"):
+                st.markdown(f"**{t('synth.was')}**")
                 st.code(before, language=None)
                 st.markdown(f"**title** · {len(after)}/{TITLE_LIMIT}")
                 st.code(after, language=None)
@@ -783,7 +775,8 @@ with tab_review:
                                        for ok, m in checks))
 
             c1, c2, c3 = st.columns([1.3, 1.2, 4])
-            if c1.button("✓ Принять", type="primary", disabled=bool(n_failed),
+            if c1.button(t("synth.accept_short"), type="primary",
+                         disabled=bool(n_failed),
                          key=f"acc-{asin}-{mp}-{d['id']}"):
                 if accept_change(asin, mp, before,
                                  {"title": after, "highlights": hl,
@@ -791,9 +784,9 @@ with tab_review:
                                  d.get("coverage_score"),
                                  int(d.get("skill_version") or 0),
                                  GEMINI_MODEL):
-                    st.success("Правка записана. Вставь текст в Seller Central.")
+                    st.success(t("synth.accepted_ok"))
                     st.rerun()
-            if c2.button("Перегенерировать", key=f"re-{asin}-{mp}-{d['id']}"):
+            if c2.button(t("synth.regenerate"), key=f"re-{asin}-{mp}-{d['id']}"):
                 kw = build_keyword_table(asin, mp, before)
                 keep = forbid = []
                 if not kw.empty:
@@ -814,13 +807,9 @@ with tab_review:
 
 # ================================================================ любой товар
 with tab_any:
-    st.caption(
-        "Все товары матрицы, а не только те, у кого сработало правило "
-        "превышения. Можно поработать с тайтлом, который в лимит "
-        "укладывается — например, усилить поисковые фразы."
-    )
+    st.caption(t("synth.any_hint"))
     if all_products.empty:
-        st.info("Матрица пуста — добавь товары на странице «Матрица товаров».")
+        st.info(t("common.no_data"))
     else:
         aq1, aq2 = st.columns([3, 2])
         any_query = aq1.text_input(
@@ -846,7 +835,7 @@ with tab_any:
         if av.empty:
             st.caption(t("catalog.nothing"))
         else:
-            with st.expander(f"Таблица всех товаров ({len(av)})"):
+            with st.expander(f"{t('list.table')} ({len(av)})"):
                 atv = av.copy()
                 atv["симв."] = atv["title"].astype(str).str.len().where(
                     atv["title"].notna(), None)
@@ -889,9 +878,7 @@ with tab_any:
             a_title = arow["title"] or ""
 
             if not a_title:
-                st.warning(
-                    "По этому товару нет снапшота — собери его в Матрице "
-                    "кнопкой «↻ Собрать», иначе резать нечего.")
+                st.warning(t("synth.no_snapshot"))
             else:
                 over = max(0, len(a_title) - TITLE_LIMIT)
                 fetched = (pd.to_datetime(arow["fetched_at"]).strftime("%d.%m %H:%M")
@@ -911,19 +898,14 @@ with tab_any:
                                           f"{TITLE_LIMIT - len(a_title)}")),
                     unsafe_allow_html=True)
                 if not over:
-                    st.caption(
-                        "Тайтл в лимите. Сплит всё равно возможен: часть фраз "
-                        "можно перенести в Item Highlights и освободить место "
-                        "под ключевые."
-                    )
+                    st.caption(t("synth.in_limit"))
 
-                st.markdown(eyebrow("Ключевые фразы · Brand Analytics"),
+                st.markdown(eyebrow(t("synth.keywords")),
                             unsafe_allow_html=True)
                 a_kw = build_keyword_table(a_asin, a_mp, a_title)
                 a_edit = pd.DataFrame()
                 if a_kw.empty:
-                    st.caption("Данных Brand Analytics по этому товару нет — "
-                               "генерация пойдёт по методологии.")
+                    st.caption(t("synth.no_sqp"))
                 else:
                     v = a_kw.rename(columns={
                         "search_query": "фраза", "volume": "спрос",
@@ -991,7 +973,8 @@ with tab_any:
                                 f'font-family:var(--ls-mono);">{a_cov}%</span>'
                                 f'</div>', unsafe_allow_html=True)
                             if cv["lost"]:
-                                st.markdown("**Потеряно:** " + " · ".join(
+                                st.markdown(f"**{t('synth.lost')}:** "
+                                            + " · ".join(
                                     f"`{p}`" for p, _, _ in cv["lost"][:6]))
 
                     st.markdown(f"**title** · {len(a_new)}/{TITLE_LIMIT}")
@@ -1009,15 +992,14 @@ with tab_any:
                                            for ok, m in a_checks))
 
                     ac1, ac2 = st.columns([1.4, 1])
-                    if ac1.button("✓ Принять и записать", type="primary",
+                    if ac1.button(t("synth.accept"), type="primary",
                                   disabled=bool(a_failed),
                                   key=f"any-acc-{a_asin}-{a_mp}"):
                         if accept_change(a_asin, a_mp, a_title, ares, a_cov,
                                          skill_version, GEMINI_MODEL):
-                            st.success("Правка записана. Вставь текст "
-                                       "в Seller Central.")
+                            st.success(t("synth.accepted_ok"))
                             st.rerun()
-                    if ac2.button("Перегенерировать",
+                    if ac2.button(t("synth.regenerate"),
                                   key=f"any-re-{a_asin}-{a_mp}"):
                         st.session_state.pop(f"any-res-{a_asin}-{a_mp}", None)
-                        st.rerun()
+                        st.rerun() 
