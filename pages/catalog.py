@@ -20,6 +20,7 @@ from i18n import t
 from services.db import get_conn
 from services.settings import get_int, get_float
 from services.economics import econ_map, fmt_money, fmt_conversion
+from services.worklog import worklog_map, work_badges
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
@@ -182,6 +183,7 @@ st.header(t("nav.catalog"))
 st.caption(t("catalog.caption"))
 
 ECON = econ_map()
+WORK = worklog_map()
 df = load_catalog()
 if df.empty:
     st.caption(t("common.no_data"))
@@ -320,6 +322,7 @@ for x in chunk:
     who_lbl = t("common.competitor") if r["is_competitor"] else t("common.our")
 
     _ec = ECON.get((asin, mp)) or {}
+    _badges = work_badges(WORK.get((asin, mp)))
     chips = "".join([
         chip(t("metric.title"), f"{mx['title_len']}/{TITLE_LIMIT}",
              "err" if mx["title_len"] > TITLE_LIMIT else "ok"),
@@ -379,6 +382,7 @@ for x in chunk:
           <div style="font-size:13px;color:{INK};margin:6px 0 8px;">{short or t("catalog.no_data_row")}</div>
           {ruler}
           <div style="margin-top:6px;">{chips}</div>
+          {('<div style="margin-top:6px;">' + _badges + '</div>') if _badges else ''}
           </div>
         </div>
         """,
