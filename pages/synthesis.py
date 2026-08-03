@@ -455,6 +455,32 @@ def load_sqp_coverage() -> set:
         return set()
 
 
+# Колонки таблицы фраз: технические имена, подписи — в column_config.
+# Иначе при переводе получаются дубли имён и pyarrow роняет страницу.
+def kw_editor(kw_df: pd.DataFrame, key: str) -> pd.DataFrame:
+    """Редактируемая таблица ключевых фраз с типами."""
+    v = kw_df.rename(columns={
+        "search_query": "phrase", "volume": "vol", "impressions": "imp",
+        "clicks": "clk", "purchases": "pur", "weight": "w"})
+    v["w"] = v["w"].round(1)
+    return st.data_editor(
+        v[["phrase", "vol", "imp", "clk", "pur", "w", "in_title", "tier"]],
+        column_config={
+            "phrase": st.column_config.TextColumn(
+                "Query", width="large", disabled=True),
+            "vol": st.column_config.NumberColumn("Volume", disabled=True),
+            "imp": st.column_config.NumberColumn("Impressions", disabled=True),
+            "clk": st.column_config.NumberColumn("Clicks", disabled=True),
+            "pur": st.column_config.NumberColumn("Purchases", disabled=True),
+            "w": st.column_config.NumberColumn("Weight", disabled=True),
+            "in_title": st.column_config.CheckboxColumn(
+                t("card.title"), disabled=True),
+            "tier": st.column_config.SelectboxColumn(
+                "Tier", options=TIERS, required=True),
+        },
+        hide_index=True, use_container_width=True, height=300, key=key)
+
+
 # ================================================================ UI
 SQP_MARKETPLACES = {"es", "de", "it"}
 SQP_LABEL = {
@@ -623,14 +649,13 @@ with tab_queue:
         view.sort(key=lambda z: (-z["risk"], -z["over"]))
 
         if q_mode == "table":
-            # ключи словаря = имена колонок, все обязаны быть разными
             _c = {
-                "img": "IMG", "sku": "SKU", "asin": "ASIN", "mp": "MP",
-                "len": "LEN", "over": t("ruler.excess"),
-                "risk": f"{t('synth.at_risk_line')}, €",
+                "img": t("metric.photos"), "sku": "SKU", "asin": "ASIN",
+                "mp": "MP", "len": t("metric.title"),
+                "over": t("ruler.excess"), "risk": t("synth.at_risk_line"),
                 "sqp": "SQP", "drafts": t("synth.drafts_n"),
                 "cov": "Coverage", "acc": t("work.accepted"),
-                "title": t("card.title"), "link": "→",
+                "title": t("card.title"), "link": t("matrix.collect"),
             }
             _sqp_txt = {"ready": t("metric.yes"), "queued": t("work.no_draft"),
                         "off": t("metric.no")}
@@ -658,15 +683,13 @@ with tab_queue:
                 tv,
                 column_config={
                     _c["img"]: st.column_config.ImageColumn(
-                        t("metric.photos"), width="small"),
-                    _c["len"]: st.column_config.NumberColumn(
-                        t("metric.title"), width="small"),
+                        _c["img"], width="small"),
                     _c["risk"]: st.column_config.NumberColumn(
-                        _c["risk"], format="%.0f", width="small"),
+                        f"{_c['risk']}, €", format="%.0f", width="small"),
                     _c["cov"]: st.column_config.NumberColumn(
                         "Coverage, %", format="%.0f", width="small"),
                     _c["link"]: st.column_config.LinkColumn(
-                        t("matrix.collect"), display_text="→"),
+                        _c["link"], display_text="→"),
                     _c["title"]: st.column_config.TextColumn(
                         _c["title"], width="large"),
                 },
@@ -703,35 +726,17 @@ with tab_queue:
                     st.caption(SQP_LABEL[x["sqp_state"]] + " · "
                                + t("synth.no_sqp"))
                 else:
-                    v = kw.rename(columns={
-                        "search_query": "фраза", "volume": "спрос",
-                        "impressions": "показы", "clicks": "клики",
-                        "purchases": "покупки", "weight": "вес",
-                        "in_title": "в тайтле", "tier": "тип"})
-                    v["вес"] = v["вес"].round(1)
-                    kw_edit = st.data_editor(
-                        v[["фраза", "спрос", "показы", "клики", "покупки",
-                           "вес", "в тайтле", "тип"]],
-                        column_config={
-                            "тип": st.column_config.SelectboxColumn(
-                                "Тип", options=TIERS, required=True),
-                            "в тайтле": st.column_config.CheckboxColumn(
-                                "В тайтле", disabled=True),
-                            "фраза": st.column_config.TextColumn(
-                                "Фраза", width="large", disabled=True),
-                        },
-                        hide_index=True, use_container_width=True, height=280,
-                        key=f"kw-{asin}-{mp}")
-                    cnt = kw_edit["тип"].value_counts().to_dict()
+                    kw_edit = kw_editor(kw, f"kw-{asin}-{mp}")
+                    cnt = kw_edit["tier"].value_counts().to_dict()
                     st.markdown(" · ".join(f"{TIER_LABEL[k]} {cnt.get(k, 0)}"
                                            for k in TIERS))
 
                 keep_list, forbid_list = [], []
                 if not kw_edit.empty:
-                    o = kw_edit.sort_values("вес", ascending=False)
-                    keep_list = o.loc[o["тип"].isin(["must_keep", "preferred"]),
-                                      "фраза"].tolist()
-                    forbid_list = o.loc[o["тип"] == "forbid", "фраза"].tolist()
+                    o = kw_edit.sort_values("w", ascending=False)
+                    keep_list = o.loc[o["tier"].isin(["must_keep", "preferred"]),
+                                      "phrase"].tolist()
+                    forbid_list = o.loc[o["tier"] == "forbid", "phrase"].tolist()
 
                 if st.button(t("synth.generate"), type="primary",
                              key=f"gen-{asin}-{mp}"):
@@ -865,12 +870,8 @@ with tab_any:
         else:
             with st.expander(f"{t('list.table')} ({len(av)})"):
                 atv = av.copy()
-                # имена колонок должны быть уникальными: pyarrow падает на дублях
-                _len_c = f'{t("metric.title")}, {t("meth.limit_title").split(",")[-1].strip()}'
-                _over_c = t("ruler.excess")
+                _len_c, _over_c = t("metric.title"), t("ruler.excess")
                 _got_c = t("matrix.collected_at")
-                _img_c = "IMG"
-                _title_c = t("card.title")
                 atv[_len_c] = atv["title"].astype(str).str.len().where(
                     atv["title"].notna(), None)
                 atv[_over_c] = (atv[_len_c] - TITLE_LIMIT).clip(lower=0)
@@ -883,17 +884,17 @@ with tab_any:
                 st.dataframe(
                     atv[["main_image", "sku_group", "asin", "marketplace",
                          _len_c, _over_c, _got_c, "title", _link_c]]
-                    .rename(columns={"main_image": _img_c,
+                    .rename(columns={"main_image": t("metric.photos"),
                                      "sku_group": "SKU", "asin": "ASIN",
                                      "marketplace": "MP",
-                                     "title": _title_c}),
+                                     "title": t("card.title")}),
                     column_config={
-                        _img_c: st.column_config.ImageColumn(
+                        t("metric.photos"): st.column_config.ImageColumn(
                             t("metric.photos"), width="small"),
                         _link_c: st.column_config.LinkColumn(
-                            t("matrix.collect"), display_text="→"),
-                        _title_c: st.column_config.TextColumn(
-                            _title_c, width="large"),
+                            _link_c, display_text="→"),
+                        t("card.title"): st.column_config.TextColumn(
+                            t("card.title"), width="large"),
                     },
                     hide_index=True, use_container_width=True, height=420)
                 st.caption(t("list.sort_hint"))
@@ -911,8 +912,7 @@ with tab_any:
                 opts[f"{sku}{r['asin']} · {r['marketplace']}{ln} · {ttl}"] = (
                     r["asin"], r["marketplace"])
 
-            pick = st.selectbox(t("photo.product"), list(opts.keys()),
-                                key="any-pick")
+            pick = st.selectbox(t("photo.product"), list(opts.keys()), key="any-pick")
             a_asin, a_mp = opts[pick]
             arow = av[(av["asin"] == a_asin)
                       & (av["marketplace"] == a_mp)].iloc[0]
@@ -948,35 +948,17 @@ with tab_any:
                 if a_kw.empty:
                     st.caption(t("synth.no_sqp"))
                 else:
-                    v = a_kw.rename(columns={
-                        "search_query": "фраза", "volume": "спрос",
-                        "impressions": "показы", "clicks": "клики",
-                        "purchases": "покупки", "weight": "вес",
-                        "in_title": "в тайтле", "tier": "тип"})
-                    v["вес"] = v["вес"].round(1)
-                    a_edit = st.data_editor(
-                        v[["фраза", "спрос", "показы", "клики", "покупки",
-                           "вес", "в тайтле", "тип"]],
-                        column_config={
-                            "тип": st.column_config.SelectboxColumn(
-                                "Тип", options=TIERS, required=True),
-                            "в тайтле": st.column_config.CheckboxColumn(
-                                "В тайтле", disabled=True),
-                            "фраза": st.column_config.TextColumn(
-                                "Фраза", width="large", disabled=True),
-                        },
-                        hide_index=True, use_container_width=True, height=280,
-                        key=f"any-kw-{a_asin}-{a_mp}")
-                    cnt = a_edit["тип"].value_counts().to_dict()
+                    a_edit = kw_editor(a_kw, f"any-kw-{a_asin}-{a_mp}")
+                    cnt = a_edit["tier"].value_counts().to_dict()
                     st.markdown(" · ".join(f"{TIER_LABEL[k]} {cnt.get(k, 0)}"
                                            for k in TIERS))
 
                 a_keep, a_forbid = [], []
                 if not a_edit.empty:
-                    o = a_edit.sort_values("вес", ascending=False)
-                    a_keep = o.loc[o["тип"].isin(["must_keep", "preferred"]),
-                                   "фраза"].tolist()
-                    a_forbid = o.loc[o["тип"] == "forbid", "фраза"].tolist()
+                    o = a_edit.sort_values("w", ascending=False)
+                    a_keep = o.loc[o["tier"].isin(["must_keep", "preferred"]),
+                                   "phrase"].tolist()
+                    a_forbid = o.loc[o["tier"] == "forbid", "phrase"].tolist()
 
                 if st.button(t("synth.generate"), type="primary",
                              key=f"any-gen-{a_asin}-{a_mp}"):
@@ -1001,7 +983,7 @@ with tab_any:
                     a_cov = None
                     if not a_edit.empty:
                         cdf = a_kw.copy()
-                        tmap = dict(zip(a_edit["фраза"], a_edit["тип"]))
+                        tmap = dict(zip(a_edit["phrase"], a_edit["tier"]))
                         cdf["tier"] = cdf["search_query"].map(tmap).fillna("compress")
                         cv = coverage(cdf, a_new, a_hl)
                         a_cov = cv["score"]
@@ -1043,4 +1025,4 @@ with tab_any:
                     if ac2.button(t("synth.regenerate"),
                                   key=f"any-re-{a_asin}-{a_mp}"):
                         st.session_state.pop(f"any-res-{a_asin}-{a_mp}", None)
-                        st.rerun()
+                        st.rerun() 
