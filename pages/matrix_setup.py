@@ -18,6 +18,7 @@ from services.worklog import worklog_map, work_badges, has_work
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
+st.title(t("nav.matrix"))
 
 INK = "#1A1815"
 MUTED = "#8A8578"
@@ -41,7 +42,6 @@ MP_LANGUAGE = {
     "com": "en", "co.uk": "en", "nl": "nl", "se": "sv", "pl": "pl",
 }
 
-st.header(t("nav.matrix"))
 st.caption(t("matrix.caption"))
 
 # ================================================================ ввод пачкой
@@ -728,4 +728,4 @@ with st.expander(t("matrix.schedule_edit")):
             st.success(t("matrix.schedule_saved"))
             st.rerun()
         except Exception as e:
-            st.error(f"Не сохранилось: {e}")
+            st.error(f"Не сохранилось: {e}") 
