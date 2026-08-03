@@ -438,6 +438,23 @@ def load_all_products() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+@st.cache_data(ttl=300)
+def load_sqp_coverage() -> set:
+    """Товары, по которым Brand Analytics реально загружен.
+
+    Раньше состояние определялось по наличию трафика — из-за этого строка
+    могла утверждать «SQP собран», а таблица фраз оказывалась пустой.
+    """
+    try:
+        conn = get_conn()
+        df = pd.read_sql(
+            "SELECT DISTINCT asin, marketplace FROM sqp_reports", conn)
+        conn.close()
+        return set(zip(df["asin"], df["marketplace"]))
+    except Exception:
+        return set()
+
+
 # ================================================================ UI
 SQP_MARKETPLACES = {"es", "de", "it"}
 SQP_LABEL = {
@@ -458,6 +475,7 @@ skill_text, skill_version = load_skill()
 ECON = econ_map()
 DRAFTS = load_draft_stats()
 ACCEPTED = load_accepted()
+SQP_HAVE = load_sqp_coverage()
 
 rows = []
 for _, r in candidates.iterrows():
@@ -470,8 +488,7 @@ for _, r in candidates.iterrows():
         "econ": e,
         "draft": DRAFTS.get(key) or {},
         "accepted": ACCEPTED.get(key),
-        "sqp_state": ("ready" if r["marketplace"] in SQP_MARKETPLACES
-                      and e.get("sessions_30d")
+        "sqp_state": ("ready" if (r["asin"], r["marketplace"]) in SQP_HAVE
                       else "queued" if r["marketplace"] in SQP_MARKETPLACES
                       else "off"),
     })
@@ -480,7 +497,7 @@ total_risk = sum(x["risk"] for x in rows)
 n_ready = sum(1 for x in rows if x["sqp_state"] == "ready")
 st.markdown(
     f"{t('synth.at_risk_line')} <b style='color:{ACCENT}'>"
-    f"{fmt_money(total_risk, '')}</b>/мес · "
+    f"{fmt_money(total_risk, '')}</b> · "
     f"{len(rows)} {t('synth.summary')} {n_ready}",
     unsafe_allow_html=True)
 
@@ -551,8 +568,8 @@ with tab_queue:
     b3.caption(t("synth.batch_hint"))
 
     f1, f2, f3, f4 = st.columns([2.6, 1.7, 2.2, 1.5])
-    query = f1.text_input("Поиск", label_visibility="collapsed",
-                          placeholder="Поиск: ASIN, SKU или тайтл...")
+    query = f1.text_input("q", label_visibility="collapsed",
+                          placeholder=t("synth.search"))
     mps = sorted({x["r"]["marketplace"] for x in rows})
     mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
                             placeholder=t("list.all_mp"))
@@ -564,10 +581,7 @@ with tab_queue:
                                    "todo": t("work.no_draft"),
                                    "done": t("work.accepted")}[k],
             selection_mode="single", label_visibility="collapsed",
-            key="syn-scope",
-            help="все — вся очередь · с SQP — только там, где есть данные "
-                 "Brand Analytics · без черновика — ещё не генерировали · "
-                 "принято — правка уже записана")
+            key="syn-scope", help=t("synth.batch_hint"))
     except AttributeError:
         scope = f3.radio("фильтр", ["all", "sqp", "todo", "done"],
                          horizontal=True,
@@ -609,38 +623,49 @@ with tab_queue:
         view.sort(key=lambda z: (-z["risk"], -z["over"]))
 
         if q_mode == "table":
+            _c = {
+                "img": t("metric.photos"), "sku": "SKU", "asin": "ASIN",
+                "mp": "MP", "len": t("metric.title"),
+                "over": t("ruler.excess"), "risk": t("synth.at_risk_line"),
+                "sqp": "SQP", "drafts": t("synth.drafts_n"),
+                "cov": "Coverage", "acc": t("work.accepted"),
+                "title": t("card.title"), "link": t("matrix.collect"),
+            }
+            _sqp_txt = {"ready": t("metric.yes"), "queued": t("work.no_draft"),
+                        "off": t("metric.no")}
             tv = pd.DataFrame([{
-                "фото": (None if pd.isna(z["r"].get("main_image"))
-                         else z["r"].get("main_image")),
-                "SKU": z["r"]["sku_group"], "ASIN": z["r"]["asin"],
-                "MP": z["r"]["marketplace"],
-                "симв.": len(z["r"]["title"] or ""),
-                "превышение": z["over"],
-                "под риском, €": round(z["risk"]) if z["risk"] else None,
-                "SQP": {"ready": "есть", "queued": "в очереди",
-                        "off": "не собирается"}[z["sqp_state"]],
-                "черновиков": (int(z["draft"]["drafts"])
+                _c["img"]: (None if pd.isna(z["r"].get("main_image"))
+                            else z["r"].get("main_image")),
+                _c["sku"]: z["r"]["sku_group"], _c["asin"]: z["r"]["asin"],
+                _c["mp"]: z["r"]["marketplace"],
+                _c["len"]: len(z["r"]["title"] or ""),
+                _c["over"]: z["over"],
+                _c["risk"]: round(z["risk"]) if z["risk"] else None,
+                _c["sqp"]: _sqp_txt[z["sqp_state"]],
+                _c["drafts"]: (int(z["draft"]["drafts"])
                                if z["draft"].get("drafts") else 0),
-                "Coverage": (int(z["draft"]["coverage"])
-                             if z["draft"].get("coverage") is not None
-                             and not pd.isna(z["draft"].get("coverage"))
-                             else None),
-                "принято": ("да" if z["accepted"] else ""),
-                "тайтл": (z["r"]["title"] or "")[:70],
-                "ссылка": f"https://www.amazon.{z['r']['marketplace']}"
-                          f"/dp/{z['r']['asin']}",
+                _c["cov"]: (int(z["draft"]["coverage"])
+                            if z["draft"].get("coverage") is not None
+                            and not pd.isna(z["draft"].get("coverage"))
+                            else None),
+                _c["acc"]: ("✓" if z["accepted"] else ""),
+                _c["title"]: (z["r"]["title"] or "")[:70],
+                _c["link"]: f"https://www.amazon.{z['r']['marketplace']}"
+                            f"/dp/{z['r']['asin']}",
             } for z in view])
             st.dataframe(
                 tv,
                 column_config={
-                    "фото": st.column_config.ImageColumn("Фото", width="small"),
-                    "под риском, €": st.column_config.NumberColumn(
-                        "Под риском, €", format="%.0f", width="small"),
-                    "Coverage": st.column_config.NumberColumn(
+                    _c["img"]: st.column_config.ImageColumn(
+                        _c["img"], width="small"),
+                    _c["risk"]: st.column_config.NumberColumn(
+                        f"{_c['risk']}, €", format="%.0f", width="small"),
+                    _c["cov"]: st.column_config.NumberColumn(
                         "Coverage, %", format="%.0f", width="small"),
-                    "ссылка": st.column_config.LinkColumn(
-                        "Листинг", display_text="открыть"),
-                    "тайтл": st.column_config.TextColumn("Тайтл", width="large"),
+                    _c["link"]: st.column_config.LinkColumn(
+                        _c["link"], display_text="→"),
+                    _c["title"]: st.column_config.TextColumn(
+                        _c["title"], width="large"),
                 },
                 hide_index=True, use_container_width=True, height=520)
             st.caption(t("list.sort_hint"))
@@ -794,7 +819,7 @@ with tab_review:
                                   "search_query"].tolist()
                     forbid = kw.loc[kw["tier"] == "forbid",
                                     "search_query"].tolist()
-                with st.spinner("Генерирую заново..."):
+                with st.spinner(t("synth.regenerate")):
                     res = generate_split(before, mp, skill_text, keep, forbid)
                 if res:
                     save_draft(asin, mp, before, res, skill_version)
@@ -813,8 +838,8 @@ with tab_any:
     else:
         aq1, aq2 = st.columns([3, 2])
         any_query = aq1.text_input(
-            "Поиск", label_visibility="collapsed", key="any-q",
-            placeholder="Поиск: ASIN, SKU или название...")
+            "q", label_visibility="collapsed", key="any-q",
+            placeholder=t("catalog.search"))
         any_mps = sorted(all_products["marketplace"].dropna().unique())
         any_mp = aq2.multiselect("MP", any_mps, default=[],
                                  label_visibility="collapsed",
@@ -826,7 +851,7 @@ with tab_any:
         if any_query.strip():
             q = any_query.strip().lower()
             av = av[
-                av["asin"].str.lower().str.contains(q, na=False)
+                av["asin"].astype(str).str.lower().str.contains(q, na=False)
                 | av["sku_group"].astype(str).str.lower().str.contains(q, na=False)
                 | av["title"].astype(str).str.lower().str.contains(q, na=False)
             ]
@@ -837,41 +862,50 @@ with tab_any:
         else:
             with st.expander(f"{t('list.table')} ({len(av)})"):
                 atv = av.copy()
-                atv["симв."] = atv["title"].astype(str).str.len().where(
+                _len_c, _over_c = t("metric.title"), t("ruler.excess")
+                _got_c = t("matrix.collected_at")
+                atv[_len_c] = atv["title"].astype(str).str.len().where(
                     atv["title"].notna(), None)
-                atv["превышение"] = (atv["симв."] - TITLE_LIMIT).clip(lower=0)
-                atv["собрано"] = pd.to_datetime(
+                atv[_over_c] = (atv[_len_c] - TITLE_LIMIT).clip(lower=0)
+                atv[_got_c] = pd.to_datetime(
                     atv["fetched_at"], errors="coerce").dt.strftime("%d.%m %H:%M")
-                atv["ссылка"] = atv.apply(
+                _link_c = t("matrix.collect")
+                atv[_link_c] = atv.apply(
                     lambda z: f"https://www.amazon.{z['marketplace']}"
                               f"/dp/{z['asin']}", axis=1)
                 st.dataframe(
                     atv[["main_image", "sku_group", "asin", "marketplace",
-                         "симв.", "превышение", "собрано", "title", "ссылка"]]
-                    .rename(columns={"main_image": "фото", "sku_group": "SKU",
-                                     "asin": "ASIN", "marketplace": "MP",
-                                     "title": "тайтл"}),
+                         _len_c, _over_c, _got_c, "title", _link_c]]
+                    .rename(columns={"main_image": t("metric.photos"),
+                                     "sku_group": "SKU", "asin": "ASIN",
+                                     "marketplace": "MP",
+                                     "title": t("card.title")}),
                     column_config={
-                        "фото": st.column_config.ImageColumn("Фото",
-                                                             width="small"),
-                        "ссылка": st.column_config.LinkColumn(
-                            "Листинг", display_text="открыть"),
-                        "тайтл": st.column_config.TextColumn("Тайтл",
-                                                             width="large"),
+                        t("metric.photos"): st.column_config.ImageColumn(
+                            t("metric.photos"), width="small"),
+                        _link_c: st.column_config.LinkColumn(
+                            _link_c, display_text="→"),
+                        t("card.title"): st.column_config.TextColumn(
+                            t("card.title"), width="large"),
                     },
                     hide_index=True, use_container_width=True, height=420)
                 st.caption(t("list.sort_hint"))
 
             opts = {}
             for _, r in av.head(300).iterrows():
-                ttl = r["title"] or "— не собирался"
-                sku = (f"{r['sku_group']} · " if r["sku_group"]
-                       and r["sku_group"] != r["asin"] else "")
-                ln = f" · {len(r['title'])} симв." if r["title"] else ""
-                opts[f"{sku}{r['asin']} · {r['marketplace']}{ln} · "
-                     f"{str(ttl)[:60]}"] = (r["asin"], r["marketplace"])
+                # NaN истинный в Python: без pd.isna() len(NaN) уронит страницу
+                raw_title = r.get("title")
+                title_s = "" if raw_title is None or pd.isna(raw_title) else str(raw_title)
+                raw_sku = r.get("sku_group")
+                sku_s = "" if raw_sku is None or pd.isna(raw_sku) else str(raw_sku)
+                sku = f"{sku_s} · " if sku_s and sku_s != r["asin"] else ""
+                ln = f" · {len(title_s)}" if title_s else ""
+                ttl = title_s[:60] if title_s else t("matrix.not_collected")
+                opts[f"{sku}{r['asin']} · {r['marketplace']}{ln} · {ttl}"] = (
+                    r["asin"], r["marketplace"])
 
-            pick = st.selectbox("Товар", list(opts.keys()), key="any-pick")
+            pick = st.selectbox(t("photo.product"), list(opts.keys()),
+                                key="any-pick")
             a_asin, a_mp = opts[pick]
             arow = av[(av["asin"] == a_asin)
                       & (av["marketplace"] == a_mp)].iloc[0]
@@ -1002,4 +1036,4 @@ with tab_any:
                     if ac2.button(t("synth.regenerate"),
                                   key=f"any-re-{a_asin}-{a_mp}"):
                         st.session_state.pop(f"any-res-{a_asin}-{a_mp}", None)
-                        st.rerun() 
+                        st.rerun()
