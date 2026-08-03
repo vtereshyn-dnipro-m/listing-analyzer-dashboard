@@ -1023,4 +1023,4 @@ with tab_any:
                     if ac2.button(t("synth.regenerate"),
                                   key=f"any-re-{a_asin}-{a_mp}"):
                         st.session_state.pop(f"any-res-{a_asin}-{a_mp}", None)
-                        st.rerun()
+                        st.rerun() 
