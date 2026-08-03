@@ -549,7 +549,7 @@ def render_card_head(x: dict) -> None:
     sub = [SQP_LABEL[x["sqp_state"]]]
     if x["draft"].get("drafts"):
         cov = x["draft"].get("coverage")
-        sub.append(f"черновиков {int(x['draft']['drafts'])}"
+        sub.append(f"{t('synth.drafts_n')} {int(x['draft']['drafts'])}"
                    + (f" · Coverage {int(cov)}%" if pd.notna(cov) else ""))
     if x["accepted"]:
         sub.append("✓ правка принята "
@@ -625,7 +625,6 @@ with tab_queue:
                           label_visibility="collapsed", key="syn-mode")
     q_mode = q_mode or "cards"
 
-    st.caption(t("synth.batch_hint"))
 
     view = rows
     if mp_sel:
@@ -659,39 +658,55 @@ with tab_queue:
             }
             _sqp_txt = {"ready": t("metric.yes"), "queued": t("work.no_draft"),
                         "off": t("metric.no")}
+            # имена колонок технические, подписи — в column_config
+            _sqp_txt = {"ready": t("metric.yes"), "queued": t("work.no_draft"),
+                        "off": t("metric.no")}
             tv = pd.DataFrame([{
-                _c["img"]: (None if pd.isna(z["r"].get("main_image"))
-                            else z["r"].get("main_image")),
-                _c["sku"]: z["r"]["sku_group"], _c["asin"]: z["r"]["asin"],
-                _c["mp"]: z["r"]["marketplace"],
-                _c["len"]: len(z["r"]["title"] or ""),
-                _c["over"]: z["over"],
-                _c["risk"]: round(z["risk"]) if z["risk"] else None,
-                _c["sqp"]: _sqp_txt[z["sqp_state"]],
-                _c["drafts"]: (int(z["draft"]["drafts"])
-                               if z["draft"].get("drafts") else 0),
-                _c["cov"]: (int(z["draft"]["coverage"])
-                            if z["draft"].get("coverage") is not None
-                            and not pd.isna(z["draft"].get("coverage"))
-                            else None),
-                _c["acc"]: ("✓" if z["accepted"] else ""),
-                _c["title"]: (z["r"]["title"] or "")[:70],
-                _c["link"]: f"https://www.amazon.{z['r']['marketplace']}"
-                            f"/dp/{z['r']['asin']}",
+                "img": (None if pd.isna(z["r"].get("main_image"))
+                        else z["r"].get("main_image")),
+                "sku": z["r"]["sku_group"],
+                "asin": z["r"]["asin"],
+                "mp": z["r"]["marketplace"],
+                "len": len(z["r"]["title"] or ""),
+                "over": z["over"],
+                "risk": round(z["risk"]) if z["risk"] else None,
+                "sqp": _sqp_txt[z["sqp_state"]],
+                "drafts": (int(z["draft"]["drafts"])
+                           if z["draft"].get("drafts") else 0),
+                "cov": (int(z["draft"]["coverage"])
+                        if z["draft"].get("coverage") is not None
+                        and not pd.isna(z["draft"].get("coverage")) else None),
+                "acc": ("✓" if z["accepted"] else ""),
+                "title": (z["r"]["title"] or "")[:70],
+                "link": f"https://www.amazon.{z['r']['marketplace']}"
+                        f"/dp/{z['r']['asin']}",
             } for z in view])
             st.dataframe(
                 tv,
                 column_config={
-                    _c["img"]: st.column_config.ImageColumn(
-                        _c["img"], width="small"),
-                    _c["risk"]: st.column_config.NumberColumn(
-                        f"{_c['risk']}, €", format="%.0f", width="small"),
-                    _c["cov"]: st.column_config.NumberColumn(
+                    "img": st.column_config.ImageColumn(
+                        t("metric.photos"), width="small"),
+                    "sku": st.column_config.TextColumn("SKU", width="small"),
+                    "asin": st.column_config.TextColumn("ASIN", width="small"),
+                    "mp": st.column_config.TextColumn("MP", width="small"),
+                    "len": st.column_config.NumberColumn(
+                        t("metric.title"), width="small"),
+                    "over": st.column_config.NumberColumn(
+                        t("ruler.excess"), width="small"),
+                    "risk": st.column_config.NumberColumn(
+                        f"{t('synth.at_risk_line')}, EUR", format="%.0f",
+                        width="small"),
+                    "sqp": st.column_config.TextColumn("SQP", width="small"),
+                    "drafts": st.column_config.NumberColumn(
+                        t("synth.drafts_n"), width="small"),
+                    "cov": st.column_config.NumberColumn(
                         "Coverage, %", format="%.0f", width="small"),
-                    _c["link"]: st.column_config.LinkColumn(
-                        _c["link"], display_text="→"),
-                    _c["title"]: st.column_config.TextColumn(
-                        _c["title"], width="large"),
+                    "acc": st.column_config.TextColumn(
+                        t("work.accepted"), width="small"),
+                    "title": st.column_config.TextColumn(
+                        t("card.title"), width="large"),
+                    "link": st.column_config.LinkColumn(
+                        t("matrix.collect"), display_text="→"),
                 },
                 hide_index=True, use_container_width=True, height=520)
             st.caption(t("list.sort_hint"))
@@ -869,32 +884,38 @@ with tab_any:
             st.caption(t("catalog.nothing"))
         else:
             with st.expander(f"{t('list.table')} ({len(av)})"):
+                # имена колонок технические, подписи — в column_config,
+                # иначе на разных языках возникают дубли и pyarrow падает
                 atv = av.copy()
-                _len_c, _over_c = t("metric.title"), t("ruler.excess")
-                _got_c = t("matrix.collected_at")
-                atv[_len_c] = atv["title"].astype(str).str.len().where(
+                atv["len"] = atv["title"].astype(str).str.len().where(
                     atv["title"].notna(), None)
-                atv[_over_c] = (atv[_len_c] - TITLE_LIMIT).clip(lower=0)
-                atv[_got_c] = pd.to_datetime(
+                atv["over"] = (atv["len"] - TITLE_LIMIT).clip(lower=0)
+                atv["got"] = pd.to_datetime(
                     atv["fetched_at"], errors="coerce").dt.strftime("%d.%m %H:%M")
-                _link_c = t("matrix.collect")
-                atv[_link_c] = atv.apply(
+                atv["link"] = atv.apply(
                     lambda z: f"https://www.amazon.{z['marketplace']}"
                               f"/dp/{z['asin']}", axis=1)
                 st.dataframe(
                     atv[["main_image", "sku_group", "asin", "marketplace",
-                         _len_c, _over_c, _got_c, "title", _link_c]]
-                    .rename(columns={"main_image": t("metric.photos"),
-                                     "sku_group": "SKU", "asin": "ASIN",
-                                     "marketplace": "MP",
-                                     "title": t("card.title")}),
+                         "len", "over", "got", "title", "link"]],
                     column_config={
-                        t("metric.photos"): st.column_config.ImageColumn(
+                        "main_image": st.column_config.ImageColumn(
                             t("metric.photos"), width="small"),
-                        _link_c: st.column_config.LinkColumn(
-                            _link_c, display_text="→"),
-                        t("card.title"): st.column_config.TextColumn(
+                        "sku_group": st.column_config.TextColumn(
+                            "SKU", width="small"),
+                        "asin": st.column_config.TextColumn("ASIN", width="small"),
+                        "marketplace": st.column_config.TextColumn(
+                            "MP", width="small"),
+                        "len": st.column_config.NumberColumn(
+                            t("metric.title"), width="small"),
+                        "over": st.column_config.NumberColumn(
+                            t("ruler.excess"), width="small"),
+                        "got": st.column_config.TextColumn(
+                            t("matrix.collected_at"), width="small"),
+                        "title": st.column_config.TextColumn(
                             t("card.title"), width="large"),
+                        "link": st.column_config.LinkColumn(
+                            t("matrix.collect"), display_text="→"),
                     },
                     hide_index=True, use_container_width=True, height=420)
                 st.caption(t("list.sort_hint"))
@@ -1025,4 +1046,4 @@ with tab_any:
                     if ac2.button(t("synth.regenerate"),
                                   key=f"any-re-{a_asin}-{a_mp}"):
                         st.session_state.pop(f"any-res-{a_asin}-{a_mp}", None)
-                        st.rerun() 
+                        st.rerun()
