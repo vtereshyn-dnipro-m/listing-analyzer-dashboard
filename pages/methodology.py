@@ -18,7 +18,7 @@ from services.settings import get_int, get_float, save_setting
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
-st.header(t("meth.title"))
+st.title(t("meth.title"))
 st.caption(t("meth.caption"))
 
 # Подписи областей — в i18n (meth.scope.<id>), здесь только id
@@ -374,4 +374,4 @@ else:
                 st.cache_data.clear()
                 st.rerun()
             except Exception as e:
-                st.error(f"{e}")
+                st.error(f"{e}") 
