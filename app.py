@@ -79,4 +79,4 @@ with st.sidebar:
         st.markdown(t("sidebar.deadline_passed"))
 
 # ---------------------------------------------------------------- запуск
-nav.run() 
+nav.run()  
