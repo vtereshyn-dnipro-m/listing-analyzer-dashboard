@@ -43,7 +43,7 @@ WARN_BG = "#FAEEDA"
 WARN_TEXT = "#854F0B"
 ERR_BG = "#FCEBEB"
 ERR_TEXT = "#A32D2D"
-MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
+MONO = "var(--ls-mono)"   # переменная из inject_fonts(): без кавычек в атрибутах
 
 TITLE_LIMIT = get_int("limit.title", _TL_DEFAULT)
 MIN_REVIEWS = get_int("threshold.min_reviews", 50)
@@ -445,26 +445,36 @@ for x in chunk:
                if pd.notna(r["fetched_at"]) else t("catalog.not_collected"))
     short = (mx["title"][:130] + "…") if len(mx["title"]) > 130 else mx["title"]
 
+    thumb = (
+        f'<img src="{mx["main_img"]}" style="width:92px;height:92px;'
+        f'object-fit:contain;background:#fff;border:1px solid {BORDER};'
+        f'border-radius:10px;">'
+    ) if mx["main_img"] else ""
+    head_html = eyebrow(
+        f'{head}<a href="https://www.amazon.{mp}/dp/{asin}" target="_blank" '
+        f'style="color:{MUTED};">{asin}</a> · {mp} · {who_lbl}'
+    )
+    badges_html = (f'<div style="margin-top:6px;">{_badges}</div>'
+                   if _badges else "")
+
+    # HTML одной строкой: у карточки может не быть линейки или значков,
+    # и на переносах пустые участки превращаются в блок кода markdown.
     st.markdown(
-        f"""
-        <div style="background:{CARD};border:1px solid {BORDER};
-                    border-left:3px solid {color};border-radius:0 12px 12px 0;
-                    padding:14px 18px;margin-bottom:10px;display:flex;gap:16px;">
-          <div style="flex:0 0 92px;">
-            {f'<img src="{mx["main_img"]}" style="width:92px;height:92px;object-fit:contain;background:#fff;border:1px solid {BORDER};border-radius:10px;">' if mx["main_img"] else ''}
-          </div>
-          <div style="flex:1;min-width:0;">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;">
-            {eyebrow(f"{head}<a href='https://www.amazon.{mp}/dp/{asin}' target='_blank' style='color:{MUTED};'>{asin}</a> · {mp} · {who_lbl}")}
-            <span style='font-family:{MONO};font-size:12px;color:{color};'>{label} · {fetched}</span>
-          </div>
-          <div style="font-size:13px;color:{INK};margin:6px 0 8px;">{short or t("catalog.no_data_row")}</div>
-          {ruler}
-          <div style="margin-top:6px;">{chips}</div>
-          {('<div style="margin-top:6px;">' + _badges + '</div>') if _badges else ''}
-          </div>
-        </div>
-        """,
+        f'<div class="ls-card" style="background:{CARD};'
+        f'border:1px solid {BORDER};border-left:3px solid {color};'
+        f'border-radius:0 12px 12px 0;padding:14px 18px;margin-bottom:10px;'
+        f'display:flex;gap:16px;">'
+        f'<div style="flex:0 0 92px;">{thumb}</div>'
+        f'<div style="flex:1;min-width:0;">'
+        f'<div class="ls-head" style="display:flex;'
+        f'justify-content:space-between;align-items:baseline;">{head_html}'
+        f'<span style="font-family:{MONO};font-size:12px;color:{color};">'
+        f"{label} · {fetched}</span></div>"
+        f'<div style="font-size:13px;color:{INK};margin:6px 0 8px;">'
+        f'{short or t("catalog.no_data_row")}</div>'
+        f"{ruler}"
+        f'<div style="margin-top:6px;">{chips}</div>'
+        f"{badges_html}</div></div>",
         unsafe_allow_html=True,
     )
 

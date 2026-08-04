@@ -195,7 +195,7 @@ _MUTED = "#8A8578"
 _BORDER = "#E7E4DD"
 _CARD = "#FFFFFF"
 _ACCENT = "#E8590C"
-_MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
+_MONO = "var(--ls-mono)"   # переменная из inject_fonts(): без кавычек в атрибутах
 _STALE_DAYS = 30
 
 
@@ -239,23 +239,19 @@ else:
 
         c_card, c_btn = st.columns([8, 1.4])
         c_card.markdown(
-            f"""
-            <div style="background:{_CARD};border:1px solid {edge};{left}
-                        border-radius:10px;padding:12px 16px;margin-bottom:8px;">
-              <div style="display:flex;justify-content:space-between;align-items:baseline;gap:10px;">
-                <div style="font-size:14px;font-weight:600;color:{_INK};">
-                  {src['title']}
-                  <a href="{src['url']}" target="_blank"
-                     style='font-family:{_MONO};font-size:11px;color:{_MUTED};'>↗ открыть</a>
-                  <span style="font-size:11px;color:{_MUTED};">{note}</span>
-                </div>
-                {checked_html}
-              </div>
-              <div style="font-size:12px;color:{_MUTED};margin-top:4px;">
-                Обосновывает: {src['grounds']} {chips}
-              </div>
-            </div>
-            """,
+            f'<div style="background:{_CARD};border:1px solid {edge};{left}'
+            f'border-radius:10px;padding:12px 16px;margin-bottom:8px;">'
+            f'<div style="display:flex;justify-content:space-between;'
+            f'align-items:baseline;gap:10px;">'
+            f'<div style="font-size:14px;font-weight:600;color:{_INK};">'
+            f"{src['title']} "
+            f'<a href="{src["url"]}" target="_blank" '
+            f'style="font-family:{_MONO};font-size:11px;color:{_MUTED};">'
+            f'{t("meth.open_link")}</a>'
+            f'<span style="font-size:11px;color:{_MUTED};">{note}</span></div>'
+            f"{checked_html}</div>"
+            f'<div style="font-size:12px;color:{_MUTED};margin-top:4px;">'
+            f'{t("meth.grounds")}: {src["grounds"]} {chips}</div></div>',
             unsafe_allow_html=True,
         )
         if c_btn.button(t("meth.checked"), key=f"src-check-{src['id']}"):
@@ -313,27 +309,26 @@ else:
             f"<span style='background:#F1EFE8;border-radius:6px;padding:1px 8px;"
             f"margin-left:4px;font-size:11px;'>{s.strip()}</span>"
             for s in str(a["affected_scopes"] or "").split(",") if s.strip())
+        detected = pd.to_datetime(a["detected_at"]).strftime("%d.%m.%Y")
         st.markdown(
-            f"""
-            <div style="background:{_CARD};border:1px solid {_BORDER};
-                        border-left:3px solid {fg};border-radius:0 10px 10px 0;
-                        padding:14px 18px;margin-bottom:8px;">
-              <div style="display:flex;justify-content:space-between;align-items:baseline;">
-                <div style="font-size:14px;font-weight:600;color:{_INK};">
-                  {a['source_title']}
-                  <a href="{a['source_url']}" target="_blank"
-                     style='font-family:{_MONO};font-size:11px;color:{_MUTED};'>↗ открыть</a>
-                </div>
-                <span style="background:{bg};color:{fg};border-radius:999px;
-                             padding:2px 10px;font-size:11px;font-weight:600;">{lbl}</span>
-              </div>
-              <div style="font-size:13px;color:{_INK};margin-top:6px;">{a['summary']}</div>
-              <div style="font-size:12px;color:{_MUTED};margin-top:4px;">
-                Затронуто: {scopes_chips or '—'} ·
-                обнаружено {pd.to_datetime(a['detected_at']).strftime('%d.%m.%Y')}
-              </div>
-            </div>
-            """,
+            f'<div style="background:{_CARD};border:1px solid {_BORDER};'
+            f'border-left:3px solid {fg};border-radius:0 10px 10px 0;'
+            f'padding:14px 18px;margin-bottom:8px;">'
+            f'<div style="display:flex;justify-content:space-between;'
+            f'align-items:baseline;">'
+            f'<div style="font-size:14px;font-weight:600;color:{_INK};">'
+            f"{a['source_title']} "
+            f'<a href="{a["source_url"]}" target="_blank" '
+            f'style="font-family:{_MONO};font-size:11px;color:{_MUTED};">'
+            f'{t("meth.open_link")}</a></div>'
+            f'<span style="background:{bg};color:{fg};border-radius:999px;'
+            f'padding:2px 10px;font-size:11px;font-weight:600;">{lbl}</span>'
+            f"</div>"
+            f'<div style="font-size:13px;color:{_INK};margin-top:6px;">'
+            f"{a['summary']}</div>"
+            f'<div style="font-size:12px;color:{_MUTED};margin-top:4px;">'
+            f'{t("meth.affected")}: {scopes_chips or "—"} · '
+            f'{t("meth.detected")} {detected}</div></div>',
             unsafe_allow_html=True,
         )
         if a["proposed_changes"]:
