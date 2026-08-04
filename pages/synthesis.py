@@ -26,6 +26,11 @@ from services.db import get_conn, cfg
 from services.settings import get_setting, get_int
 from services.ai import generate_json, task_config
 from services.economics import econ_map, money_at_risk, fmt_money
+from services.serp import (
+    readability, facts_extracted, render_serp_row,
+    render_first_glance, render_ai_view, load_competitors,
+    VISIBLE_MOBILE, VISIBLE_DESKTOP,
+)
 from services.seo import (
     build_keyword_table, coverage, compress_phrase,
     TIER_LABEL, TIER_COLOR, TIERS,
@@ -481,6 +486,49 @@ def kw_editor(kw_df: pd.DataFrame, key: str) -> pd.DataFrame:
         hide_index=True, use_container_width=True, height=300, key=key)
 
 
+def render_preview(new_title: str, new_hl: str, mp: str) -> None:
+    """Превью выдачи: как увидят человек и ИИ.
+
+    Смысл разделения 75/125: title читает человек за 1–2 фиксации взгляда,
+    Item Highlights — в основном ИИ-ассистент, который парсит факты.
+    """
+    with st.expander(t("serp.preview"), expanded=False):
+        r = readability(new_title)
+        f = facts_extracted(new_title, new_hl)
+
+        pc1, pc2 = st.columns(2)
+        with pc1:
+            st.markdown(
+                render_serp_row(new_title, VISIBLE_MOBILE,
+                                t("serp.mobile"), t("serp.fits")),
+                unsafe_allow_html=True)
+        with pc2:
+            st.markdown(
+                render_serp_row(new_title, VISIBLE_DESKTOP,
+                                t("serp.desktop"), t("serp.fits")),
+                unsafe_allow_html=True)
+
+        st.markdown(render_first_glance(new_title, r), unsafe_allow_html=True)
+        st.markdown(render_ai_view(f), unsafe_allow_html=True)
+
+        comps = load_competitors("", mp)
+        if not comps.empty:
+            st.markdown(f"**{t('serp.side_by_side')}**")
+            st.markdown(
+                f'<div style="background:#FFF;border:1px solid #E8590C;'
+                f'border-radius:8px;padding:8px 11px;font-size:12px;'
+                f'margin-bottom:4px;"><b>{t("common.our")}:</b> '
+                f'{new_title}</div>', unsafe_allow_html=True)
+            for _, cp in comps.iterrows():
+                st.markdown(
+                    f'<div style="background:#FFF;border:1px solid #E7E4DD;'
+                    f'border-radius:8px;padding:8px 11px;font-size:12px;'
+                    f'color:#57534A;margin-bottom:4px;">'
+                    f'{str(cp["title"])[:90]}… · {cp["rating"] or "—"} '
+                    f'({cp["review_count"] or 0})</div>',
+                    unsafe_allow_html=True)
+
+
 # ================================================================ UI
 SQP_MARKETPLACES = {"es", "de", "it"}
 SQP_LABEL = {
@@ -817,6 +865,7 @@ with tab_review:
                 st.code(after, language=None)
                 st.markdown(f"**item highlights** · {len(hl)}/{HIGHLIGHTS_LIMIT}")
                 st.code(hl, language=None)
+                render_preview(after, hl, mp)
                 if d.get("dropped"):
                     st.markdown(f"**{t('synth.dropped')}:** {d['dropped']}")
                 st.markdown(" · ".join(("✅ " if ok else "❌ ") + m
@@ -1025,6 +1074,7 @@ with tab_any:
                     st.code(a_new, language=None)
                     st.markdown(f"**item highlights** · {len(a_hl)}/{HIGHLIGHTS_LIMIT}")
                     st.code(a_hl, language=None)
+                    render_preview(a_new, a_hl, a_mp)
                     if ares.get("dropped"):
                         st.markdown(f"**{t('synth.dropped')}:** "
                                     + " · ".join(f"`{w}`"
