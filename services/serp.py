@@ -17,6 +17,7 @@ import re
 import pandas as pd
 import streamlit as st
 
+from i18n import t
 from services.db import get_conn
 
 # сколько символов реально видно в выдаче
@@ -87,7 +88,7 @@ def render_serp_row(title: str, limit: int, label: str, note_ok: str) -> str:
     body = (f'<span style="background:{OK_BG};">{esc(visible)}</span>'
             + (f'<span style="background:{CUT_BG};color:{MUTED};">'
                f'{esc(cut)}…</span>' if cut else ""))
-    note = (f'<span style="color:{WARN_TEXT};">обрежется {len(cut)} симв.</span>'
+    note = (f'<span style="color:{WARN_TEXT};">{t("serp.cut", n=len(cut))}</span>'
             if cut else f'<span style="color:{OK_TEXT};">{note_ok}</span>')
     return (
         f'<div style="background:{CARD};border:1px solid {BORDER};'
@@ -106,7 +107,7 @@ def render_first_glance(title: str, r: dict) -> str:
         f'<div style="background:{CARD};border:1px solid {BORDER};'
         f'border-radius:10px;padding:12px 14px;margin-bottom:8px;">'
         f'<div style="font-size:12.5px;font-weight:700;margin-bottom:8px;">'
-        f'Зона первого взгляда · ~{FIRST_GLANCE} символов</div>'
+        f'{t("serp.glance", n=FIRST_GLANCE)}</div>'
         f'<div style="font-family:var(--ls-mono);font-size:12.5px;'
         f'line-height:1.9;">'
         f'<span style="background:{OK_BG};padding:2px 3px;">'
@@ -117,14 +118,14 @@ def render_first_glance(title: str, r: dict) -> str:
         f'font-size:11px;">'
         f'<span style="background:{OK_BG if r["anchors"] else WARN_BG};'
         f'color:{OK_TEXT if r["anchors"] else WARN_TEXT};border-radius:5px;'
-        f'padding:2px 8px;">якоря-цифры: '
-        f'{" · ".join(r["anchor_list"]) if r["anchors"] else "нет"}</span>'
+        f'padding:2px 8px;">{t("serp.anchors")}: '
+        f'{" · ".join(r["anchor_list"]) if r["anchors"] else t("chk.none")}</span>'
         f'<span style="background:{OK_BG if r["chunks"] >= 3 else WARN_BG};'
         f'color:{OK_TEXT if r["chunks"] >= 3 else WARN_TEXT};'
-        f'border-radius:5px;padding:2px 8px;">чанков: {r["chunks"]}</span>'
+        f'border-radius:5px;padding:2px 8px;">{t("serp.chunks")}: {r["chunks"]}</span>'
         f'<span style="background:{OK_BG if r["longest_word"] <= 14 else WARN_BG};'
         f'color:{OK_TEXT if r["longest_word"] <= 14 else WARN_TEXT};'
-        f'border-radius:5px;padding:2px 8px;">длиннейшее слово: '
+        f'border-radius:5px;padding:2px 8px;">{t("serp.longest")}: '
         f'{r["longest_word"]}</span></div></div>'
     )
 
@@ -134,20 +135,19 @@ def render_ai_view(f: dict) -> str:
     pairs = "".join(
         f'<div>· {esc(a)} → <code style="background:#F1EFE9;padding:0 4px;">'
         f'{esc(b)}</code></div>' for a, b in f["pairs"]) or (
-        f'<div style="color:{WARN_TEXT};">пары «атрибут — значение» '
-        f'не распознаны: ИИ не сможет процитировать характеристики</div>')
-    model = (f'<div>· модель → <code style="background:#F1EFE9;padding:0 4px;">'
-             f'{esc(f["model"])}</code></div>' if f["model"] else "")
+        f'<div style="color:{WARN_TEXT};">{t("serp.no_pairs")}</div>')
+    model = (f'<div>· {t("serp.model")} → <code style="background:#F1EFE9;'
+             f'padding:0 4px;">{esc(f["model"])}</code></div>'
+             if f["model"] else "")
     return (
         f'<div style="background:{CARD};border:1px solid {BORDER};'
         f'border-left:3px solid #E8590C;border-radius:0 10px 10px 0;'
         f'padding:12px 14px;">'
         f'<div style="font-size:12.5px;font-weight:700;margin-bottom:8px;">'
-        f'Как разбирает ИИ покупателя</div>'
+        f'{t("serp.ai_view")}</div>'
         f'<div style="font-size:12px;line-height:1.7;">{pairs}{model}</div>'
         f'<div style="font-size:11.5px;color:{MUTED};margin-top:6px;">'
-        f'Извлечено фактов: {f["total"]}. Item Highlights читает в основном '
-        f'ИИ — человек до него почти не доходит.</div></div>'
+        f'{t("serp.facts", n=f["total"])}</div></div>'
     )
 
 
