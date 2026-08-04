@@ -21,6 +21,9 @@ from services.db import get_conn
 from services.settings import get_int, get_float
 from services.economics import econ_map, fmt_money, fmt_conversion
 from services.worklog import worklog_map, work_badges
+from services.search import (
+    search_map, fmt_int, fmt_pct, ctr_state,
+)
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
@@ -184,6 +187,7 @@ st.caption(t("catalog.caption"))
 
 ECON = econ_map()
 WORK = worklog_map()
+SEARCH = search_map()
 df = load_catalog()
 if df.empty:
     st.caption(t("common.no_data"))
@@ -279,6 +283,14 @@ exp = pd.DataFrame([{
                    ).get("sessions_30d"),
     "шаблон_доставки": (ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
                         ).get("shipping_template"),
+    "запросов": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                 ).get("queries"),
+    "спрос_поиск": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                    ).get("demand"),
+    "доля_показов": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                     ).get("imp_share"),
+    "ctr_поиск": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                  ).get("ctr"),
 } for x in rows])
 st.download_button(t("catalog.export"), exp.to_csv(index=False).encode("utf-8-sig"),
                    file_name="catalog.csv", mime="text/csv")
@@ -361,6 +373,7 @@ for x in chunk:
 
     _ec = ECON.get((asin, mp)) or {}
     _badges = work_badges(WORK.get((asin, mp)))
+    _sr = SEARCH.get((asin, mp)) or {}
     chips = "".join([
         chip(t("metric.title"), f"{mx['title_len']}/{TITLE_LIMIT}",
              "err" if mx["title_len"] > TITLE_LIMIT else "ok"),
@@ -388,10 +401,19 @@ for x in chunk:
         chip("сессии", str(int(_ec.get("sessions_30d") or 0)), "neutral"),
         chip("конверсия", fmt_conversion(_ec.get("conversion_rate")),
              "ok" if float(_ec.get("conversion_rate") or 0) > 0 else "neutral"),
-        chip("доставка",
-             str(_ec.get("shipping_template") or "не задан")[:22],
+        chip(t("metric.shipping"),
+             str(_ec.get("shipping_template") or t("metric.no_template"))[:22],
              "ok" if _ec.get("shipping_template") else "warn"),
-    ] if _ec else []))
+    ] if _ec else []) + ([
+        chip(t("search.queries"), fmt_int(_sr.get("queries")), "neutral"),
+        chip(t("search.demand"), fmt_int(_sr.get("demand")), "neutral"),
+        chip(t("search.imp_share"), fmt_pct(_sr.get("imp_share")),
+             "ok" if (_sr.get("imp_share") or 0) >= 1 else "warn"),
+        chip("CTR", fmt_pct(_sr.get("ctr")),
+             {"ok": "ok", "warn": "err", "none": "neutral"}[ctr_state(_sr)]),
+        chip(t("search.purchases"), fmt_int(_sr.get("purchases")),
+             "ok" if (_sr.get("purchases") or 0) > 0 else "warn"),
+    ] if _sr else []))
 
     ruler = limit_ruler_html(
         mx["title_len"], TITLE_LIMIT, left_label=f"{TITLE_LIMIT}",
