@@ -25,6 +25,8 @@ RULE_RISK = {
     "no_video": 0.04,
     "low_reviews": 0.05,
     "no_shipping_template": 0.05,
+    "low_ctr": 0.25,           # показывают, но не кликают —
+                               # теряем четверть потенциала трафика
 }
 
 
