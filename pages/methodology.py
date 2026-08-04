@@ -172,6 +172,13 @@ _rating_red = _p5.number_input(
 _rating_green = _p6.number_input(
     t("meth.rating_green"), 1.0, 5.0, get_float("threshold.rating_green", 4.4), 0.1)
 
+_p7, _, _ = st.columns(3)
+# порог из практики Amazon: ниже 0.3% при заметных показах — карточка
+# не убеждает; читает services/search.py (ctr_state)
+_min_ctr = _p7.number_input(
+    t("meth.min_ctr"), 0.0, 10.0, get_float("threshold.min_ctr", 0.3), 0.1,
+    help=t("meth.min_ctr_hint"))
+
 if st.button(t("meth.save_thresholds"), type="primary", key="save-thresholds"):
     try:
         save_setting("limit.title", _title_limit)
@@ -180,6 +187,7 @@ if st.button(t("meth.save_thresholds"), type="primary", key="save-thresholds"):
         save_setting("threshold.min_images", _min_images)
         save_setting("threshold.rating_red", _rating_red)
         save_setting("threshold.rating_green", _rating_green)
+        save_setting("threshold.min_ctr", _min_ctr)
         st.success(t("meth.thresholds_saved"))
     except Exception as e:
         st.error(t("common.save_failed", e=e))

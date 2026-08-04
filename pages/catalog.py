@@ -436,9 +436,9 @@ for x in chunk:
 
     ruler = limit_ruler_html(
         mx["title_len"], TITLE_LIMIT, left_label=f"{TITLE_LIMIT}",
-        right_label=(f"+{mx['title_len'] - TITLE_LIMIT} резать"
+        right_label=(f"+{mx['title_len'] - TITLE_LIMIT} {t('ruler.cut')}"
                      if mx["title_len"] > TITLE_LIMIT
-                     else f"свободно {TITLE_LIMIT - mx['title_len']}"),
+                     else f"{t('ruler.free')} {TITLE_LIMIT - mx['title_len']}"),
     ) if mx["title_len"] else ""
 
     fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
