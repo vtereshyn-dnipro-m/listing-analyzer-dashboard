@@ -30,18 +30,19 @@ GROUP_THRESHOLD = 1       # режим строк-групп всегда (ед�
 PAGE_SIZE = 25
 SEV_ORDER = {"red": 0, "amber": 1, "yellow": 2}
 SEV_DOT = {"red": "🔴", "amber": "🟠", "yellow": "🟡"}
+# группа правила — технический код, подпись берётся из i18n (group.*)
 RULE_GROUP = {
-    "title_over_limit": "тайтл",
-    "out_of_stock": "сток",
-    "low_reviews": "отзывы",
-    "few_images": "медиа",
-    "no_video": "медиа",
-    "no_aplus": "контент",
-    "low_ctr": "поиск",
-    "no_shipping_template": "доставка",
-    "empty_keywords": "атрибуты",
-    "few_attributes": "атрибуты",
-    "hard_to_scan": "тайтл",
+    "title_over_limit": "title",
+    "out_of_stock": "stock",
+    "low_reviews": "reviews",
+    "few_images": "media",
+    "no_video": "media",
+    "no_aplus": "content",
+    "low_ctr": "search",
+    "no_shipping_template": "shipping",
+    "empty_keywords": "attributes",
+    "few_attributes": "attributes",
+    "hard_to_scan": "title",
 }
 MUTED = "#8A8578"
 
@@ -147,7 +148,7 @@ def money_fmt(v) -> str:
     try:
         return f"€{float(v):,.0f}".replace(",", " ")
     except (TypeError, ValueError):
-        return "не оценено"
+        return t("common.not_estimated")
 
 
 # ---------------------------------------------------------------- карточки
@@ -326,7 +327,7 @@ risk_html = (
     f"€{total_risk:,.0f}</span>"
     if total_risk else
     f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>—</span> "
-    "<span style='color:#57534A;'>(нет данных о выручке по этим товарам)</span>"
+    f"<span style='color:#57534A;'>({t('common.no_revenue_data')})</span>"
 ).replace(",", " ")
 delta_html = ""
 if added or closed:
@@ -345,11 +346,12 @@ st.download_button(t("dash.fix_all_csv"),
 
 # ---- фильтры: severity и тип боли (компактные сегменты)
 diag = diag.copy()
-diag["_group"] = diag["rule_id"].map(RULE_GROUP).fillna("другое")
+diag["_group"] = diag["rule_id"].map(RULE_GROUP).fillna("other")
 
 s_counts = {s: int((diag["severity"] == s).sum()) for s in SEV_ORDER}
 sev_opts = [s for s in ("red", "amber", "yellow") if s_counts[s]]
-sev_labels = {"red": "критично", "amber": "важно", "yellow": "план"}
+sev_labels = {"red": t("sev.red"), "amber": t("sev.amber"),
+              "yellow": t("sev.yellow")}
 grp_opts = sorted(diag["_group"].unique())
 grp_counts = {g: int((diag["_group"] == g).sum()) for g in grp_opts}
 
@@ -370,7 +372,7 @@ fc1, fc2 = st.columns([1.1, 1.6])
 sev_f = _seg(fc1, sev_opts,
              lambda s: f"{SEV_DOT[s]} {sev_labels[s]} {s_counts[s]}", "sev_seg")
 grp_f = _seg(fc2, grp_opts,
-             lambda g: f"{g} {grp_counts[g]}", "grp_seg")
+             lambda g: f"{t('group.' + g)} {grp_counts[g]}", "grp_seg")
 
 # ---- поиск, маркетплейсы, вид
 q_col, mp_col, mode_col = st.columns([3, 2, 1.6])
@@ -431,6 +433,7 @@ if mode == "table":
     tbl["sev"] = tbl["severity"].map(
         {"red": "🔴", "amber": "🟠", "yellow": "🟡"})
     tbl["cnt"] = tbl["_cnt"]
+    tbl["_group"] = tbl["_group"].map(lambda g: t(f"group.{g}"))
     tbl["pain"] = tbl.apply(
         lambda r: t(f"pain.{r['rule_id']}") if t(f"pain.{r['rule_id']}")
         != f"pain.{r['rule_id']}" else r["pain"], axis=1)
@@ -452,7 +455,8 @@ if mode == "table":
             "name": st.column_config.TextColumn(t("card.title"), width="medium"),
             "cnt": st.column_config.NumberColumn(t("card.pain"), width="small"),
             "sev": st.column_config.TextColumn("!", width="small"),
-            "_group": st.column_config.TextColumn(t("card.media"), width="small"),
+            "_group": st.column_config.TextColumn(t("group.title"),
+                                                  width="small"),
             "risk": st.column_config.NumberColumn(
                 f"{t('dash.at_risk')}, EUR", format="%.0f", width="small"),
             "rev": st.column_config.NumberColumn(
@@ -505,7 +509,7 @@ else:
         if grp["money"]:
             econ_part = f" · {fmt_money(grp['money'])}"
         elif _e.get("sessions_30d"):
-            econ_part = f" · {int(_e['sessions_30d'])} сессий"
+            econ_part = f" · {int(_e['sessions_30d'])} {t('common.sessions')}"
         label = (f"{head} · {grp['mp']} · {dots}{econ_part}"
                  + (f" · {short}" if short else ""))
         with st.expander(label, expanded=(i == 0 and page == 1)):
