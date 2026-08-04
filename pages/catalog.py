@@ -21,6 +21,9 @@ from services.db import get_conn
 from services.settings import get_int, get_float
 from services.economics import econ_map, fmt_money, fmt_conversion
 from services.worklog import worklog_map, work_badges
+from services.attributes import (
+    attrs_map, missing_critical, fill_state, node_short,
+)
 from services.search import (
     search_map, fmt_int, fmt_pct, ctr_state,
 )
@@ -188,6 +191,7 @@ st.caption(t("catalog.caption"))
 ECON = econ_map()
 WORK = worklog_map()
 SEARCH = search_map()
+ATTRS = attrs_map()
 df = load_catalog()
 if df.empty:
     st.caption(t("common.no_data"))
@@ -269,28 +273,37 @@ st.markdown(
 
 # ---- экспорт
 exp = pd.DataFrame([{
-    "sku": x["r"]["sku_group"], "asin": x["r"]["asin"], "mp": x["r"]["marketplace"],
-    "кто": "конкурент" if x["r"]["is_competitor"] else "наш",
-    "здоровье": x["label"], "тайтл_симв": x["mx"]["title_len"],
-    "фото_шт": x["mx"]["images"], "видео": x["mx"]["video"],
-    "aplus": x["mx"]["aplus"], "отзывы": x["mx"]["reviews"],
-    "рейтинг": x["mx"]["rating"], "цена": x["mx"]["price"],
+    "sku": x["r"]["sku_group"], "asin": x["r"]["asin"],
+    "mp": x["r"]["marketplace"],
+    "who": ("competitor" if x["r"]["is_competitor"] else "own"),
+    "health": x["label"], "title_len": x["mx"]["title_len"],
+    "photos": x["mx"]["images"], "video": x["mx"]["video"],
+    "aplus": x["mx"]["aplus"], "reviews": x["mx"]["reviews"],
+    "rating": x["mx"]["rating"], "price": x["mx"]["price"],
     "bsr": x["mx"]["bsr"][0] if x["mx"]["bsr"] else None,
-    "в_наличии": x["mx"]["in_stock"], "название": x["mx"]["title"],
-    "выручка_30д": (ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+    "in_stock": x["mx"]["in_stock"], "name": x["mx"]["title"],
+    "revenue_30d": (ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
                     ).get("revenue_30d"),
-    "сессии_30д": (ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
-                   ).get("sessions_30d"),
-    "шаблон_доставки": (ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
-                        ).get("shipping_template"),
-    "запросов": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
-                 ).get("queries"),
-    "спрос_поиск": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
-                    ).get("demand"),
-    "доля_показов": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
-                     ).get("imp_share"),
-    "ctr_поиск": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
-                  ).get("ctr"),
+    "sessions_30d": (ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                     ).get("sessions_30d"),
+    "shipping_template": (ECON.get((x["r"]["asin"], x["r"]["marketplace"]))
+                          or {}).get("shipping_template"),
+    "sqp_queries": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                    ).get("queries"),
+    "sqp_demand": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                   ).get("demand"),
+    "sqp_imp_share": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                      ).get("imp_share"),
+    "sqp_ctr": (SEARCH.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                ).get("ctr"),
+    "category": (ATTRS.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                 ).get("browse_node_name"),
+    "category_path": (ATTRS.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                      ).get("browse_path"),
+    "attrs_filled": (ATTRS.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                     ).get("attrs_filled"),
+    "attrs_empty": (ATTRS.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
+                    ).get("attrs_empty"),
 } for x in rows])
 st.download_button(t("catalog.export"), exp.to_csv(index=False).encode("utf-8-sig"),
                    file_name="catalog.csv", mime="text/csv")
@@ -307,14 +320,9 @@ if mode == "table":
     tv["link"] = [f"https://www.amazon.{x['r']['marketplace']}/dp/{x['r']['asin']}"
                   for x in rows]
     tv["bsr_cat"] = [x["mx"]["bsr"][1] if x["mx"]["bsr"] else "" for x in rows]
-    tv = tv.rename(columns={
-        "sku": "sku", "asin": "asin", "mp": "mp", "кто": "who",
-        "здоровье": "health", "тайтл_симв": "len", "фото_шт": "photos",
-        "видео": "video", "aplus": "aplus", "отзывы": "reviews",
-        "рейтинг": "rating", "цена": "price", "bsr": "bsr",
-        "в_наличии": "stock", "название": "name",
-        "выручка_30д": "rev", "сессии_30д": "sess",
-        "шаблон_доставки": "ship"})
+    tv = tv.rename(columns={"title_len": "len", "in_stock": "stock",
+                            "revenue_30d": "rev", "sessions_30d": "sess",
+                            "shipping_template": "ship"})
     cols = [c for c in ["img", "sku", "asin", "mp", "who", "health", "len",
                         "photos", "video", "aplus", "reviews", "rating",
                         "price", "bsr", "bsr_cat", "stock", "rev", "sess",
@@ -374,6 +382,9 @@ for x in chunk:
     _ec = ECON.get((asin, mp)) or {}
     _badges = work_badges(WORK.get((asin, mp)))
     _sr = SEARCH.get((asin, mp)) or {}
+    _at = ATTRS.get((asin, mp)) or {}
+    _fill_st, _fill_label = fill_state(_at)
+    _miss = missing_critical(_at)
     chips = "".join([
         chip(t("metric.title"), f"{mx['title_len']}/{TITLE_LIMIT}",
              "err" if mx["title_len"] > TITLE_LIMIT else "ok"),
@@ -397,9 +408,11 @@ for x in chunk:
         chip(t("metric.stock"), t("metric.in_stock") if mx["in_stock"] else t("metric.no"),
              "ok" if mx["in_stock"] else "err"),
     ] + ([
-        chip("выручка 30д", fmt_money(_ec.get("revenue_30d"), ""), "neutral"),
-        chip("сессии", str(int(_ec.get("sessions_30d") or 0)), "neutral"),
-        chip("конверсия", fmt_conversion(_ec.get("conversion_rate")),
+        chip(t("metric.revenue"), fmt_money(_ec.get("revenue_30d"), ""),
+             "neutral"),
+        chip(t("metric.sessions"), str(int(_ec.get("sessions_30d") or 0)),
+             "neutral"),
+        chip(t("metric.conversion"), fmt_conversion(_ec.get("conversion_rate")),
              "ok" if float(_ec.get("conversion_rate") or 0) > 0 else "neutral"),
         chip(t("metric.shipping"),
              str(_ec.get("shipping_template") or t("metric.no_template"))[:22],
@@ -413,7 +426,13 @@ for x in chunk:
              {"ok": "ok", "warn": "err", "none": "neutral"}[ctr_state(_sr)]),
         chip(t("search.purchases"), fmt_int(_sr.get("purchases")),
              "ok" if (_sr.get("purchases") or 0) > 0 else "warn"),
-    ] if _sr else []))
+    ] if _sr else []) + ([
+        chip(t("attr.category"), node_short(_at), "neutral"),
+        chip(t("attr.filled"), _fill_label,
+             {"ok": "ok", "warn": "warn", "err": "err",
+              "none": "neutral"}[_fill_st]),
+    ] + ([chip(t("attr.missing"), ", ".join(_miss[:3]), "warn")]
+         if _miss else []) if _at else []))
 
     ruler = limit_ruler_html(
         mx["title_len"], TITLE_LIMIT, left_label=f"{TITLE_LIMIT}",
