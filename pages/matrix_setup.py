@@ -28,7 +28,7 @@ OK_BG = "#DCEEE0"
 OK_TEXT = "#2F6B3A"
 ERR_BG = "#FCEBEB"
 ERR_TEXT = "#A32D2D"
-MONO = '"JetBrains Mono","SFMono-Regular",Consolas,monospace'
+MONO = "var(--ls-mono)"   # переменная из inject_fonts(): без кавычек в атрибутах
 
 PAGE_SIZE = 25
 MP_COUNTRY = {
@@ -600,21 +600,19 @@ else:
         c_check, c_card, c_badge, c_btn = st.columns([0.4, 7, 1, 1.3])
         if c_check.checkbox("", key=f"sel-{row_key}", label_visibility="collapsed"):
             selected_keys.append((asin, mp))
+        pains_part = f" · {pains}" if pains else ""
+        badges_html = (f'<div style="margin-top:3px;">{badges}</div>'
+                       if badges else "")
         c_card.markdown(
-            f"""
-            <div style="background:{CARD};border:1px solid {BORDER};
-                        border-left:3px solid {edge};border-radius:0 10px 10px 0;
-                        padding:10px 14px;">
-              <div style="display:flex;align-items:center;">
-              {thumb_html}
-              <div>
-              <div style="font-size:14px;font-weight:600;color:{INK};">{name_html}</div>
-              <div style="font-size:12px;color:{MUTED};">{title_line} · {fetch_line} {('· ' + pains) if pains else ''}</div>
-              {('<div style="margin-top:3px;">' + badges + '</div>') if badges else ''}
-              </div>
-              </div>
-            </div>
-            """,
+            f'<div style="background:{CARD};border:1px solid {BORDER};'
+            f'border-left:3px solid {edge};border-radius:0 10px 10px 0;'
+            f'padding:10px 14px;">'
+            f'<div style="display:flex;align-items:center;">{thumb_html}<div>'
+            f'<div style="font-size:14px;font-weight:600;color:{INK};">'
+            f"{name_html}</div>"
+            f'<div style="font-size:12px;color:{MUTED};">'
+            f"{title_line} · {fetch_line}{pains_part}</div>"
+            f"{badges_html}</div></div></div>",
             unsafe_allow_html=True,
         )
         c_badge.markdown(
@@ -696,19 +694,15 @@ status_chip = (
 )
 
 st.markdown(
-    f"""
-    <div style="background:{CARD};border:1px solid {BORDER};border-radius:10px;
-                padding:16px 20px;margin-bottom:10px;">
-      {eyebrow(t('matrix.schedule_header'))}
-      <div style="display:flex;gap:16px;align-items:center;margin-top:10px;">
-        {status_chip}
-        <span style='font-family:{MONO};font-size:14px;color:{INK};'>
-          {sched.get('run_time', '13:00')} Kyiv</span>
-        <span style="font-size:13px;color:{INK};">
-          {' '.join(DAY_LABELS[d] for d in sched_days)}</span>
-      </div>
-    </div>
-    """,
+    f'<div style="background:{CARD};border:1px solid {BORDER};'
+    f'border-radius:10px;padding:16px 20px;margin-bottom:10px;">'
+    f"{eyebrow(t('matrix.schedule_header'))}"
+    f'<div style="display:flex;gap:16px;align-items:center;margin-top:10px;">'
+    f"{status_chip}"
+    f'<span style="font-family:{MONO};font-size:14px;color:{INK};">'
+    f"{sched.get('run_time', '13:00')} Kyiv</span>"
+    f'<span style="font-size:13px;color:{INK};">'
+    f"{' '.join(DAY_LABELS[d] for d in sched_days)}</span></div></div>",
     unsafe_allow_html=True,
 )
 

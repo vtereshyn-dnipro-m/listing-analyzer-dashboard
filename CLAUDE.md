@@ -1,0 +1,328 @@
+# CLAUDE.md
+
+Listing Suite — Streamlit-приложение диагностики Amazon-листингов бренда
+Dnipro-M. Данные — Databricks Lakebase (Postgres), схема `listing_data`.
+Интерфейс на трёх языках: ru / uk / en.
+
+Запуск: `streamlit run app.py`
+
+Логика продукта: матрица товаров → сбор снапшота (ScrapingDog) → диагноз
+(боли по правилам) → синтез правки (ИИ + проверки кодом) → принятая правка
+→ снова сбор. Человек добавляет товары и принимает правки, остальное — код.
+
+---
+
+## Правила проекта
+
+Выстраданы на практике. Нарушение каждого из них уже роняло страницу.
+
+**1. HTML внутри `st.markdown` собирается ОДНОЙ строкой** — без переносов и
+отступов. Эталон — [components/ui.py](components/ui.py) (`pain_card`,
+`verdict`, `limit_ruler_html`): конкатенация f-строк, ни одного `\n` внутри
+разметки.
+
+Механика, чтобы правило не выглядело суеверием: `st.markdown` прогоняет
+строку через `textwrap.dedent(...).strip()`, поэтому ровный общий отступ
+многострочной f-строки срезается и разметка чаще всего выживает. Ломается
+она на неровностях: подстановка, стоящая одна на строке, схлопывается
+в пустую (нет линейки, нет значков) → пустая строка закрывает HTML-блок →
+следующая строка, если её отступ после dedent ≥ 4 пробелов, становится
+блоком кода, и пользователь видит текст разметки. Одна строка снимает весь
+класс этих отказов разом.
+
+**2. `MONO = "var(--ls-mono)"`** — CSS-переменная, объявленная в
+`inject_fonts()` ([components/ui.py:41](components/ui.py:41)). Имя
+`"JetBrains Mono"` содержит пробел и требует кавычек в CSS; кавычки внутри
+HTML-атрибута рвут тег. Внутри атрибутов кавычек быть не должно.
+
+**3. Имена колонок DataFrame — технические латиницей** (`img`, `len`, `risk`,
+`link`). Человеческие подписи задаются ТОЛЬКО через `column_config`. Иначе при
+переводе возникают дубли имён колонок и pyarrow роняет страницу с `ValueError`.
+Эталон — `kw_editor` в [pages/synthesis.py:467](pages/synthesis.py:467) и
+таблицы в [pages/catalog.py:330](pages/catalog.py:330),
+[pages/dashboard.py:448](pages/dashboard.py:448).
+
+**4. `pd.isna(x)` вместо `if x`** — NaN в Python истинный, `len(NaN)` роняет
+страницу. См. [services/worklog.py:85](services/worklog.py:85),
+[pages/matrix_setup.py:569](pages/matrix_setup.py:569).
+
+**5. Все видимые пользователю строки идут через `t()`** из
+[i18n.py](i18n.py). Наборы ключей в ru, uk, en должны совпадать, плейсхолдеры
+тоже. Сейчас паритет полный: по 436 ключей в каждом языке, дублей нет.
+Строка прямо в коде — это будущий непереведённый элемент.
+
+**6. Палитра:**
+
+| роль | цвет |
+|---|---|
+| фон | `#FAFAF8` |
+| чернильный (текст) | `#1A1815` |
+| акцент (только для боли) | `#E8590C` |
+| зелёный (норма) | `#2F6B3A` |
+| приглушённый | `#57534A` |
+| границы | `#E7E4DD` |
+
+Та же палитра продублирована в [.streamlit/config.toml](.streamlit/config.toml)
+(тема Streamlit) и в константах наверху каждой страницы.
+
+---
+
+## Подключение к данным
+
+`services/db.py::get_conn()` — единственная точка входа. Три режима,
+определяются автоматически в этом порядке:
+
+1. **Notebook** (ноутбук Databricks): `LISTING_LAKEBASE_ENDPOINT` +
+   `databricks.sdk` → OAuth-токен (~1 час, генерится на каждый вызов).
+2. **Dashboard** (Streamlit Cloud): секция `[databricks]` в секретах →
+   service principal OAuth.
+3. **DSN** (локально): `DATABASE_URL` → `psycopg2.connect(url)`.
+
+`search_path` всегда выставляется в `listing_data, public`, поэтому в SQL имена
+таблиц пишутся без префикса схемы.
+
+**Правило DDL: миграции делает ТОЛЬКО пайплайн.** `ensure_all_schemas()`
+вызывается из ячейки ноутбука. Страницы Streamlit схему не создают и не меняют —
+только `SELECT` и разрешённые `INSERT`/`UPDATE`.
+
+Секреты читаются через `services.db.cfg(name)`: env → `.streamlit/secrets.toml`
+на диске → `st.secrets` → default. Ключи: `SCRAPINGDOG_API_KEY`,
+`GEMINI_API_KEY`, `ANTHROPIC_API_KEY`.
+
+---
+
+## Страницы (`pages/`)
+
+Регистрируются в [app.py](app.py) через `st.navigation`, два раздела:
+«Работа» (guide, dashboard, catalog, synthesis, photo) и «Управление»
+(matrix_setup, methodology, settings).
+
+### `guide.py` — «Как это работает»
+Статичная инструкция для команды: 6 шагов + анимированная схема потока
+матрица → сбор → диагноз → синтез → Amazon. Живой статус на схеме
+(свежесть сбора, число болей).
+Читает: `listing_snapshots`, `diagnosis`.
+
+### `dashboard.py` — «Диагноз» (страница по умолчанию)
+Главный экран: сколько товаров требует внимания, деньги под риском, дельта
+болей с прошлого прогона. Фильтры по severity / группе правила / маркетплейсу /
+поиску, два вида (карточки и таблица), пагинация по 25. Внизу — счётчик
+здоровых и несобранных. Показывает только проблемные товары.
+Деньги под риском = выручка ASIN × коэффициент правила (`RULE_RISK`); по товару
+берётся максимум, а не сумма — проблемы пересекаются.
+Читает: `diagnosis`, `listing_snapshots`, `product_matrix`, `asin_economics`
+(через `services.economics`), `app_settings` (через `services.settings`).
+
+### `catalog.py` — «Каталог»
+
+Паспорт каждого товара: тайтл, фото, видео, A+, отзывы, рейтинг, цена, BSR,
+сток, продавец, экономика, SQP-метрики, атрибуты. Показывает ВСЕ товары,
+включая здоровых и конкурентов. Здоровье считает код (`health()`), не ИИ.
+BSR парсится из `raw` регулярками, потому что ключ и формат зависят от языка
+страницы.
+Читает: `product_matrix`, `listing_snapshots`, плюс через сервисы —
+`asin_economics`, `synthesis_drafts`, `listing_changes`, `photo_analysis`.
+Атрибуты и поисковую сводку берёт из `services.attributes` и
+`services.search`.
+
+### `synthesis.py` — «Синтез»: Split 75/125
+Разбивает длинный тайтл на `title` ≤ 75 символов и `Item Highlights` ≤ 125.
+Смысл разделения: title читает человек за 1–2 фиксации взгляда, Highlights
+парсит ИИ-ассистент покупателя (Rufus/COSMO).
+Методология тянется из `synthesis_skill` (активная версия, правится на странице
+«Методология» без коммитов). Защищённые фразы размечаются по фактам SQP
+(`services.seo`), после генерации результат проверяется КОДОМ: длины,
+запрещённые символы, повторы слов, наличие must-keep, отсутствие forbid.
+Coverage Score (доля сохранённого поискового веса) тоже считает код, не модель.
+Три вкладки: очередь (по деньгам под риском, есть пакетная генерация),
+разбор черновиков, любой товар.
+Читает: `diagnosis`, `listing_snapshots`, `product_matrix`, `synthesis_skill`,
+`protected_keywords`, `synthesis_drafts`, `synthesis_coverage`,
+`listing_changes`, `sqp_reports`, `asin_economics`.
+Пишет: `synthesis_drafts`, `synthesis_coverage`, `listing_changes`.
+
+### `photo.py` — «Фото и A+»
+Аудит визуала через vision-модель. Вкладка «Галерея» — главное фото + галерея
+(методология `photo_brief`), вкладка «A+ контент» — модули A+ (методология
+`aplus`). Грейд считает КОД, ИИ отвечает только по чек-пунктам (true/false)
+и даёт покадровый разбор + ТЗ дизайнеру. Отдельно проверяется соответствие
+языка изображений языку маркетплейса.
+Читает: `listing_snapshots`, `product_matrix`, `synthesis_skill`,
+`photo_analysis`.
+Пишет: `photo_analysis` (`analysis_type` = `gallery` | `aplus`).
+
+### `matrix_setup.py` — «Матрица товаров»
+Ввод ASIN пачкой (терпимый парсер: `sku, asin, mp[, конкурент]`, голый ASIN,
+URL Amazon), импорт из зеркала каталога, список карточек с кнопкой «Собрать»,
+групповые действия, удаление, расписание автосбора.
+**Здесь живёт рабочий пайплайн сбора** — `collect_rows()`: запрос к ScrapingDog
+(с `language`, иначе amazon.es отдаёт EN-версию и длина тайтла считается по
+чужому языку) → запись снапшота → запись длин → создание болей по правилам
+`out_of_stock`, `title_over_limit`, `low_reviews`, `few_images`, `no_video`,
+`no_aplus`.
+Читает: `product_matrix`, `listing_snapshots`, `diagnosis`, `catalog_source`,
+`collection_schedule`.
+Пишет: `product_matrix`, `listing_snapshots`, `listing_analysis`, `diagnosis`,
+`collection_schedule`.
+
+### `methodology.py` — «Методологии»
+Библиотека скиллов с версиями. Каждая область (`scope`: `common`,
+`title_split`, `bullets`, `photo_brief`, `aplus`, `ai_grade`, …) — своя
+методология. Правки без коммитов кода: новая версия при каждом сохранении,
+откат в один клик. Здесь же редактируются пороги правил (лимиты, min_reviews,
+min_images, границы рейтинга) и ведётся реестр источников политик Amazon
+с алертами об изменениях.
+Читает: `synthesis_skill`, `policy_sources`, `policy_alerts`, `app_settings`.
+Пишет: `synthesis_skill`, `policy_sources.last_checked`, `policy_alerts.status`,
+`app_settings`.
+
+### `settings.py` — «Настройки»
+Три блока: статус подключений (Gemini, Anthropic, ScrapingDog, Lakebase —
+маска ключа + кнопка проверки связи), выбор провайдера и модели под каждую
+задачу `services/ai.py` (`title_split`, `photo_audit`, `agents`; списки
+моделей тянутся живьём из API провайдеров) и тумблер автопереключения при
+перегрузке. Ключи API здесь не хранятся и не вводятся — только в Streamlit
+Secrets, наружу идёт лишь хвост ключа. Пороги правил живут в «Методологии»,
+сюда вынесена ссылка.
+Читает и пишет: `app_settings` (через `services.settings`).
+
+---
+
+## Модули (`services/`, `components/`)
+
+### `services/db.py`
+Подключение (три режима), `cfg()` для секретов, DDL и CRUD `product_matrix`,
+парсер ввода `parse_asin_lines()`. `db_conn` — старый алиас `get_conn`.
+Таблицы: `product_matrix`.
+
+### `services/settings.py`
+Настройки приложения из `app_settings` (key/value) с дефолтами:
+`model.*`, `provider.*`, `limit.title`, `limit.highlights`,
+`threshold.min_reviews`, `threshold.min_images`, `threshold.rating_*`.
+Пороги читаются через `get_int`/`get_float` с фолбэком на
+[config.py](config.py). Кэш 120 c, `save_setting()` чистит кэш.
+Таблицы: `app_settings`.
+
+### `services/ai.py`
+Единый слой вызова ИИ. Страницы не знают провайдера: выбор задаётся
+`provider.<task>` / `model.<task>` в `app_settings`. Задачи: `title_split`,
+`photo_audit`, `agents`. Поддержаны Gemini и Anthropic, вход — промпт +
+опционально список URL изображений, выход — распарсенный JSON или `None`
+(ошибка уже показана в UI).
+Таблиц не читает (только `app_settings` через `services.settings`).
+
+### `services/economics.py`
+Экономика ASIN за 30 дней: выручка, сессии, конверсия, buy box, шаблон
+доставки. Плюс `RULE_RISK` — прозрачные коэффициенты «доля выручки под риском»
+по каждому типу боли, и форматтеры денег/конверсии. Нужен, чтобы приоритет
+шёл по деньгам, а не только по severity.
+Таблицы: `asin_economics`.
+
+### `services/seo.py`
+Поисковый вес фраз и Coverage Score. Четыре типа фраз: `must_keep` (есть
+покупки), `preferred` (есть клики), `compress` (только показы), `forbid`
+(чужой бренд или нерелевантный запрос). Тип определяется фактами SQP без
+участия ИИ; вес = покупки×200 + клики×10 + показы×0.05 + volume×0.001.
+Coverage считается кодом: доля сохранённого веса от общего (кроме forbid).
+Также — безопасные сжатия (`1500 mAh` → `1.5 Ah`, `milímetros` → `mm`).
+Таблицы: `sqp_reports` (чтение), `protected_keywords` (запись ручных правок).
+
+### `services/search.py`
+Поисковая сводка для витрины: за 4 недели — сколько запросов, суммарный
+спрос, доля показов, CTR, покупки. Одна строка на товар, в отличие от
+`seo.py` с пофразовой разметкой (обе читают `sqp_reports`). CTR судится
+только при `MIN_IMPRESSIONS_FOR_CTR` = 100 показов и выше: у молодого
+листинга 3 клика из 12 показов — шум, а не 25% CTR; порог «кликают» —
+`threshold.min_ctr` (по умолчанию 0.3%, из практики Amazon: ниже при
+заметных показах карточка не убеждает), правится на странице «Методология».
+Таблицы: `sqp_reports`.
+
+### `services/attributes.py`
+Товар со стороны каталога Amazon: тип товара, browse node, заполненность
+атрибутов, `generic_keyword`, буллеты, описание. Пустые атрибуты не видны
+глазом на листинге, но выбрасывают товар из фильтров покупателя, а пустой
+`generic_keyword` — из выдачи по синонимам; это боли `few_attributes`
+и `empty_keywords`. `fill_state` даёт цвет и подпись «12/27»
+(`FILL_OK` = 0.85, `FILL_WARN` = 0.5), `missing_critical` — переведённый
+список пробелов по важности.
+Таблицы: `listing_attributes`.
+
+### `services/serp.py`
+Превью выдачи и читаемость тайтла. Считает две стороны: человеческую
+(видимая часть на мобиле 60 / десктопе 110 символов, зона первого взгляда 30,
+якоря-цифры, чанки, длинное слово) и машинную (пары «атрибут — значение»,
+модель, число извлекаемых фактов). Рендерит карточки превью и сравнение
+с конкурентами.
+Таблицы: `product_matrix`, `listing_snapshots`.
+
+### `services/worklog.py`
+След работы по товару: черновики сплита, принятые правки, грейды фото и A+ —
+одной картой `(asin, marketplace) → dict`. Даёт HTML-значки для строк
+в Матрице и Каталоге.
+Таблицы: `synthesis_drafts`, `listing_changes`, `photo_analysis`.
+
+### `components/ui.py`
+Визуальные компоненты и палитра: `inject_fonts()` (CSS-переменные, скрытие
+служебных элементов Streamlit, адаптив и тумблер «мобильный вид»), `eyebrow`,
+`verdict`, `chips_row`, `limit_ruler_html` (линейка-допуск: штриховка
+превышения или прогресс к цели), `pain_card` (боль → причина → действие →
+деньги).
+
+### `i18n.py`
+`LANGS` — три словаря (ru, uk, en), `t(key, **kwargs)` с фолбэком
+en → сам ключ (забытый перевод виден в UI, без тихих дыр), `current_lang()`,
+`lang_selector()` в сайдбаре.
+
+### `config.py`
+Константы-дефолты: `TITLE_LIMIT=75`, `HIGHLIGHTS_LIMIT=125`,
+`TITLE_DEADLINE=2026-07-27`, `STALE_DAYS`, `LOW_REVIEWS_RATIO`, `MIN_IMAGES`,
+`days_to_deadline()`. Рантайм-значения перекрываются из `app_settings`.
+
+---
+
+## Таблицы `listing_data`
+
+| таблица | что хранит | пишут | читают |
+|---|---|---|---|
+| `product_matrix` | ASIN × marketplace, `sku_group`, `is_competitor` | `db.py`, `matrix_setup` | dashboard, catalog, synthesis, photo, serp, analyze |
+| `listing_snapshots` | append-only снапшоты ScrapingDog, `raw` jsonb | `matrix_setup`, `batch_fetch` | dashboard, catalog, synthesis, photo, guide, serp |
+| `listing_latest` | последний снапшот по ASIN (вью) | — | `analyze.py` |
+| `listing_analysis` | `title_len`, `title_over`, `highlights_len`, `ai_grade` | `matrix_setup`, `analyze` | `analyze` |
+| `diagnosis` | боли: `rule_id`, `severity`, `pain`, `cause`, `action`, `money_impact` | `matrix_setup` | dashboard, synthesis, guide, matrix_setup |
+| `asin_economics` | выручка/сессии/конверсия за 30 дней, шаблон доставки | ноутбук Sync Economics | `economics.py` |
+| `sqp_reports` | Brand Analytics Search Query Performance | ноутбук | `seo.py`, `search.py`, synthesis |
+| `listing_attributes` | атрибуты, browse node, generic_keyword, буллеты | ноутбук | `attributes.py` |
+| `protected_keywords` | ручная разметка типов фраз | `seo.py`, synthesis | synthesis |
+| `synthesis_skill` | версионированные методологии по `scope` | methodology | synthesis, photo, methodology |
+| `synthesis_drafts` | сгенерированные сплиты со `skill_version` | synthesis | synthesis, worklog |
+| `synthesis_coverage` | Coverage Score по генерации | synthesis | synthesis |
+| `listing_changes` | принятые правки (замыкают цикл «до/после») | synthesis | synthesis, worklog |
+| `photo_analysis` | аудиты галереи и A+ (`analysis_type`) | photo | photo, worklog |
+| `app_settings` | key/value настройки | methodology, страница «Настройки» | все страницы через `services.settings` |
+| `policy_sources` | реестр источников политик Amazon | methodology | methodology |
+| `policy_alerts` | обнаруженные изменения политик | ноутбук | methodology |
+| `catalog_source` | зеркало каталога Amazon | ноутбук | matrix_setup |
+| `collection_schedule` | расписание автосбора (одна строка `id = 1`) | matrix_setup | matrix_setup |
+
+---
+
+## Известные расхождения
+
+Проверено на текущем коммите — учитывать при работе.
+
+1. **Нет `services/diagnose.py`**, который импортирует
+   `db.ensure_all_schemas()` ([services/db.py:184](services/db.py:184)).
+   Правила диагностики фактически живут в `matrix_setup.collect_rows()`.
+
+2. **`services/batch_fetch.py` и `services/analyze.py` — легаси-CLI, сейчас
+   нерабочие**: импортируют `ensure_schema`, `fetch_all`, `db_configured`
+   из `services.db` и `SCRAPINGDOG_API_KEY` / `ANTHROPIC_API_KEY` из `config`,
+   которых там нет; `ensure_all_schemas` ждёт от них константу `DDL`.
+   Живой путь сбора — кнопка «Собрать» в Матрице.
+
+3. **Строки мимо `t()`** (правило 5) остались в: `pages/guide.py`
+   (последний caption с именем и дедлайном), `pages/photo.py` и
+   `pages/matrix_setup.py` (тексты ошибок в `st.error`). Тексты болей,
+   которые `collect_rows()` пишет в `diagnosis`, — русские НАМЕРЕННО:
+   они лежат в базе как исходник, а на витрине подменяются переводом
+   по `rule_id` (см. `cause_text`/`action_text` в dashboard).

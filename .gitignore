@@ -1,0 +1,9 @@
+__pycache__/
+*.py[cod]
+.streamlit/secrets.toml
+.venv/
+
+# локальные служебные скрипты проверки (не для репозитория)
+check_md.py
+run_pages.py
+nav_test.py

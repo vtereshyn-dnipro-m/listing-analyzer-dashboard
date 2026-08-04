@@ -26,6 +26,7 @@ DEFAULTS = {
     "threshold.min_images": "7",
     "threshold.rating_red": "4.3",
     "threshold.rating_green": "4.4",
+    "threshold.min_ctr": "0.3",
 }
 
 
