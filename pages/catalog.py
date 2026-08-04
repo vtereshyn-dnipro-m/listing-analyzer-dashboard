@@ -126,18 +126,26 @@ def metrics(row: pd.Series) -> dict:
     except ValueError:
         rating = None
 
-    title = row.get("title") or ""
+    # у товара без снапшота колонки LATERAL-джойна — NaN; NaN истинный,
+    # поэтому `or ""` его не заменяет, а len(NaN) роняет страницу (правило 4)
+    title = row.get("title")
+    title = "" if pd.isna(title) else str(title)
+    reviews = row.get("review_count")
+    reviews = None if pd.isna(reviews) else int(reviews)
+    in_stock = row.get("in_stock")
+    in_stock = False if pd.isna(in_stock) else bool(in_stock)
     return {
         "title": title,
         "title_len": len(title),
         "images": len(ids),
         "video": int(d.get("number_of_videos") or 0),
         "aplus": bool(d.get("aplus")),
-        "reviews": row.get("review_count"),
+        "reviews": reviews,
         "rating": rating,
         "price": price,
         "bsr": bsr,
-        "in_stock": bool(row.get("in_stock")),
+        "in_stock": in_stock,
+        "collected": not pd.isna(row.get("ok")),
         "seller": d.get("sold_by") or "",
         "econ": {},
         "main_img": main_img,
@@ -149,6 +157,10 @@ def health(mx: dict, is_comp: bool) -> tuple[str, str, str]:
     """Итоговое здоровье товара: (уровень, цвет, подпись)."""
     if is_comp:
         return "comp", MUTED, t("common.competitor")
+    if not mx["collected"]:
+        # снапшота нет — здоровье считать не по чему; иначе несобранный
+        # товар показывался бы как «нет в наличии» или «в наличии» наугад
+        return "none", MUTED, t("catalog.not_collected")
     if not mx["in_stock"]:
         return "red", ERR_TEXT, t("catalog.h_nostock")
     problems = 0
@@ -252,7 +264,7 @@ if not rows:
     st.caption(t("catalog.nothing"))
     st.stop()
 
-order = {"red": 0, "amber": 1, "yellow": 2, "ok": 3, "comp": 4}
+order = {"red": 0, "amber": 1, "yellow": 2, "ok": 3, "none": 4, "comp": 5}
 def _rev(x) -> float:
     e = ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
     try:
