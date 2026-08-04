@@ -114,7 +114,7 @@ if save:
         st.success(t("meth.saved"))
         st.rerun()
     except Exception as e:
-        st.error(f"Не сохранилось: {e}")
+        st.error(t("common.save_failed", e=e))
 
 # ---- история версий и откат
 if not versions.empty:
@@ -149,36 +149,30 @@ if not versions.empty:
                         st.cache_data.clear()
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Откат не удался: {e}")
+                        st.error(t("common.save_failed", e=e))
 
 # ================================================================ пороги правил
 st.divider()
-st.markdown(eyebrow("Пороги правил диагноза"), unsafe_allow_html=True)
-st.caption(
-    "Числовая часть методологии: по этим значениям правила решают, что считать "
-    "болью. Меняешь — следующий прогон сбора считает по-новому."
-)
+st.markdown(eyebrow(t("meth.thresholds")), unsafe_allow_html=True)
+st.caption(t("meth.thresholds_hint"))
 
 _p1, _p2, _p3 = st.columns(3)
 _title_limit = _p1.number_input(
-    "Лимит тайтла, симв.", 20, 300, get_int("limit.title", 75), 1,
-    help="Официальный лимит Amazon с 27.07.2026 — 75")
+    t("meth.limit_title"), 20, 300, get_int("limit.title", 75), 1)
 _hl_limit = _p2.number_input(
-    "Лимит Item Highlights", 20, 500, get_int("limit.highlights", 125), 1)
+    t("meth.limit_highlights"), 20, 500, get_int("limit.highlights", 125), 1)
 _min_reviews = _p3.number_input(
-    "Мин. отзывов", 0, 1000, get_int("threshold.min_reviews", 50), 1,
-    help="Ниже этого числа создаётся боль low_reviews")
+    t("meth.min_reviews"), 0, 1000, get_int("threshold.min_reviews", 50), 1)
 
 _p4, _p5, _p6 = st.columns(3)
 _min_images = _p4.number_input(
-    "Мин. фото в галерее", 1, 20, get_int("threshold.min_images", 7), 1,
-    help="Норма категории Tools — 7+")
+    t("meth.min_images"), 1, 20, get_int("threshold.min_images", 7), 1)
 _rating_red = _p5.number_input(
-    "Рейтинг: красный ниже", 1.0, 5.0, get_float("threshold.rating_red", 4.3), 0.1)
+    t("meth.rating_red"), 1.0, 5.0, get_float("threshold.rating_red", 4.3), 0.1)
 _rating_green = _p6.number_input(
-    "Рейтинг: зелёный от", 1.0, 5.0, get_float("threshold.rating_green", 4.4), 0.1)
+    t("meth.rating_green"), 1.0, 5.0, get_float("threshold.rating_green", 4.4), 0.1)
 
-if st.button("Сохранить пороги", type="primary", key="save-thresholds"):
+if st.button(t("meth.save_thresholds"), type="primary", key="save-thresholds"):
     try:
         save_setting("limit.title", _title_limit)
         save_setting("limit.highlights", _hl_limit)
@@ -186,18 +180,15 @@ if st.button("Сохранить пороги", type="primary", key="save-thresh
         save_setting("threshold.min_images", _min_images)
         save_setting("threshold.rating_red", _rating_red)
         save_setting("threshold.rating_green", _rating_green)
-        st.success("Пороги сохранены — новый прогон учтёт их.")
+        st.success(t("meth.thresholds_saved"))
     except Exception as e:
-        st.error(f"Не сохранилось: {e}")
+        st.error(t("common.save_failed", e=e))
 
 
 # ================================================================ источники
 st.divider()
-st.markdown(eyebrow("Официальные источники Amazon"), unsafe_allow_html=True)
-st.caption(
-    "Документы, на которых основаны правила методологий. "
-    "Проверяй при изменениях политик Amazon — открой ссылку, сверь, отметь."
-)
+st.markdown(eyebrow(t("meth.sources")), unsafe_allow_html=True)
+st.caption(t("meth.sources_hint"))
 
 _INK = "#1A1815"
 _MUTED = "#8A8578"
@@ -223,7 +214,7 @@ def load_sources() -> pd.DataFrame:
 sources = load_sources()
 
 if sources.empty:
-    st.caption("Источники не заведены — прогони DDL-ячейку policy_sources.")
+    st.caption(t("meth.sources_empty"))
 else:
     today = pd.Timestamp.now().normalize()
     for _, src in sources.iterrows():
@@ -234,10 +225,10 @@ else:
         checked_str = checked.strftime("%d.%m.%Y") if checked is not None else "—"
         checked_html = (
             f"<span style='font-family:{_MONO};font-size:11px;color:#993C1D;'>"
-            f"⚠ проверено {checked_str}</span>"
+            f"⚠ {t('meth.checked_at')} {checked_str}</span>"
             if stale else
             f"<span style='font-family:{_MONO};font-size:11px;color:{_MUTED};'>"
-            f"проверено {checked_str}</span>"
+            f"{t('meth.checked_at')} {checked_str}</span>"
         )
         note = f" · {src['url_note']}" if src.get("url_note") else ""
         chips = "".join(
@@ -267,7 +258,7 @@ else:
             """,
             unsafe_allow_html=True,
         )
-        if c_btn.button("✓ проверено", key=f"src-check-{src['id']}"):
+        if c_btn.button(t("meth.checked"), key=f"src-check-{src['id']}"):
             try:
                 conn = get_conn()
                 with conn, conn.cursor() as cur:
@@ -280,19 +271,16 @@ else:
                 st.cache_data.clear()
                 st.rerun()
             except Exception as e:
-                st.error(f"Не сохранилось: {e}")
+                st.error(t("common.save_failed", e=e))
 
 # ================================================================ изменения правил
 st.divider()
-st.markdown(eyebrow("Изменения в правилах Amazon"), unsafe_allow_html=True)
-st.caption(
-    "Робот проверяет источники раз в неделю. Если текст документа изменился — "
-    "ИИ сравнивает версии и предлагает правки методологии. Решение за человеком."
-)
+st.markdown(eyebrow(t("meth.policy_changes")), unsafe_allow_html=True)
+st.caption(t("meth.policy_hint"))
 
-_SEV = {"critical": ("#FCEBEB", "#A32D2D", "критично"),
-        "important": ("#FCE8DC", "#E8590C", "важно"),
-        "info": ("#F1EFE8", "#8A8578", "к сведению")}
+_SEV = {"critical": ("#FCEBEB", "#A32D2D", "sev.red"),
+        "important": ("#FCE8DC", "#E8590C", "sev.amber"),
+        "info": ("#F1EFE8", "#57534A", "sev.yellow")}
 
 
 @st.cache_data(ttl=60)
@@ -316,10 +304,11 @@ def load_alerts() -> pd.DataFrame:
 alerts = load_alerts()
 
 if alerts.empty:
-    st.caption("Новых изменений нет — все источники соответствуют текущим методологиям.")
+    st.caption(t("meth.policy_none"))
 else:
     for _, a in alerts.iterrows():
-        bg, fg, lbl = _SEV.get(str(a["severity"]), _SEV["info"])
+        bg, fg, _lk = _SEV.get(str(a["severity"]), _SEV["info"])
+        lbl = t(_lk)
         scopes_chips = "".join(
             f"<span style='background:#F1EFE8;border-radius:6px;padding:1px 8px;"
             f"margin-left:4px;font-size:11px;'>{s.strip()}</span>"
@@ -348,10 +337,10 @@ else:
             unsafe_allow_html=True,
         )
         if a["proposed_changes"]:
-            with st.expander("Предлагаемые правки методологии"):
+            with st.expander(t("meth.policy_changes")):
                 st.text(a["proposed_changes"])
         ac1, ac2, _ = st.columns([1.4, 1.4, 4])
-        if ac1.button("✓ Учтено", key=f"alert-ok-{a['id']}"):
+        if ac1.button(t("meth.applied"), key=f"alert-ok-{a['id']}"):
             try:
                 conn = get_conn()
                 with conn, conn.cursor() as cur:
@@ -363,7 +352,7 @@ else:
                 st.rerun()
             except Exception as e:
                 st.error(f"{e}")
-        if ac2.button("Отклонить", key=f"alert-no-{a['id']}"):
+        if ac2.button(t("meth.dismiss"), key=f"alert-no-{a['id']}"):
             try:
                 conn = get_conn()
                 with conn, conn.cursor() as cur:
@@ -374,4 +363,4 @@ else:
                 st.cache_data.clear()
                 st.rerun()
             except Exception as e:
-                st.error(f"{e}") 
+                st.error(f"{e}")
