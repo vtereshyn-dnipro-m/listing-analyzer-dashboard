@@ -37,6 +37,7 @@ RULE_GROUP = {
     "few_images": "медиа",
     "no_video": "медиа",
     "no_aplus": "контент",
+    "low_ctr": "поиск",
 }
 MUTED = "#8A8578"
 
@@ -201,6 +202,15 @@ def build_card_args(r: pd.Series, product_title: str | None) -> dict:
         return dict(kind_label=t("card.content"), headline=t("pain.no_aplus"),
                     ruler_html="",
                     money=risk_txt or t("ruler.aplus_no"))
+    if rule == "low_ctr":
+        nums = [s for s in str(r["pain"]).replace("%", " ").split()
+                if s.replace(".", "").replace(",", "").isdigit()]
+        imp = nums[0] if nums else "—"
+        ctr = nums[1].replace(".", ",") if len(nums) > 1 else "—"
+        return dict(
+            kind_label=t("card.search"),
+            headline=t("pain.low_ctr", imp=imp, ctr=ctr),
+            ruler_html="", money=risk_txt or money)
     if rule == "out_of_stock":
         return dict(kind_label=t("card.stock"), headline=t("pain.out_of_stock"),
                     ruler_html="", money=risk_txt or money)
