@@ -151,6 +151,26 @@ def money_fmt(v) -> str:
 
 
 # ---------------------------------------------------------------- карточки
+
+def cause_text(r: pd.Series) -> str:
+    """Причина боли: из i18n по rule_id, иначе текст из базы.
+
+    Правила пишут русский текст при создании боли — для перевода берём
+    его по идентификатору правила, а старые записи показываем как есть.
+    """
+    rule = r.get("rule_id", "")
+    key = f"cause.{rule}"
+    val = t(key)
+    return val if val != key else str(r.get("cause") or "")
+
+
+def action_text(r: pd.Series) -> str:
+    rule = r.get("rule_id", "")
+    key = f"action.{rule}"
+    val = t(key)
+    return val if val != key else str(r.get("action") or "")
+
+
 def build_card_args(r: pd.Series, product_title: str | None) -> dict:
     rule = r.get("rule_id", "")
     money = money_fmt(r.get("money_impact"))
@@ -260,7 +280,7 @@ def render_pain(r: pd.Series, title_map: dict) -> None:
         product_title=product_title,
         image_url=image_map.get((asin, mp)),
         fetched_label=fetched_label,
-        cause=str(r["cause"]), action=str(r["action"]),
+        cause=cause_text(r), action=action_text(r),
         **build_card_args(r, product_title),
     )
 
@@ -411,6 +431,10 @@ if mode == "table":
     tbl["sev"] = tbl["severity"].map(
         {"red": "🔴", "amber": "🟠", "yellow": "🟡"})
     tbl["cnt"] = tbl["_cnt"]
+    tbl["pain"] = tbl.apply(
+        lambda r: t(f"pain.{r['rule_id']}") if t(f"pain.{r['rule_id']}")
+        != f"pain.{r['rule_id']}" else r["pain"], axis=1)
+    tbl["action"] = tbl.apply(action_text, axis=1)
     tbl["link"] = tbl.apply(
         lambda r: f"https://www.amazon.{r['marketplace']}/dp/{r['asin']}", axis=1)
     tbl["risk"] = tbl["_money"].round(0)
