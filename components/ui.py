@@ -35,7 +35,7 @@ TRACK = "#F0EFEA"
 MONO = "var(--ls-mono)"
 
 SEV_EDGE = {"red": "#A32D2D", "amber": ACCENT, "yellow": AMBER}
-SEV_LABEL = {"red": "критично", "amber": "важно", "yellow": "план"}
+SEV_LABEL = {"red": "sev.red", "amber": "sev.amber", "yellow": "sev.yellow"}
 
 
 def inject_fonts() -> None:
@@ -113,8 +113,8 @@ def inject_fonts() -> None:
 
 def mobile_switch() -> None:
     """Тумблер предпросмотра мобильной вёрстки. Ставится в сайдбар."""
-    st.toggle("Мобильный вид", key="mobile_preview",
-              help="Показать интерфейс так, как он выглядит на телефоне")
+    st.toggle(t("sidebar.mobile"), key="mobile_preview",
+              help=t("sidebar.mobile_help"))
 
 
 def eyebrow(text: str) -> str:
@@ -164,9 +164,9 @@ def chips_row(red: int, amber: int, yellow: int, extra: str = "") -> None:
     )
     st.markdown(
         f'<div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px;">'
-        f"{chip('#A32D2D', 'критично', red, red > 0)}"
-        f"{chip(ACCENT, 'важно', amber, amber > 0 and red == 0)}"
-        f"{chip('#BA7517', 'план', yellow, False)}"
+        f"{chip('#A32D2D', t('sev.red'), red, red > 0)}"
+        f"{chip(ACCENT, t('sev.amber'), amber, amber > 0 and red == 0)}"
+        f"{chip('#BA7517', t('sev.yellow'), yellow, False)}"
         f"{extra_html}</div>",
         unsafe_allow_html=True,
     )
