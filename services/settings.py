@@ -1,71 +1,87 @@
 # -*- coding: utf-8 -*-
-"""services/settings.py — настройки приложения из базы (app_settings).
+"""
+services/search.py — сводка Brand Analytics по товарам.
 
-Использование на странице:
-    from services.settings import get_setting, get_int, get_float
-    TITLE_LIMIT = get_int("limit.title", 75)
-    MODEL = get_setting("model.title_split", "gemini-3.5-flash")
+Отвечает на вопрос «как товар находят»: сколько запросов собрано, каков
+суммарный спрос, какую долю показов мы забираем, сколько покупок пришло
+из поиска. Источник — listing_data.sqp_reports (загрузчик SQP Loader).
 """
 from __future__ import annotations
 
+import pandas as pd
 import streamlit as st
 
 from services.db import get_conn
 
-DEFAULTS = {
-    "model.title_split": "gemini-3.5-flash",
-    "model.photo_audit": "gemini-3.5-flash",
-    "model.agents": "claude-sonnet-5",
-    "limit.title": "75",
-    "limit.highlights": "125",
-    "threshold.min_reviews": "50",
-    "threshold.min_images": "7",
-    "threshold.rating_red": "4.3",
-    "threshold.rating_green": "4.4",
-}
+# пороги правила «показывают, но не кликают»
+CTR_MIN_IMPRESSIONS = 200     # ниже этого выборка слишком мала для вывода
+CTR_WARN = 0.3                # % — ниже считаем проблемой карточки
 
 
-@st.cache_data(ttl=120)
-def load_settings() -> dict:
+@st.cache_data(ttl=300)
+def load_search_summary(weeks: int = 4) -> pd.DataFrame:
+    """Сводка поиска по каждому ASIN×MP за последние недели."""
     try:
         conn = get_conn()
-        cur = conn.cursor()
-        cur.execute("SELECT key, value FROM app_settings")
-        rows = dict(cur.fetchall())
-        cur.close()
+        df = pd.read_sql(
+            """
+            SELECT asin, marketplace,
+                   count(DISTINCT search_query)      AS queries,
+                   sum(search_query_volume)          AS demand,
+                   sum(impressions_asin)             AS impressions,
+                   sum(impressions_total)            AS impressions_market,
+                   sum(clicks_asin)                  AS clicks,
+                   sum(purchases_asin)               AS purchases,
+                   max(reporting_date)               AS last_week
+            FROM sqp_reports
+            WHERE reporting_date >= current_date - %(days)s
+            GROUP BY asin, marketplace
+            """,
+            conn, params={"days": weeks * 7},
+        )
         conn.close()
-        return {**DEFAULTS, **rows}
+        if df.empty:
+            return df
+        df["imp_share"] = (df["impressions"] / df["impressions_market"]
+                           .replace(0, pd.NA) * 100).astype(float)
+        df["ctr"] = (df["clicks"] / df["impressions"].replace(0, pd.NA)
+                     * 100).astype(float)
+        return df
     except Exception:
-        return dict(DEFAULTS)
+        return pd.DataFrame()
 
 
-def get_setting(key: str, default: str | None = None) -> str:
-    return load_settings().get(key, default if default is not None
-                               else DEFAULTS.get(key, ""))
+def search_map(weeks: int = 4) -> dict:
+    df = load_search_summary(weeks)
+    if df.empty:
+        return {}
+    return {(r["asin"], r["marketplace"]): r.to_dict()
+            for _, r in df.iterrows()}
 
 
-def get_int(key: str, default: int) -> int:
+def fmt_int(v) -> str:
     try:
-        return int(float(get_setting(key, str(default))))
+        return f"{int(v):,}".replace(",", " ")
     except (TypeError, ValueError):
-        return default
+        return "—"
 
 
-def get_float(key: str, default: float) -> float:
+def fmt_pct(v, digits: int = 2) -> str:
     try:
-        return float(str(get_setting(key, str(default))).replace(",", "."))
+        val = float(v)
     except (TypeError, ValueError):
-        return default
+        return "—"
+    if pd.isna(val):
+        return "—"
+    return f"{val:.{digits}f}%".replace(".", ",")
 
 
-def save_setting(key: str, value: str) -> None:
-    conn = get_conn()
-    with conn, conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO app_settings (key, value, updated_at) "
-            "VALUES (%s, %s, now()) "
-            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, "
-            "updated_at = now()",
-            (key, str(value)))
-    conn.close()
-    st.cache_data.clear() 
+def ctr_state(s: dict | None) -> str:
+    """ok | warn | none — для подсветки чипа CTR."""
+    if not s:
+        return "none"
+    imp = s.get("impressions") or 0
+    ctr = s.get("ctr")
+    if imp < CTR_MIN_IMPRESSIONS or ctr is None or pd.isna(ctr):
+        return "none"
+    return "warn" if float(ctr) < CTR_WARN else "ok"
