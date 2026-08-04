@@ -193,25 +193,27 @@ def run_checks(new_title: str, new_hl: str,
     combined = f"{new_title} {new_hl}".lower()
 
     checks.append((len(new_title) <= TITLE_LIMIT,
-                   f"title {len(new_title)}/{TITLE_LIMIT} символов"))
+                   t("chk.title_len", n=len(new_title), min=TITLE_LIMIT)))
     checks.append((len(new_hl) <= HIGHLIGHTS_LIMIT,
-                   f"highlights {len(new_hl)}/{HIGHLIGHTS_LIMIT} символов"))
+                   t("chk.hl_len", n=len(new_hl), min=HIGHLIGHTS_LIMIT)))
 
     bad_chars = sorted({c for c in new_title if c in FORBIDDEN_CHARS})
     checks.append((not bad_chars,
-                   "запрещённые символы в title: " + (" ".join(bad_chars) if bad_chars else "нет")))
+                   t("chk.forbidden_chars") + ": " + (" ".join(bad_chars)
+                    if bad_chars else t("chk.none"))))
 
     words = re.findall(r"[a-zA-Zа-яА-ЯёЁáéíóúñüÁÉÍÓÚÑÜäöüßÄÖÜ0-9]+", new_title.lower())
     stop = {"de", "con", "para", "y", "el", "la", "und", "mit", "für", "et", "avec", "e", "con", "per"}
     over_words = sorted({w for w in words
                          if len(w) > 2 and w not in stop and words.count(w) > 2})
     checks.append((not over_words,
-                   "слова чаще 2 раз: " + (", ".join(over_words) if over_words else "нет")))
+                   t("chk.word_repeats") + ": " + (", ".join(over_words)
+                    if over_words else t("chk.none"))))
 
     for ph in keep:
-        checks.append((ph.lower() in combined, f"фраза сохранена: «{ph}»"))
+        checks.append((ph.lower() in combined, f"{t('chk.phrase_kept')}: «{ph}»"))
     for ph in forbid:
-        checks.append((ph.lower() not in combined, f"запрещённая отсутствует: «{ph}»"))
+        checks.append((ph.lower() not in combined, f"{t('chk.phrase_absent')}: «{ph}»"))
 
     return checks
 
@@ -237,7 +239,7 @@ def save_draft(asin: str, mp: str, original: str, result: dict, skill_version: i
         conn.close()
         return True
     except Exception as e:
-        st.warning(f"Сплит сгенерирован, но не сохранён: {e}")
+        st.warning(t("common.save_failed", e=e))
         return False
 
 
@@ -314,7 +316,7 @@ def accept_change(asin: str, mp: str, before: str, result: dict,
         st.cache_data.clear()
         return True
     except Exception as e:
-        st.error(f"Не удалось записать: {e}")
+        st.error(t("common.save_failed", e=e))
         return False
 
 
@@ -354,11 +356,11 @@ def draft_quality(cov, checks_failed: int) -> tuple[str, str]:
     except (TypeError, ValueError):
         v = None
     if checks_failed:
-        return "red", "проверки не пройдены"
+        return "red", t("draft.checks_failed")
     if v is None:
-        return "amber", "Coverage не считался — нет данных SQP"
+        return "amber", t("draft.no_coverage")
     if v < 70:
-        return "red", f"Coverage {v:.0f}% — потеряно много веса"
+        return "red", t("draft.low_coverage", n=int(v))
     if v >= 85:
         return "green", f"Coverage {v:.0f}%"
     return "amber", f"Coverage {v:.0f}%"
@@ -388,7 +390,7 @@ def save_coverage(asin: str, mp: str, cov: dict) -> None:
 def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
     """Пакетная генерация: только черновики, ничего не применяется."""
     done, failed = 0, 0
-    bar = st.progress(0.0, text="Готовлю партию...")
+    bar = st.progress(0.0, text=t("synth.batch_run"))
     for i, x in enumerate(items, 1):
         r = x["r"]
         asin, mp, title = r["asin"], r["marketplace"], r["title"] or ""
