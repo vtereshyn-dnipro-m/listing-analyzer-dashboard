@@ -23,6 +23,7 @@ from services.ai import generate_json, task_config
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
+st.title(t("photo.title"))
 
 INK = "#1A1815"
 MUTED = "#57534A"
@@ -52,31 +53,31 @@ MP_LANGUAGE = {
 }
 
 MAIN_CHECKS = [
-    ("main_white_bg", "фон чисто белый"),
-    ("main_product_share", "товар ≥85% кадра"),
-    ("main_no_packaging_dominance", "упаковка не доминирует"),
-    ("main_no_overlays", "нет надписей и плашек"),
-    ("main_readable_thumb", "читаемо в миниатюре"),
-    ("main_language_match", "текст на языке маркетплейса"),
+    ("main_white_bg", "chk.main_white_bg"),
+    ("main_product_share", "chk.main_product_share"),
+    ("main_no_packaging_dominance", "chk.main_no_packaging_dominance"),
+    ("main_no_overlays", "chk.main_no_overlays"),
+    ("main_readable_thumb", "chk.main_readable_thumb"),
+    ("main_language_match", "chk.main_language_match"),
 ]
 GALLERY_CHECKS = [
-    ("role_specs", "инфографика характеристик"),
-    ("role_feature", "фича крупным планом"),
-    ("role_kit", "комплектация"),
-    ("role_lifestyle", "применение"),
-    ("role_scale", "масштаб / габариты"),
-    ("role_compat", "совместимость платформы"),
-    ("gallery_language_match", "инфографика на языке маркетплейса"),
+    ("role_specs", "chk.role_specs"),
+    ("role_feature", "chk.role_feature"),
+    ("role_kit", "chk.role_kit"),
+    ("role_lifestyle", "chk.role_lifestyle"),
+    ("role_scale", "chk.role_scale"),
+    ("role_compat", "chk.role_compat"),
+    ("gallery_language_match", "chk.gallery_language_match"),
 ]
 APLUS_CHECKS = [
-    ("aplus_brand_story", "есть блок о бренде"),
-    ("aplus_benefits", "выгоды, а не только характеристики"),
-    ("aplus_comparison", "сравнение моделей линейки"),
-    ("aplus_usecases", "сценарии применения"),
-    ("aplus_readable_mobile", "текст читаем на мобильном"),
-    ("aplus_no_claims_risk", "нет запрещённых утверждений и чужих брендов"),
-    ("aplus_consistent_style", "единый стиль с брендом"),
-    ("aplus_language_match", "тексты на языке маркетплейса"),
+    ("aplus_brand_story", "chk.aplus_brand_story"),
+    ("aplus_benefits", "chk.aplus_benefits"),
+    ("aplus_comparison", "chk.aplus_comparison"),
+    ("aplus_usecases", "chk.aplus_usecases"),
+    ("aplus_readable_mobile", "chk.aplus_readable_mobile"),
+    ("aplus_no_claims_risk", "chk.aplus_no_claims_risk"),
+    ("aplus_consistent_style", "chk.aplus_consistent_style"),
+    ("aplus_language_match", "chk.aplus_language_match"),
 ]
 
 UI_LANG_NAME = {"ru": "русском", "uk": "украинском", "en": "английском"}
@@ -251,7 +252,7 @@ def render_per_photo(res: dict, images: list[str]) -> None:
     if not items:
         return
     st.divider()
-    st.markdown("**Разбор по кадрам**")
+    st.markdown(f"**{t('photo.per_photo')}**")
     for it in items:
         try:
             idx = int(it.get("index", 0))
@@ -263,7 +264,7 @@ def render_per_photo(res: dict, images: list[str]) -> None:
         except (TypeError, ValueError):
             sc = 0.0
         color = OK_TEXT if sc >= 8 else (ACCENT if sc < 6 else "#854F0B")
-        verdict = "Отлично" if sc >= 8 else ("Слабо" if sc < 6 else "Хорошо")
+        verdict = "A" if sc >= 8 else ("C" if sc < 6 else "B")
 
         c1, c2 = st.columns([1, 4])
         if url:
@@ -281,11 +282,11 @@ def render_per_photo(res: dict, images: list[str]) -> None:
             if it.get("issue"):
                 st.markdown(f"⚠️ {it['issue']}")
             if it.get("fix"):
-                st.markdown(f"🛠 **Что делать** — {it['fix']}")
+                st.markdown(f"🛠 {it['fix']}")
             if it.get("conversion"):
-                st.markdown(f"🎯 **Конверсия** — {it['conversion']}")
+                st.markdown(f"🎯 {it['conversion']}")
             if it.get("emotion"):
-                st.markdown(f"😶 **Эмоция** — {it['emotion']}")
+                st.markdown(f"😶 {it['emotion']}")
         st.markdown("---")
 
 
@@ -323,7 +324,7 @@ def render_checks(res: dict, block: str, checks: list[tuple[str, str]],
     for k, label in checks:
         ok = data.get(k) is True
         note = notes.get(k, "")
-        st.markdown(("✅ " if ok else "❌ ") + label
+        st.markdown(("✅ " if ok else "❌ ") + t(label)
                     + (f" — {note}" if note and not ok else ""))
 
 
@@ -341,7 +342,7 @@ def show_grade(grade: str, detail: str, score: int | None = None) -> None:
 def failed_reasons(res: dict, block: str,
                    checks: list[tuple[str, str]]) -> list[str]:
     data = res.get(block, {}) or {}
-    return [label for k, label in checks if data.get(k) is not True]
+    return [t(label) for k, label in checks if data.get(k) is not True]
 
 
 
@@ -413,7 +414,6 @@ def grade_chip(g: str | None) -> str:
 
 
 # ---------------------------------------------------------------- UI
-st.header(t("photo.title"))
 st.caption(t("photo.caption"))
 
 cands = load_candidates()
@@ -433,9 +433,8 @@ if not gallery_ready or not aplus_ready:
         miss.append("«Фото · ТЗ дизайнеру»")
     if not aplus_ready:
         miss.append("«A+ контент»")
-    st.warning("Не заполнены методологии: " + ", ".join(miss)
-               + ". Пока они пустые, анализ по ним недоступен.")
-    st.page_link("pages/methodology.py", label="Перейти в Методологии",
+    st.warning(f"{t('photo.methodology_missing')}: " + ", ".join(miss))
+    st.page_link("pages/methodology.py", label=t("photo.goto_methodology"),
                  icon=":material/menu_book:")
 
 # ---- фильтры
@@ -461,7 +460,7 @@ mode = mode or "cards"
 q1, q2 = st.columns([4, 2])
 query = q1.text_input("Поиск", label_visibility="collapsed",
                       placeholder=t("catalog.search"))
-only_new = q2.checkbox("Только без аудита")
+only_new = q2.checkbox(t("work.untouched"))
 
 view = cands.copy()
 if who == "ours":
@@ -581,17 +580,16 @@ for x in rows:
 
             saved_g, meta_g = saved_result(audits, asin, mp, "gallery")
             has_saved_g = saved_g is not None
-            btn_label_g = ("Переанализировать галерею" if has_saved_g
+            btn_label_g = (t("photo.reanalyze_gallery") if has_saved_g
                            else t("photo.analyze_gallery"))
             if has_saved_g:
                 st.caption(
-                    f"Аудит от "
+                    f"{t('photo.audit_from')} "
                     f"{pd.to_datetime(meta_g['created_at']).strftime('%d.%m %H:%M')}"
                     f" · {meta_g.get('model') or ''}"
                     f" · методология v{meta_g.get('skill_version') or 0}"
                     f" · {meta_g.get('images') or 0} фото. "
-                    "Повторный анализ нужен только после смены фото "
-                    "или правки методологии."
+                    + t("photo.audit_hint")
                 )
 
             if st.button(btn_label_g, type="primary" if not has_saved_g else "secondary",
@@ -638,7 +636,7 @@ for x in rows:
                                   + g / len(GALLERY_CHECKS) * 0.4) * 100))
                 fails = failed_reasons(res, "main", MAIN_CHECKS + GALLERY_CHECKS)
                 if fails:
-                    st.markdown("Не выполнено: " + " · ".join(fails))
+                    st.markdown(f"{t('photo.not_done')}: " + " · ".join(fails))
                 c1, c2 = st.columns(2)
                 with c1:
                     render_checks(res, "main", MAIN_CHECKS, t("photo.main_photo"))
@@ -655,18 +653,17 @@ for x in rows:
                     st.image(url, use_container_width=True, caption=f"A+ {i}")
             else:
                 if _raw_dict(r.get("raw")).get("aplus"):
-                    st.warning("Amazon сообщает, что A+ есть, но модули не пришли "
-                               "в снапшоте — пересобери товар в Матрице.")
+                    st.warning(t("photo.no_aplus_modules"))
                 else:
                     st.info(t("photo.no_aplus"))
 
             saved_a_db, meta_a = saved_result(audits, asin, mp, "aplus")
             has_saved_a = saved_a_db is not None
-            btn_label_a = ("Переанализировать A+" if has_saved_a
+            btn_label_a = (t("photo.reanalyze_aplus") if has_saved_a
                            else t("photo.analyze_aplus"))
             if has_saved_a:
                 st.caption(
-                    f"Аудит от "
+                    f"{t('photo.audit_from')} "
                     f"{pd.to_datetime(meta_a['created_at']).strftime('%d.%m %H:%M')}"
                     f" · {meta_a.get('model') or ''}"
                     f" · методология v{meta_a.get('skill_version') or 0}"
@@ -710,9 +707,9 @@ for x in rows:
                            round(a / len(APLUS_CHECKS) * 100))
                 fails_a = failed_reasons(res_a, "aplus", APLUS_CHECKS)
                 if fails_a:
-                    st.markdown("Не выполнено: " + " · ".join(fails_a))
+                    st.markdown(f"{t('photo.not_done')}: " + " · ".join(fails_a))
                 render_checks(res_a, "aplus", APLUS_CHECKS, t("photo.tab_aplus"))
                 if res_a.get("designer_brief"):
                     st.markdown(f"**{t('photo.designer_brief')}**")
                     st.code(res_a["designer_brief"], language=None)
-                render_per_photo(res_a, apl)
+                render_per_photo(res_a, apl) 
