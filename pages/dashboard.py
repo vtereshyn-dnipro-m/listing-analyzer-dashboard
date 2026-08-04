@@ -38,6 +38,10 @@ RULE_GROUP = {
     "no_video": "медиа",
     "no_aplus": "контент",
     "low_ctr": "поиск",
+    "no_shipping_template": "доставка",
+    "empty_keywords": "атрибуты",
+    "few_attributes": "атрибуты",
+    "hard_to_scan": "тайтл",
 }
 MUTED = "#8A8578"
 
@@ -202,6 +206,30 @@ def build_card_args(r: pd.Series, product_title: str | None) -> dict:
         return dict(kind_label=t("card.content"), headline=t("pain.no_aplus"),
                     ruler_html="",
                     money=risk_txt or t("ruler.aplus_no"))
+    if rule == "hard_to_scan":
+        return dict(kind_label=t("card.title"),
+                    headline=t("pain.hard_to_scan"),
+                    ruler_html="", money=risk_txt or money)
+    if rule == "empty_keywords":
+        return dict(kind_label=t("card.attributes"),
+                    headline=t("pain.empty_keywords"),
+                    ruler_html="", money=risk_txt or money)
+    if rule == "few_attributes":
+        digits = [int(s) for s in str(r["pain"]).split() if s.isdigit()]
+        cur_n = digits[0] if digits else 0
+        tot_n = digits[1] if len(digits) > 1 else 27
+        return dict(
+            kind_label=t("card.attributes"),
+            headline=f"{t('attr.filled')}: {cur_n}/{tot_n}",
+            ruler_html=limit_ruler_html(cur_n, tot_n,
+                                        left_label=f"{cur_n}",
+                                        right_label=f"{t('ruler.norm')} {tot_n}",
+                                        over_style=False),
+            money=risk_txt or money)
+    if rule == "no_shipping_template":
+        return dict(kind_label=t("metric.shipping"),
+                    headline=t("pain.no_shipping"),
+                    ruler_html="", money=risk_txt or money)
     if rule == "low_ctr":
         nums = [s for s in str(r["pain"]).replace("%", " ").split()
                 if s.replace(".", "").replace(",", "").isdigit()]
