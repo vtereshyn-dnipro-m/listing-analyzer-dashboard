@@ -498,13 +498,45 @@ for x in chunk:
     )
 
 if pages > 1:
-    p1, p2, p3 = st.columns([1, 2, 1])
-    if p1.button(t("list.prev"), disabled=page <= 1):
+    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
+
+    def _page_list(cur: int, total: int) -> list:
+        """Номера страниц с многоточием: 1 … 4 5 [6] 7 8 … 37"""
+        if total <= 7:
+            return list(range(1, total + 1))
+        pages_set = {1, total, cur, cur - 1, cur + 1}
+        pages_set = {p for p in pages_set if 1 <= p <= total}
+        out, prev = [], 0
+        for p in sorted(pages_set):
+            if prev and p - prev > 1:
+                out.append("…")
+            out.append(p)
+            prev = p
+        return out
+
+    nav = _page_list(page, pages)
+    cols = st.columns([1] + [0.6] * len(nav) + [1])
+
+    if cols[0].button(t("list.prev"), disabled=page <= 1, key="cat_prev"):
         st.session_state["cat_page"] = page - 1
         st.rerun()
-    p2.markdown(f"<div style='text-align:center;color:{MUTED};'>"
-                f"{t('list.page')} {page} / {pages}</div>",
-                unsafe_allow_html=True)
-    if p3.button(t("list.next"), disabled=page >= pages):
+
+    for i, p in enumerate(nav):
+        with cols[i + 1]:
+            if p == "…":
+                st.markdown(
+                    f"<div style='text-align:center;color:{MUTED};'>…</div>",
+                    unsafe_allow_html=True)
+            elif p == page:
+                st.markdown(
+                    f"<div style='text-align:center;font-family:{MONO};"
+                    f"font-weight:700;color:{ACCENT};'>{p}</div>",
+                    unsafe_allow_html=True)
+            else:
+                if st.button(str(p), key=f"cat_pg_{p}"):
+                    st.session_state["cat_page"] = p
+                    st.rerun()
+
+    if cols[-1].button(t("list.next"), disabled=page >= pages, key="cat_next"):
         st.session_state["cat_page"] = page + 1
         st.rerun()
