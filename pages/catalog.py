@@ -88,9 +88,17 @@ def _raw(v) -> dict:
 
 
 def metrics(row: pd.Series) -> dict:
-    """Все метрики товара из последнего снапшота."""
+    """Все метрики товара из последнего снапшота.
+
+    ВАЖНО: у товара, который ещё ни разу не собирался, LEFT JOIN LATERAL
+    в load_catalog() отдаёт NULL по всем полям снапшота -> в pandas это
+    NaN (float). `row.get("x") or ""` NaN не ловит, потому что bool(NaN)
+    равен True — поэтому все "сырые" поля явно проверяются через pd.isna().
+    """
     d = _raw(row.get("raw"))
     info = d.get("product_information") or {}
+
+    collected = pd.notna(row.get("fetched_at"))
 
     imgs = d.get("images") or d.get("images_of_specified_asin") or []
     ids = set()
@@ -126,22 +134,31 @@ def metrics(row: pd.Series) -> dict:
     except ValueError:
         rating = None
 
-    title = row.get("title") or ""
+    raw_title = row.get("title")
+    title = "" if pd.isna(raw_title) else str(raw_title)
+
+    raw_reviews = row.get("review_count")
+    reviews = None if pd.isna(raw_reviews) else int(raw_reviews)
+
+    raw_stock = row.get("in_stock")
+    in_stock = False if pd.isna(raw_stock) else bool(raw_stock)
+
     return {
         "title": title,
         "title_len": len(title),
         "images": len(ids),
         "video": int(d.get("number_of_videos") or 0),
         "aplus": bool(d.get("aplus")),
-        "reviews": row.get("review_count"),
+        "reviews": reviews,
         "rating": rating,
         "price": price,
         "bsr": bsr,
-        "in_stock": bool(row.get("in_stock")),
+        "in_stock": in_stock,
         "seller": d.get("sold_by") or "",
         "econ": {},
         "main_img": main_img,
         "coupon": bool(d.get("is_coupon_exists")),
+        "collected": collected,
     }
 
 
@@ -149,6 +166,8 @@ def health(mx: dict, is_comp: bool) -> tuple[str, str, str]:
     """Итоговое здоровье товара: (уровень, цвет, подпись)."""
     if is_comp:
         return "comp", MUTED, t("common.competitor")
+    if not mx["collected"]:
+        return "gray", MUTED, t("catalog.h_not_collected")
     if not mx["in_stock"]:
         return "red", ERR_TEXT, t("catalog.h_nostock")
     problems = 0
@@ -252,7 +271,7 @@ if not rows:
     st.caption(t("catalog.nothing"))
     st.stop()
 
-order = {"red": 0, "amber": 1, "yellow": 2, "ok": 3, "comp": 4}
+order = {"red": 0, "amber": 1, "yellow": 2, "ok": 3, "gray": 4, "comp": 5}
 def _rev(x) -> float:
     e = ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
     try:
