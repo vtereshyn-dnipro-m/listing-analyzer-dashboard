@@ -515,28 +515,58 @@ if pages > 1:
         return out
 
     nav = _page_list(page, pages)
-    cols = st.columns([1] + [0.6] * len(nav) + [1])
 
-    if cols[0].button(t("list.prev"), disabled=page <= 1, key="cat_prev"):
-        st.session_state["cat_page"] = page - 1
-        st.rerun()
+    # Колонки Streamlit размазывают узкие кнопки на всю ширину контейнера
+    # (широкий дашборд) — отсюда рваные зазоры. Заворачиваем блок в
+    # container(key=...) и таргетируем его CSS: колонки сжимаются по
+    # контенту и центрируются, кнопки одной высоты и без лишних полей.
+    st.markdown(
+        f"""
+        <style>
+        .st-key-cat_pager div[data-testid="stHorizontalBlock"] {{
+            justify-content: center;
+            gap: 6px;
+            flex-wrap: wrap;
+        }}
+        .st-key-cat_pager div[data-testid="column"] {{
+            width: auto !important;
+            flex: 0 0 auto !important;
+            min-width: 0 !important;
+        }}
+        .st-key-cat_pager button {{
+            min-width: 40px !important;
+            padding: 4px 12px !important;
+        }}
+        .st-key-cat_pager button:disabled {{
+            color: {ACCENT} !important;
+            border-color: {BORDER} !important;
+            font-weight: 700 !important;
+            opacity: 1 !important;
+            background: {CARD} !important;
+        }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    for i, p in enumerate(nav):
-        with cols[i + 1]:
-            if p == "…":
-                st.markdown(
-                    f"<div style='text-align:center;color:{MUTED};'>…</div>",
-                    unsafe_allow_html=True)
-            elif p == page:
-                st.markdown(
-                    f"<div style='text-align:center;font-family:{MONO};"
-                    f"font-weight:700;color:{ACCENT};'>{p}</div>",
-                    unsafe_allow_html=True)
-            else:
-                if st.button(str(p), key=f"cat_pg_{p}"):
-                    st.session_state["cat_page"] = p
-                    st.rerun()
+    with st.container(key="cat_pager"):
+        cols = st.columns(len(nav) + 2)
 
-    if cols[-1].button(t("list.next"), disabled=page >= pages, key="cat_next"):
-        st.session_state["cat_page"] = page + 1
-        st.rerun()
+        if cols[0].button(t("list.prev"), disabled=page <= 1, key="cat_prev"):
+            st.session_state["cat_page"] = page - 1
+            st.rerun()
+
+        for i, p in enumerate(nav):
+            with cols[i + 1]:
+                if p == "…":
+                    st.button("…", disabled=True, key=f"cat_dots_{i}")
+                elif p == page:
+                    st.button(str(p), disabled=True, key=f"cat_pg_{p}")
+                else:
+                    if st.button(str(p), key=f"cat_pg_{p}"):
+                        st.session_state["cat_page"] = p
+                        st.rerun()
+
+        if cols[-1].button(t("list.next"), disabled=page >= pages, key="cat_next"):
+            st.session_state["cat_page"] = page + 1
+            st.rerun()
