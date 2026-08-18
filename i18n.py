@@ -183,6 +183,7 @@ LANGS: dict[str, dict[str, str]] = {
         "catalog.h_notes": "notes",
         "catalog.h_nostock": "out of stock",
         "catalog.not_collected": "never collected",
+        "catalog.h_not_collected": "not collected",
         "catalog.no_data_row": "— no data",
         # --- Чипы метрик (metric.*)
         "metric.title": "title",
@@ -654,6 +655,7 @@ LANGS: dict[str, dict[str, str]] = {
         "catalog.h_notes": "замечания",
         "catalog.h_nostock": "нет в наличии",
         "catalog.not_collected": "не собирался",
+        "catalog.h_not_collected": "не собран",
         "catalog.no_data_row": "— нет данных",
         # --- Чипы метрик (metric.*)
         "metric.title": "тайтл",
@@ -1125,6 +1127,7 @@ LANGS: dict[str, dict[str, str]] = {
         "catalog.h_notes": "зауваження",
         "catalog.h_nostock": "немає в наявності",
         "catalog.not_collected": "не збирався",
+        "catalog.h_not_collected": "не зібраний",
         "catalog.no_data_row": "— немає даних",
         # --- Чіпи метрик (metric.*)
         "metric.title": "тайтл",
