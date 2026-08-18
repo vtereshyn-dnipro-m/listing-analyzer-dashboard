@@ -59,15 +59,33 @@ def inject_fonts() -> None:
         ".ls-eyebrow a{color:var(--ls-muted);text-decoration:none;"
         "border-bottom:1px dotted var(--ls-muted);}"
         '[data-testid="stStatusWidget"]{visibility:hidden;}'
-        '[data-testid="stToolbar"]{display:none !important;}'
+        # stToolbar целиком прятать НЕЛЬЗЯ: внутри него живёт кнопка
+        # раскрытия схлопнутого сайдбара (stExpandSidebarButton).
+        # Хром прячем поимённо: Share/звезда/GitHub — stToolbarActions,
+        # меню — stMainMenu, Deploy и Manage app — свои testid.
         '[data-testid="stToolbarActions"]{display:none !important;}'
-        '[data-testid="stActionButtonIcon"]{display:none !important;}'
         '[data-testid="stAppDeployButton"]{display:none !important;}'
         '[data-testid="stMainMenu"]{display:none !important;}'
         '[data-testid="manage-app-button"]{display:none !important;}'
         ".viewerBadge_container__1QSob{display:none !important;}"
         "header{background:transparent !important;}"
         "footer{visibility:hidden !important;}"
+        # Отступ сверху: дефолтные 6rem оставляют пустую полосу в десятую
+        # часть экрана. Контент поднимаем, но хедер НЕ схлопываем в 0:
+        # у него min-height:60px, а внутри — кнопка раскрытия сайдбара.
+        # Вместо этого хедер сквозной для кликов (иначе он, поднявшись над
+        # контентом, перехватывает клики по заголовку), кликабельность
+        # возвращаем только кнопке.
+        '[data-testid="stMainBlockContainer"]{padding-top:2rem !important;}'
+        ".block-container{padding-top:2rem !important;}"
+        'header[data-testid="stHeader"]{pointer-events:none !important;}'
+        # у stToolbar собственный pointer-events:auto — перебивает
+        # наследование от хедера, глушим и его
+        '[data-testid="stToolbar"]{pointer-events:none !important;}'
+        '[data-testid="stExpandSidebarButton"]{pointer-events:auto !important;}'
+        "h1{margin-top:0 !important;padding-top:0 !important;}"
+        # st.divider даёт hr с полями 2rem с каждой стороны — ужимаем
+        '[data-testid="stMainBlockContainer"] hr{margin:1rem 0 !important;}'
         ".stMarkdown p,.stMarkdown li,"
         '[data-testid="stMarkdownContainer"] p{font-size:15px;}'
         '[data-testid="stCaptionContainer"],'
