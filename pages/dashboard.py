@@ -19,6 +19,7 @@ from services.settings import get_int
 from services.economics import (
     econ_map, money_at_risk, fmt_money, fmt_conversion,
 )
+from services.issues import build_pains as issue_pains
 from components.ui import (
     inject_fonts, verdict, limit_ruler_html, pain_card, eyebrow,
 )
@@ -43,6 +44,8 @@ RULE_GROUP = {
     "empty_keywords": "attributes",
     "few_attributes": "attributes",
     "hard_to_scan": "title",
+    "amazon_blocked": "amazon",
+    "amazon_warning": "amazon",
 }
 MUTED = "#8A8578"
 
@@ -263,6 +266,11 @@ def build_card_args(r: pd.Series, product_title: str | None) -> dict:
     if rule == "out_of_stock":
         return dict(kind_label=t("card.stock"), headline=t("pain.out_of_stock"),
                     ruler_html="", money=risk_txt or money)
+    if rule in ("amazon_blocked", "amazon_warning"):
+        # текст боли уже собран в services/issues.py через t() на лету;
+        # детали (дата, остаток, коды, message) лежат в cause
+        return dict(kind_label=t("card.amazon"), headline=str(r["pain"]),
+                    ruler_html="", money=risk_txt or money)
     return dict(kind_label=t("card.pain"), headline=str(r["pain"]),
                 ruler_html="", money=money)
 
@@ -287,7 +295,10 @@ def render_pain(r: pd.Series, title_map: dict) -> None:
 
 
 # ---------------------------------------------------------------- страница
-diag = load_diagnosis()
+db_diag = load_diagnosis()
+# боли Amazon Issues считаются на лету из реплики (свежее, чем автосбор:
+# сбор в 13:00, реплика в 14:00) и в diagnosis не пишутся
+issue_diag = issue_pains()
 titles = load_titles()
 title_map, image_map, fetch_map = {}, {}, {}
 ECON = econ_map()
@@ -299,21 +310,38 @@ if not titles.empty:
     fetch_map = {(r["asin"], r["marketplace"]): r.get("fetched_at")
                  for _, r in titles.iterrows()}
 
-if diag.empty:
+if db_diag.empty and issue_diag.empty:
     st.info(t("common.no_data"))
     st.stop()
+
+# «прогон» — это время автосбора, метка считается ДО мержа с Issues
+run_src = db_diag if not db_diag.empty else issue_diag
+_run_ts = pd.to_datetime(run_src["created_at"], errors="coerce",
+                         utc=True).max()
+run_label = _run_ts.strftime("%d.%m %H:%M") if pd.notna(_run_ts) else "—"
+
+diag = pd.concat([d for d in (db_diag, issue_diag) if not d.empty],
+                 ignore_index=True, sort=False)
+# created_at из базы и first_seen из реплики могут различаться tz-типом;
+# без приведения сортировка смешанной колонки роняет страницу
+diag["created_at"] = pd.to_datetime(diag["created_at"], errors="coerce",
+                                    utc=True)
 
 total_products, _ = load_scope()
 added, closed = load_delta()
 affected = diag.groupby(["asin", "marketplace"]).ngroups
-run_label = pd.to_datetime(diag["created_at"].max()).strftime("%d.%m %H:%M")
 
 def pain_money(row) -> float:
     """Деньги под риском по конкретной боли: выручка ASIN × коэффициент правила."""
     e = ECON.get((row["asin"], row["marketplace"]))
     if not e:
         return 0.0
-    return money_at_risk(row.get("rule_id", ""), e.get("revenue_30d"))
+    # _had_sales есть только у болей Amazon Issues; NaN (боли из базы) = True
+    had = row.get("_had_sales")
+    had = True if had is None or (isinstance(had, float) and pd.isna(had)) \
+        else bool(had)
+    return money_at_risk(row.get("rule_id", ""), e.get("revenue_30d"),
+                         had_sales=had)
 
 
 diag = diag.copy()
