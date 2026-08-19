@@ -187,7 +187,12 @@ def issues_map(df: pd.DataFrame | None = None) -> dict:
         return {}
     out = {}
     for (asin, mp), g in df.groupby(["asin", "marketplace"]):
-        out[(str(asin), str(mp).lower())] = _summary(g)
+        s = _summary(g)
+        # ASIN и рынок нужны в раскрытии плашки: у одного SKU на разных
+        # рынках ASIN может отличаться — без него непонятно, что чинить
+        s["asin"] = str(asin)
+        s["marketplace"] = str(mp).lower()
+        out[(str(asin), str(mp).lower())] = s
     return out
 
 
