@@ -27,6 +27,10 @@ from services.attributes import (
 from services.search import (
     search_map, fmt_int, fmt_pct, ctr_state,
 )
+from services.issues import (
+    issues_map, asin_index, worst_state, MONITORED,
+    cause_label, code_label, fmt_issue_date,
+)
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
@@ -211,13 +215,15 @@ ECON = econ_map()
 WORK = worklog_map()
 SEARCH = search_map()
 ATTRS = attrs_map()
+ISSUES = issues_map()
+AIDX = asin_index(ISSUES)
 df = load_catalog()
 if df.empty:
     st.caption(t("common.no_data"))
     st.stop()
 
 # ---- фильтры
-f1, f2, f3 = st.columns([2, 2, 2])
+f1, f2, f3, f4 = st.columns([1.8, 1.6, 1.4, 2.4])
 _who_opts = ["all", "ours", "comp"]
 _who_lbl = {"all": t("catalog.all"), "ours": t("catalog.ours"),
             "comp": t("catalog.competitors")}
@@ -228,6 +234,26 @@ mps = sorted(df["marketplace"].unique())
 mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
                         placeholder=t("list.all_mp"))
 only_problems = f3.checkbox(t("catalog.only_problems"))
+
+# фильтр по Amazon Issues: все / с проблемами / снятые с продажи
+_iss_opts = ["all", "problems", "blocked"]
+_iss_lbl = {"all": t("issue.f_all"), "problems": t("issue.f_problems"),
+            "blocked": t("issue.f_blocked")}
+try:
+    iss_f = f4.segmented_control(
+        "issues", _iss_opts, default="all",
+        format_func=lambda k: _iss_lbl[k], selection_mode="single",
+        label_visibility="collapsed", key="cat_issues")
+except AttributeError:
+    iss_f = f4.radio("issues", _iss_opts, horizontal=True,
+                     format_func=lambda k: _iss_lbl[k],
+                     label_visibility="collapsed", key="cat_issues")
+iss_f = iss_f or "all"
+
+
+def _issue_state(asin: str) -> str:
+    """Худшее состояние товара по всем рынкам, где он живёт."""
+    return worst_state(AIDX.get(asin) or [])
 
 qc, vc = st.columns([4, 1.6])
 q = qc.text_input("Поиск", label_visibility="collapsed",
@@ -257,6 +283,10 @@ if q.strip():
         | view["sku_group"].astype(str).str.lower().str.contains(ql, na=False)
         | view["title"].astype(str).str.lower().str.contains(ql, na=False)
     ]
+if iss_f == "problems":
+    view = view[view["asin"].map(lambda a: _issue_state(a) != "none")]
+elif iss_f == "blocked":
+    view = view[view["asin"].map(lambda a: _issue_state(a) == "blocked")]
 
 rows = []
 for _, r in view.iterrows():
@@ -390,6 +420,68 @@ if mode == "table":
     st.caption(t("list.sort_hint"))
     st.stop()
 
+# ---- плашка Amazon Issues
+def issue_details(entries: list) -> None:
+    """Раскрытие плашки: по каждому рынку — состояние, коды, тексты Amazon."""
+    for m, s in entries:
+        if s["state"] == "blocked":
+            head = (f"**{str(m).upper()}** — 🔴 "
+                    + t("issue.blocked_since",
+                        date=fmt_issue_date(s["first_seen"], with_year=True)))
+        else:
+            head = f"**{str(m).upper()}** — 🟡 {t('issue.mp_selling')}"
+        if s["stock"] is not None:
+            head += " · " + t("issue.stock_n", n=s["stock"])
+        if not s["had_sales"]:
+            head += " · " + t("issue.never_sold")
+        st.markdown(head)
+        for row in s["rows"]:
+            line = (f"`{row['code']}` **{code_label(row['code'])}** · "
+                    + t("issue.since_date",
+                        date=fmt_issue_date(row["first_seen"], with_year=True)))
+            if row["attributes"]:
+                line += f" · {t('issue.attributes')}: {row['attributes']}"
+            st.markdown(line)
+            if row["message"]:
+                st.caption(row["message"])
+
+
+def issue_badge(asin: str, mp: str) -> None:
+    """Плашка под карточкой. Худшее состояние по всем рынкам товара;
+    серая плашка на немониторимом рынке обязательна: без неё отсутствие
+    проблем неотличимо от отсутствия данных."""
+    entries = AIDX.get(asin) or []
+    state = worst_state(entries)
+    if state == "blocked":
+        own = ISSUES.get((asin, mp))
+        _, src = ((mp, own) if own and own["state"] == "blocked"
+                  else next(e for e in entries if e[1]["state"] == "blocked"))
+        parts = [t("issue.blocked_since", date=fmt_issue_date(src["first_seen"])),
+                 cause_label(src["cause"] or None)]
+        others = sorted({str(m).upper() for m, s in entries
+                         if s["state"] != "none" and m != mp})
+        if others:
+            parts.append(t("issue.also_markets", mps=", ".join(others)))
+        if not src["had_sales"]:
+            parts.append(t("issue.never_sold"))
+        with st.expander("🔴 " + " · ".join(parts)):
+            issue_details(entries)
+    elif state == "warning":
+        n = sum(len(s["rows"]) for _, s in entries)
+        others = sorted({str(m).upper() for m, s in entries
+                         if s["state"] != "none" and m != mp})
+        label_txt = "🟡 " + t("issue.selling_warnings", n=n)
+        if others:
+            label_txt += " · " + t("issue.also_markets", mps=", ".join(others))
+        with st.expander(label_txt):
+            issue_details(entries)
+    elif mp not in MONITORED:
+        st.markdown(
+            f'<div style="font-size:12px;color:{MUTED};margin:-4px 0 10px;">'
+            f'◦ {t("issue.not_monitored")}</div>',
+            unsafe_allow_html=True)
+
+
 # ---- карточки
 for x in chunk:
     r, mx, color, label = x["r"], x["mx"], x["color"], x["label"]
@@ -496,6 +588,11 @@ for x in chunk:
         f"{badges_html}</div></div>",
         unsafe_allow_html=True,
     )
+
+    # Amazon Issues — только свои товары: реплика идёт из аккаунта продавца,
+    # по конкурентам этих данных не бывает
+    if not r["is_competitor"]:
+        issue_badge(asin, mp)
 
 if pages > 1:
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)

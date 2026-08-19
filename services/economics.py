@@ -30,7 +30,13 @@ RULE_RISK = {
     "hard_to_scan": 0.06,      # тайтл не цепляет взгляд в выдаче
     "low_ctr": 0.25,           # показывают, но не кликают —
                                # теряем четверть потенциала трафика
+    "amazon_blocked": 1.00,    # листинг снят с продажи — теряется всё
+    "amazon_warning": 0.20,    # предупреждение Amazon: риск снятия
 }
+
+# товар с had_sales_before = false — незапущенная карточка, а не поломка:
+# «теряем выручку» по нему вводит в заблуждение, риск занижается
+NEVER_SOLD_RISK = 0.05
 
 
 @st.cache_data(ttl=300)
@@ -63,13 +69,19 @@ def econ_map(df: pd.DataFrame | None = None) -> dict:
             for _, r in df.iterrows()}
 
 
-def money_at_risk(rule_id: str, revenue_30d) -> float:
-    """Сколько выручки под риском из-за конкретной проблемы."""
+def money_at_risk(rule_id: str, revenue_30d, had_sales: bool = True) -> float:
+    """Сколько выручки под риском из-за конкретной проблемы.
+
+    had_sales=False (товар никогда не продавался) занижает коэффициент
+    до NEVER_SOLD_RISK независимо от правила."""
     try:
         rev = float(revenue_30d or 0)
     except (TypeError, ValueError):
         return 0.0
-    return rev * RULE_RISK.get(rule_id, 0.03)
+    coef = RULE_RISK.get(rule_id, 0.03)
+    if had_sales is False:
+        coef = NEVER_SOLD_RISK
+    return rev * coef
 
 
 def fmt_money(v, suffix: str = "") -> str:
