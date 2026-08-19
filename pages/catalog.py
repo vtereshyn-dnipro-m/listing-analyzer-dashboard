@@ -421,20 +421,34 @@ if mode == "table":
     st.stop()
 
 # ---- плашка Amazon Issues
-def issue_details(entries: list) -> None:
-    """Раскрытие плашки: по каждому рынку — состояние, коды, тексты Amazon."""
+def issue_details(entries: list, group_sku: str = "") -> None:
+    """Раскрытие плашки: по каждому рынку — ASIN-ссылка на листинг,
+    состояние, коды, тексты Amazon. ASIN обязателен: у одного SKU на
+    разных рынках он может отличаться. SKU рынка показывается, когда
+    отличается от группового — чинить в Seller Central придётся по нему."""
     for m, s in entries:
+        asin_link = (
+            f'<a href="https://www.amazon.{m}/dp/{s["asin"]}" target="_blank" '
+            f'style="font-family:{MONO};color:{INK};">{s["asin"]}</a>'
+        ) if s.get("asin") else ""
         if s["state"] == "blocked":
-            head = (f"**{str(m).upper()}** — 🔴 "
-                    + t("issue.blocked_since",
-                        date=fmt_issue_date(s["first_seen"], with_year=True)))
+            state_txt = "🔴 " + t("issue.blocked_since",
+                                  date=fmt_issue_date(s["first_seen"],
+                                                      with_year=True))
         else:
-            head = f"**{str(m).upper()}** — 🟡 {t('issue.mp_selling')}"
+            state_txt = f"🟡 {t('issue.mp_selling')}"
+        head = f"<b>{str(m).upper()}</b>"
+        if asin_link:
+            head += f" · {asin_link}"
+        head += f" — {state_txt}"
         if s["stock"] is not None:
             head += " · " + t("issue.stock_n", n=s["stock"])
+        mkt_sku = s.get("sku") or ""
+        if mkt_sku and mkt_sku != group_sku:
+            head += f' · SKU <span class="ls-mono">{mkt_sku}</span>'
         if not s["had_sales"]:
             head += " · " + t("issue.never_sold")
-        st.markdown(head)
+        st.markdown(head, unsafe_allow_html=True)
         for row in s["rows"]:
             line = (f"`{row['code']}` **{code_label(row['code'])}** · "
                     + t("issue.since_date",
@@ -446,7 +460,7 @@ def issue_details(entries: list) -> None:
                 st.caption(row["message"])
 
 
-def issue_badge(asin: str, mp: str) -> None:
+def issue_badge(asin: str, mp: str, group_sku: str = "") -> None:
     """Плашка под карточкой. Худшее состояние по всем рынкам товара;
     серая плашка на немониторимом рынке обязательна: без неё отсутствие
     проблем неотличимо от отсутствия данных."""
@@ -465,7 +479,7 @@ def issue_badge(asin: str, mp: str) -> None:
         if not src["had_sales"]:
             parts.append(t("issue.never_sold"))
         with st.expander("🔴 " + " · ".join(parts)):
-            issue_details(entries)
+            issue_details(entries, group_sku)
     elif state == "warning":
         n = sum(len(s["rows"]) for _, s in entries)
         others = sorted({str(m).upper() for m, s in entries
@@ -474,7 +488,7 @@ def issue_badge(asin: str, mp: str) -> None:
         if others:
             label_txt += " · " + t("issue.also_markets", mps=", ".join(others))
         with st.expander(label_txt):
-            issue_details(entries)
+            issue_details(entries, group_sku)
     elif mp not in MONITORED:
         st.markdown(
             f'<div style="font-size:12px;color:{MUTED};margin:-4px 0 10px;">'
@@ -592,7 +606,7 @@ for x in chunk:
     # Amazon Issues — только свои товары: реплика идёт из аккаунта продавца,
     # по конкурентам этих данных не бывает
     if not r["is_competitor"]:
-        issue_badge(asin, mp)
+        issue_badge(asin, mp, str(r["sku_group"] or ""))
 
 if pages > 1:
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
