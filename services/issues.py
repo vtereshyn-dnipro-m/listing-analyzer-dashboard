@@ -137,7 +137,7 @@ def load_issues() -> pd.DataFrame:
             SELECT sku, asin, marketplace, is_buyable, is_discoverable,
                    issue_code, severity, message, attribute_names,
                    first_seen, last_seen, had_sales_before, stock_qty,
-                   suppression_cause
+                   suppression_cause, asin_state
             FROM listing_issues
             WHERE resolved_at IS NULL
             """,
@@ -161,9 +161,23 @@ def _summary(g: pd.DataFrame) -> dict:
         })
     rows.sort(key=lambda x: str(x.get("code")))
 
-    # is_buyable — признак листинга, в строках дублируется; блокирован,
-    # если ХОТЬ одна строка говорит false (недоверие в сторону худшего)
-    blocked = any(_bool(r.get("is_buyable")) is False for _, r in g.iterrows())
+    # asin_state — агрегат Кабинета по всем SKU этого ASIN на рынке:
+    # blocked (ни один SKU не BUYABLE), fba_out (FBA пуст, FBM живой),
+    # ok (замечания, но продаётся). Он точнее, чем is_buyable конкретного
+    # SKU: FBA-SKU может быть не-buyable при живом FBM того же ASIN.
+    asin_state = next((_text(r.get("asin_state")).lower()
+                       for _, r in g.iterrows()
+                       if _text(r.get("asin_state"))), "")
+    if asin_state in ("blocked", "fba_out"):
+        state = asin_state
+    elif asin_state == "ok":
+        state = "warning" if rows else "none"
+    else:
+        # фолбэк на is_buyable, если поле ещё не доехало до реплики:
+        # блокирован, если ХОТЬ одна строка говорит false
+        blocked = any(_bool(r.get("is_buyable")) is False
+                      for _, r in g.iterrows())
+        state = "blocked" if blocked else ("warning" if rows else "none")
 
     # suppression_cause уже приоритезирован на стороне Кабинета
     cause = next((_text(r.get("suppression_cause"))
@@ -190,7 +204,7 @@ def _summary(g: pd.DataFrame) -> dict:
     message = with_msg[0]["message"] if with_msg else ""
 
     return {
-        "state": "blocked" if blocked else ("warning" if rows else "none"),
+        "state": state,
         "cause": cause,
         "had_sales": had_sales,
         "first_seen": None if pd.isna(first_seen) else first_seen,
@@ -266,20 +280,37 @@ def asin_index(imap: dict | None = None) -> dict:
     idx: dict = {}
     for (asin, mp), s in imap.items():
         idx.setdefault(asin, []).append((mp, s))
-    rank = {"blocked": 0, "warning": 1, "none": 2}
+    rank = {"blocked": 0, "fba_out": 1, "warning": 2, "none": 3}
     for asin in idx:
         idx[asin].sort(key=lambda x: rank.get(x[1]["state"], 9))
     return idx
 
 
 def worst_state(entries: list) -> str:
-    """blocked | warning | none по списку (mp, сводка)."""
+    """blocked | fba_out | warning | none по списку (mp, сводка)."""
     states = {s["state"] for _, s in entries or []}
-    if "blocked" in states:
-        return "blocked"
-    if "warning" in states:
-        return "warning"
+    for st_ in ("blocked", "fba_out", "warning"):
+        if st_ in states:
+            return st_
     return "none"
+
+
+def action_hint(summary: dict) -> str:
+    """Третья строка плашки: что ДЕЛАТЬ, а не что случилось.
+
+    blocked — действие по suppression_cause, fba_out — пополнить FBA,
+    warning — только при найденном дедлайне. Пусто = строки нет."""
+    state = summary.get("state")
+    if state == "blocked":
+        cause = summary.get("cause") or "generic"
+        key = f"issue.act.{cause}"
+        val = t(key)
+        return val if val != key else t("issue.act.generic")
+    if state == "fba_out":
+        return t("issue.act.fba_out")
+    if state == "warning" and extract_deadline(summary):
+        return t("issue.act.deadline")
+    return ""
 
 
 # ---------------------------------------------------------------- диагноз
@@ -288,10 +319,11 @@ def build_pains(imap: dict | None = None) -> pd.DataFrame:
     """Виртуальные боли для Диагноза — считаются на лету, в diagnosis
     не пишутся (см. докстринг модуля про 13:00 vs 14:00).
 
-    ОДНА боль на пару товар×рынок. is_buyable=false -> red по
+    ОДНА боль на пару товар×рынок. asin_state=blocked -> red по
     suppression_cause; исключение out_of_stock — по остаткам в Диагнозе
     уже есть своё правило, дубль об одном и том же не создаём.
-    is_buyable=true при незакрытых проблемах -> yellow.
+    fba_out -> amber (Prime и скорость доставки, но не продажи целиком),
+    ok при незакрытых проблемах -> yellow.
     """
     imap = issues_map() if imap is None else imap
     fam = family_map(imap)
@@ -306,6 +338,10 @@ def build_pains(imap: dict | None = None) -> pd.DataFrame:
             rule, sev = "amazon_blocked", "red"
             pain = t(f"pain.amazon_blocked.{cause_id}")
             action = t(f"action.amazon_blocked.{cause_id}")
+        elif s["state"] == "fba_out":
+            rule, sev = "amazon_fba_out", "amber"
+            pain = t("pain.amazon_fba_out")
+            action = t("action.amazon_fba_out")
         else:
             rule, sev = "amazon_warning", "yellow"
             pain = t("pain.amazon_warning")
