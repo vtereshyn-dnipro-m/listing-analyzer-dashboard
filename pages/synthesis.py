@@ -24,7 +24,7 @@ from config import TITLE_LIMIT as _TL_DEFAULT, HIGHLIGHTS_LIMIT as _HL_DEFAULT
 from i18n import t
 from services.db import get_conn, cfg
 from services.settings import get_setting, get_int
-from services.ai import generate_json, task_config
+from services.ai import generate_json, task_config, no_credit_banner
 from services.economics import econ_map, money_at_risk, fmt_money
 from services.serp import (
     readability, facts_extracted, render_serp_row,
@@ -541,6 +541,9 @@ SQP_LABEL = {
 Q_COLOR = {"green": "#2F6B3A", "amber": "#854F0B", "red": "#A32D2D"}
 
 st.caption(t("synth.caption"))
+# баланс провайдера исчерпан — предупреждаем ДО кнопок генерации,
+# сами кнопки не блокируем: счёт можно пополнить и нажать снова
+no_credit_banner("title_split")
 
 candidates = load_candidates()
 if candidates.empty:

@@ -19,11 +19,13 @@ import streamlit as st
 from i18n import t, current_lang
 from services.db import get_conn, cfg
 from services.settings import get_setting
-from services.ai import generate_json, task_config
+from services.ai import generate_json, task_config, no_credit_banner
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
 st.title(t("photo.title"))
+# баланс провайдера исчерпан — предупреждаем до кнопок генерации
+no_credit_banner("photo_audit")
 
 INK = "#1A1815"
 MUTED = "#57534A"

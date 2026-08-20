@@ -14,7 +14,7 @@ import requests
 import streamlit as st
 
 from i18n import t
-from services.db import get_conn, cfg
+from services.db import get_conn, cfg, cfg_source
 from services.settings import get_setting, save_setting
 from components.ui import inject_fonts, eyebrow
 
@@ -39,6 +39,18 @@ def mask(key: str | None) -> str:
 # ================================================================ подключения
 st.markdown(eyebrow(t("set.connections")), unsafe_allow_html=True)
 
+
+def key_info(name: str) -> str:
+    """«secrets.toml · ****6wAA · 108 симв.» — откуда взят ключ, его хвост
+    и длина. Снимает вопрос «а тот ли ключ подставился» без чтения логов.
+    Целиком ключ не выводится нигде."""
+    val, src = cfg_source(name)
+    if not val:
+        return ""
+    k = str(val).strip()
+    return f"{src} · {mask(k)} · {t('set.key_chars', n=len(k))}"
+
+
 gem_key = cfg("GEMINI_API_KEY")
 ant_key = cfg("ANTHROPIC_API_KEY")
 dog_key = cfg("SCRAPINGDOG_API_KEY")
@@ -51,21 +63,26 @@ except Exception:
     db_ok = False
 
 rows = [
-    ("Gemini API", t("set.purpose_gemini"), mask(gem_key), bool(gem_key)),
-    ("Anthropic API", t("set.purpose_anthropic"), mask(ant_key), bool(ant_key)),
-    ("ScrapingDog", t("set.purpose_scrapingdog"), mask(dog_key), bool(dog_key)),
-    ("Lakebase", t("set.purpose_db"), "—", db_ok),
+    ("Gemini API", t("set.purpose_gemini"),
+     key_info("GEMINI_API_KEY"), bool(gem_key)),
+    ("Anthropic API", t("set.purpose_anthropic"),
+     key_info("ANTHROPIC_API_KEY"), bool(ant_key)),
+    ("ScrapingDog", t("set.purpose_scrapingdog"),
+     key_info("SCRAPINGDOG_API_KEY"), bool(dog_key)),
+    ("Lakebase", t("set.purpose_db"), "", db_ok),
 ]
 
-for name, purpose, m, ok in rows:
-    c1, c2, c3 = st.columns([2, 3, 1.4])
+for name, purpose, info, ok in rows:
+    c1, c2, c3 = st.columns([2, 3, 2.2])
     c1.markdown(f"**{name}**")
     c2.markdown(
         f"<span style='color:{MUTED};font-size:13px;'>{purpose}</span>",
         unsafe_allow_html=True)
+    detail = f" · {info}" if info else ""
     c3.markdown(
         f"<span style='color:{OK_TEXT if ok else ERR_TEXT};font-size:13px;'>"
-        f"{t('set.connected') if ok else t('set.no_key')} {m}</span>",
+        f"{t('set.connected') if ok else t('set.no_key')}</span>"
+        f"<span style='color:{MUTED};font-size:12px;'>{detail}</span>",
         unsafe_allow_html=True)
 
 
