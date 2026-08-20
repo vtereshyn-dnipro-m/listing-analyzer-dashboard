@@ -28,7 +28,7 @@ from services.search import (
     search_map, fmt_int, fmt_pct, ctr_state,
 )
 from services.issues import (
-    issues_map, asin_index, worst_state, family_map, MONITORED,
+    issues_map, asin_index, family_map, MONITORED,
     cause_label, code_label, fmt_issue_date,
 )
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
@@ -252,9 +252,10 @@ except AttributeError:
 iss_f = iss_f or "all"
 
 
-def _issue_state(asin: str) -> str:
-    """Худшее состояние товара по всем рынкам, где он живёт."""
-    return worst_state(AIDX.get(asin) or [])
+def _pair_state(asin: str, mp: str) -> str:
+    """Состояние конкретной пары товар × рынок — не худшее по всем рынкам:
+    иначе заблокированный на IT ASIN попадал в «Не продаются» и на живом ES."""
+    return (ISSUES.get((str(asin), str(mp).lower())) or {"state": "none"})["state"]
 
 qc, vc = st.columns([4, 1.6])
 q = qc.text_input("Поиск", label_visibility="collapsed",
@@ -285,9 +286,11 @@ if q.strip():
         | view["title"].astype(str).str.lower().str.contains(ql, na=False)
     ]
 if iss_f == "problems":
-    view = view[view["asin"].map(lambda a: _issue_state(a) != "none")]
+    view = view[[_pair_state(a, m) != "none"
+                 for a, m in zip(view["asin"], view["marketplace"])]]
 elif iss_f == "blocked":
-    view = view[view["asin"].map(lambda a: _issue_state(a) == "blocked")]
+    view = view[[_pair_state(a, m) == "blocked"
+                 for a, m in zip(view["asin"], view["marketplace"])]]
 
 rows = []
 for _, r in view.iterrows():
@@ -486,33 +489,30 @@ def issue_details(entries: list, group_sku: str = "") -> None:
 
 
 def issue_badge(asin: str, mp: str, group_sku: str = "") -> None:
-    """Плашка под карточкой. Худшее состояние по всем рынкам товара;
-    серая плашка на немониторимом рынке обязательна: без неё отсутствие
-    проблем неотличимо от отсутствия данных."""
+    """Плашка под карточкой — состояние ЕЁ рынка, не худшее по всем.
+
+    Худшее состояние здесь красило продающийся рынок в красный: ASIN,
+    заблокированный на IT, получал «Не продаётся» и на живом ES.
+    Другие рынки с проблемами остаются припиской «также: …» — она
+    информирует, но цвет не меняет. Серая плашка на немониторимом рынке
+    обязательна: без неё отсутствие проблем неотличимо от отсутствия
+    данных."""
+    own = ISSUES.get((asin, mp))
     entries = AIDX.get(asin) or []
-    state = worst_state(entries)
-    if state == "blocked":
-        own = ISSUES.get((asin, mp))
-        _, src = ((mp, own) if own and own["state"] == "blocked"
-                  else next(e for e in entries if e[1]["state"] == "blocked"))
-        parts = [t("issue.blocked_since", date=fmt_issue_date(src["first_seen"])),
-                 cause_label(src["cause"] or None)]
-        others = sorted({str(m).upper() for m, s in entries
-                         if s["state"] != "none" and m != mp})
-        if others:
-            parts.append(t("issue.also_markets", mps=", ".join(others)))
-        if not src["had_sales"]:
+    others = sorted({str(m).upper() for m, s in entries
+                     if s["state"] != "none" and m != mp})
+    also = (" · " + t("issue.also_markets", mps=", ".join(others))
+            if others else "")
+    if own and own["state"] == "blocked":
+        parts = [t("issue.blocked_since", date=fmt_issue_date(own["first_seen"])),
+                 cause_label(own["cause"] or None)]
+        if not own["had_sales"]:
             parts.append(t("issue.never_sold"))
-        with st.expander("🔴 " + " · ".join(parts)):
+        with st.expander("🔴 " + " · ".join(parts) + also):
             issue_details(entries, group_sku)
-    elif state == "warning":
-        n = sum(len(s["rows"]) for _, s in entries)
-        others = sorted({str(m).upper() for m, s in entries
-                         if s["state"] != "none" and m != mp})
-        label_txt = "🟡 " + t("issue.selling_warnings", n=n)
-        if others:
-            label_txt += " · " + t("issue.also_markets", mps=", ".join(others))
-        with st.expander(label_txt):
+    elif own and own["state"] == "warning":
+        with st.expander("🟡 " + t("issue.selling_warnings",
+                                   n=len(own["rows"])) + also):
             issue_details(entries, group_sku)
     elif mp not in MONITORED:
         st.markdown(
