@@ -112,6 +112,95 @@ if st.button(t("set.check")):
                    {}, {"api_key": str(dog_key).strip(), "domain": "com",
                         "asin": "B00AP877FS", "country": "us"}, timeout=40)
 
+# ================================================================ отладка
+# ВРЕМЕННАЯ раскрывашка для разработки (строки намеренно мимо t() —
+# блок будет удалён): ключ по дороге от secrets до запроса где-то
+# меняется, ищем где. Ключ целиком не выводится нигде.
+with st.expander("🔧 Отладка ключа Anthropic (временно, для разработки)"):
+    import os as _os
+
+    _NAME = "ANTHROPIC_API_KEY"
+
+    def _probe_val(v) -> str:
+        if v is None:
+            return "— нет"
+        s = str(v)
+        return f"{mask(s.strip())} · {len(s)} симв."
+
+    # 1. сравнение источников — где что лежит
+    _env_v = _os.environ.get(_NAME)
+    try:
+        _sec_v = st.secrets[_NAME] if _NAME in st.secrets else None
+    except Exception as _e:
+        _sec_v = None
+        st.caption(f"st.secrets недоступен: {_e}")
+    from services.db import _load_secrets as _lsf
+    _file_exists = _os.path.exists(_os.path.join(".streamlit", "secrets.toml"))
+    _file_v = _lsf().get(_NAME) if _file_exists else None
+    _cfg_v = cfg(_NAME)
+
+    st.markdown("**1. Источники**")
+    st.write(f"os.environ: {_probe_val(_env_v)}")
+    st.write(f"st.secrets: {_probe_val(_sec_v)}")
+    st.write(".streamlit/secrets.toml: "
+             + (_probe_val(_file_v) if _file_exists else "— файла нет"))
+    st.write(f"cfg() вернул: {_probe_val(_cfg_v)}")
+
+    _vals = {str(v).strip() for v in (_env_v, _sec_v, _file_v)
+             if v is not None and str(v).strip()}
+    if len(_vals) > 1:
+        st.error("⚠ ЗНАЧЕНИЯ В ИСТОЧНИКАХ РАЗЛИЧАЮТСЯ — cfg() берёт первое "
+                 "по порядку env → secrets.toml → st.secrets. Это и есть ответ.")
+    elif _vals:
+        st.success("Источники согласованы: везде одно значение.")
+
+    # 2. побайтовая проверка того, что уходит в заголовок
+    st.markdown("**2. Байты**")
+    if _cfg_v is None:
+        st.write("cfg() вернул None — проверять нечего.")
+    else:
+        _raw = str(_cfg_v)
+        _k = _raw.strip()
+        st.write(f"длина до strip: {len(_raw)} · после strip: {len(_k)}")
+        if len(_raw) != len(_k):
+            st.error("⚠ по краям есть пробельные символы — "
+                     "в secrets ключ с переносом строки или пробелом")
+        if "\n" in _k or "\r" in _k:
+            st.error("⚠ ВНУТРИ ключа есть перенос строки — "
+                     "похоже на многострочный литерал TOML")
+        st.code(f"первые 8: {_raw[:8]!r}\nпоследние 8: {_raw[-8:]!r}",
+                language=None)
+        st.write("префикс sk-ant-api03-: "
+                 + ("✅ совпадает" if _k.startswith("sk-ant-api03-")
+                    else f"❌ НЕ совпадает (начинается с {_k[:7]!r})"))
+
+    # 3. живой запрос: к какой организации привязан ключ и что отвечает API
+    st.markdown("**3. Живой запрос** · POST /v1/messages, max_tokens=1, haiku")
+    if st.button("Выполнить тестовый запрос", key="dbg-anthropic-ping"):
+        if not _cfg_v:
+            st.error("Ключа нет — запрос не отправлен.")
+        else:
+            try:
+                _r = requests.post(
+                    "https://api.anthropic.com/v1/messages",
+                    headers={"x-api-key": str(_cfg_v).strip(),
+                             "anthropic-version": "2023-06-01",
+                             "content-type": "application/json"},
+                    json={"model": "claude-haiku-4-5-20251001",
+                          "max_tokens": 1,
+                          "messages": [{"role": "user", "content": "ping"}]},
+                    timeout=30,
+                )
+                st.write(f"HTTP {_r.status_code}")
+                _rid = _r.headers.get("request-id", "—")
+                _org = _r.headers.get("anthropic-organization-id", "—")
+                st.write(f"request-id: `{_rid}`")
+                st.write(f"anthropic-organization-id: `{_org}` — по нему "
+                         "видно, к какой организации привязан ключ")
+                st.code(_r.text[:1500], language="json")
+            except Exception as _e:
+                st.error(f"Запрос не прошёл: {_e}")
+
 st.divider()
 
 # ================================================================ модели
