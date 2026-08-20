@@ -336,12 +336,16 @@ def pain_money(row) -> float:
     e = ECON.get((row["asin"], row["marketplace"]))
     if not e:
         return 0.0
-    # _had_sales есть только у болей Amazon Issues; NaN (боли из базы) = True
+    # _had_sales/_family_alive есть только у болей Amazon Issues;
+    # NaN (боли из базы) = дефолты True/None
     had = row.get("_had_sales")
     had = True if had is None or (isinstance(had, float) and pd.isna(had)) \
         else bool(had)
+    fam = row.get("_family_alive")
+    fam = None if fam is None or (isinstance(fam, float) and pd.isna(fam)) \
+        else bool(fam)
     return money_at_risk(row.get("rule_id", ""), e.get("revenue_30d"),
-                         had_sales=had)
+                         had_sales=had, family_alive=fam)
 
 
 diag = diag.copy()
