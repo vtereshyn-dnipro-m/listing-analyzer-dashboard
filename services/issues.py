@@ -196,6 +196,47 @@ def issues_map(df: pd.DataFrame | None = None) -> dict:
     return out
 
 
+@st.cache_data(ttl=300)
+def load_family() -> pd.DataFrame:
+    """Состав семейств вариантов: все наши ASIN по sku_group × рынок.
+
+    Именно из матрицы, а не из listing_issues: в реплике только листинги
+    с незакрытыми проблемами, чистые варианты семейства там отсутствуют —
+    знаменатель «заблокирован 1 из 4» из неё не получить."""
+    try:
+        conn = get_conn()
+        df = pd.read_sql(
+            "SELECT sku_group, asin, marketplace FROM product_matrix "
+            "WHERE is_competitor = FALSE",
+            conn,
+        )
+        conn.close()
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
+def family_map(imap: dict | None = None) -> dict:
+    """(asin, marketplace) -> {"total": N, "blocked": K} по семейству
+    sku_group на этом рынке. Только для семейств, где есть блокировки."""
+    fam = load_family()
+    if fam.empty:
+        return {}
+    imap = issues_map() if imap is None else imap
+    out: dict = {}
+    for (sku, mp), g in fam.groupby(["sku_group", "marketplace"]):
+        mpl = str(mp).lower()
+        asins = [str(a) for a in g["asin"]]
+        blocked = [a for a in asins
+                   if (imap.get((a, mpl)) or {}).get("state") == "blocked"]
+        if not blocked:
+            continue
+        info = {"total": len(asins), "blocked": len(blocked)}
+        for a in asins:
+            out[(a, mpl)] = info
+    return out
+
+
 def asin_index(imap: dict | None = None) -> dict:
     """asin -> [(marketplace, сводка), ...] — для «худшего состояния»
     товара, живущего на нескольких рынках."""
@@ -231,6 +272,7 @@ def build_pains(imap: dict | None = None) -> pd.DataFrame:
     is_buyable=true при незакрытых проблемах -> yellow.
     """
     imap = issues_map() if imap is None else imap
+    fam = family_map(imap)
     recs = []
     for (asin, mp), s in imap.items():
         if s["state"] == "none":
@@ -258,6 +300,11 @@ def build_pains(imap: dict | None = None) -> pd.DataFrame:
         if s["message"]:
             cause_line += f" — {_esc(s['message'])}"
 
+        # живые варианты в семействе: часть трафика перетекает внутрь
+        # семейства, риск блокировки ниже (economics.BLOCKED_WITH_ALIVE_RISK)
+        f = fam.get((asin, mp))
+        family_alive = (f["blocked"] < f["total"]) if f else False
+
         recs.append({
             "sku_group": s["sku"] or asin,
             "asin": asin,
@@ -271,5 +318,6 @@ def build_pains(imap: dict | None = None) -> pd.DataFrame:
             "created_at": pd.to_datetime(s["first_seen"], errors="coerce",
                                          utc=True),
             "_had_sales": s["had_sales"],
+            "_family_alive": family_alive,
         })
     return pd.DataFrame(recs)

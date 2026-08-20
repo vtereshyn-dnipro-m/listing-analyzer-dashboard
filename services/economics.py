@@ -38,6 +38,10 @@ RULE_RISK = {
 # «теряем выручку» по нему вводит в заблуждение, риск занижается
 NEVER_SOLD_RISK = 0.05
 
+# заблокирован, но в семействе есть живые варианты: покупатель видит на
+# странице соседние и часть трафика перетекает внутрь семейства
+BLOCKED_WITH_ALIVE_RISK = 0.40
+
 
 @st.cache_data(ttl=300)
 def load_economics() -> pd.DataFrame:
@@ -69,16 +73,21 @@ def econ_map(df: pd.DataFrame | None = None) -> dict:
             for _, r in df.iterrows()}
 
 
-def money_at_risk(rule_id: str, revenue_30d, had_sales: bool = True) -> float:
+def money_at_risk(rule_id: str, revenue_30d, had_sales: bool = True,
+                  family_alive: bool | None = None) -> float:
     """Сколько выручки под риском из-за конкретной проблемы.
 
-    had_sales=False (товар никогда не продавался) занижает коэффициент
-    до NEVER_SOLD_RISK независимо от правила."""
+    family_alive=True (amazon_blocked при живых вариантах в семействе)
+    снижает 1.00 -> BLOCKED_WITH_ALIVE_RISK. had_sales=False (товар
+    никогда не продавался) занижает до NEVER_SOLD_RISK независимо
+    от правила."""
     try:
         rev = float(revenue_30d or 0)
     except (TypeError, ValueError):
         return 0.0
     coef = RULE_RISK.get(rule_id, 0.03)
+    if rule_id == "amazon_blocked" and family_alive is True:
+        coef = BLOCKED_WITH_ALIVE_RISK
     if had_sales is False:
         coef = NEVER_SOLD_RISK
     return rev * coef

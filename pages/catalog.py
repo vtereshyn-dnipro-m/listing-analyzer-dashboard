@@ -28,7 +28,7 @@ from services.search import (
     search_map, fmt_int, fmt_pct, ctr_state,
 )
 from services.issues import (
-    issues_map, asin_index, worst_state, MONITORED,
+    issues_map, asin_index, worst_state, family_map, MONITORED,
     cause_label, code_label, fmt_issue_date,
 )
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
@@ -217,6 +217,7 @@ SEARCH = search_map()
 ATTRS = attrs_map()
 ISSUES = issues_map()
 AIDX = asin_index(ISSUES)
+FAMILY = family_map(ISSUES)
 df = load_catalog()
 if df.empty:
     st.caption(t("common.no_data"))
@@ -449,6 +450,20 @@ def issue_details(entries: list, group_sku: str = "") -> None:
         if not s["had_sales"]:
             head += " · " + t("issue.never_sold")
         st.markdown(head, unsafe_allow_html=True)
+
+        # состояние семейства вариантов: покупатель на странице Amazon
+        # видит живые соседние варианты и может решить, что система ошиблась
+        if s["state"] == "blocked":
+            fam = FAMILY.get((s.get("asin", ""), m))
+            if fam and fam["total"] >= 2:
+                fam_txt = (t("issue.family_all_blocked")
+                           if fam["blocked"] >= fam["total"]
+                           else t("issue.family_partial",
+                                  blocked=fam["blocked"], total=fam["total"]))
+                st.markdown(
+                    f'<div style="font-size:12.5px;color:{WARN_TEXT};'
+                    f'margin:-4px 0 6px;">↳ {fam_txt}</div>',
+                    unsafe_allow_html=True)
         for row in s["rows"]:
             line = (f"`{row['code']}` **{code_label(row['code'])}** · "
                     + t("issue.since_date",
@@ -458,6 +473,16 @@ def issue_details(entries: list, group_sku: str = "") -> None:
             st.markdown(line)
             if row["message"]:
                 st.caption(row["message"])
+
+    # пояснение один раз под раскрытием — только когда у какого-то из
+    # заблокированных рынков есть живые варианты: иначе «они продаются» — ложь
+    def _fam(m: str, s: dict) -> dict:
+        return FAMILY.get((s.get("asin", ""), m)) or {}
+
+    if any(s["state"] == "blocked"
+           and 0 < _fam(m, s).get("blocked", 0) < _fam(m, s).get("total", 0)
+           for m, s in entries):
+        st.caption(t("issue.family_note"))
 
 
 def issue_badge(asin: str, mp: str, group_sku: str = "") -> None:
