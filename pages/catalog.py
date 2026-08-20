@@ -28,7 +28,7 @@ from services.search import (
     search_map, fmt_int, fmt_pct, ctr_state,
 )
 from services.issues import (
-    issues_map, asin_index, family_map, MONITORED,
+    issues_map, asin_index, family_map, extract_deadline, MONITORED,
     cause_label, code_label, fmt_issue_date,
 )
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
@@ -488,37 +488,87 @@ def issue_details(entries: list, group_sku: str = "") -> None:
         st.caption(t("issue.family_note"))
 
 
-def issue_badge(asin: str, mp: str, group_sku: str = "") -> None:
-    """Плашка под карточкой — состояние ЕЁ рынка, не худшее по всем.
+def issue_plate(asin: str, mp: str,
+                group_sku: str = "") -> tuple[str, str | None, dict | None]:
+    """Плашка Amazon Issues ВНУТРЬ карточки: (html, цвет кромки, сводка).
 
-    Худшее состояние здесь красило продающийся рынок в красный: ASIN,
-    заблокированный на IT, получал «Не продаётся» и на живом ES.
-    Другие рынки с проблемами остаются припиской «также: …» — она
-    информирует, но цвет не меняет. Серая плашка на немониторимом рынке
-    обязательна: без неё отсутствие проблем неотличимо от отсутствия
-    данных."""
+    Состояние — только СВОЕГО рынка (заблокированный на IT не красит живой
+    ES). Первая строка — состояние и причина, жирная; вторая — контекст
+    серым: остаток, SKU рынка (если отличается от группового), семейство
+    вариантов, дедлайн из текста Amazon и что на других рынках. Серая
+    плашка на немониторимом рынке обязательна: без неё отсутствие проблем
+    неотличимо от отсутствия данных."""
     own = ISSUES.get((asin, mp))
     entries = AIDX.get(asin) or []
-    others = sorted({str(m).upper() for m, s in entries
-                     if s["state"] != "none" and m != mp})
-    also = (" · " + t("issue.also_markets", mps=", ".join(others))
+
+    # «также: FR (там продаётся), IT (там снят)» — состояние каждой пары
+    others = [(str(m).upper(),
+               t("issue.also_blocked", mp=str(m).upper())
+               if s["state"] == "blocked"
+               else t("issue.also_alive", mp=str(m).upper()))
+              for m, s in entries if s["state"] != "none" and m != mp]
+    also = (t("issue.also_markets",
+              mps=", ".join(txt for _, txt in sorted(others)))
             if others else "")
-    if own and own["state"] == "blocked":
-        parts = [t("issue.blocked_since", date=fmt_issue_date(own["first_seen"])),
-                 cause_label(own["cause"] or None)]
-        if not own["had_sales"]:
-            parts.append(t("issue.never_sold"))
-        with st.expander("🔴 " + " · ".join(parts) + also):
-            issue_details(entries, group_sku)
-    elif own and own["state"] == "warning":
-        with st.expander("🟡 " + t("issue.selling_warnings",
-                                   n=len(own["rows"])) + also):
-            issue_details(entries, group_sku)
-    elif mp not in MONITORED:
-        st.markdown(
-            f'<div style="font-size:12px;color:{MUTED};margin:-4px 0 10px;">'
-            f'◦ {t("issue.not_monitored")}</div>',
-            unsafe_allow_html=True)
+
+    if not own or own["state"] == "none":
+        if mp not in MONITORED:
+            html = (
+                f'<div style="background:#F1EFE8;border-radius:8px;'
+                f'padding:6px 12px;margin:6px 0 8px;font-size:12px;'
+                f'color:{MUTED};">◦ {t("issue.not_monitored")}</div>'
+            )
+            return html, None, None
+        return "", None, None
+
+    ctx: list[str] = []
+    if own["state"] == "warning":
+        dl = extract_deadline(own)
+        if dl:
+            what, ts = dl
+            part = t("issue.deadline_until", what=what,
+                     date=ts.strftime("%d.%m"))
+            if ts < pd.Timestamp.now(tz="UTC"):
+                part += " · " + t("issue.deadline_passed")
+            ctx.append(part)
+    if own["stock"] is not None:
+        ctx.append(t("issue.stock_n", n=own["stock"]))
+    mkt_sku = own.get("sku") or ""
+    if mkt_sku and mkt_sku != group_sku:
+        ctx.append(f'SKU <span class="ls-mono">{mkt_sku}</span>')
+    fam = FAMILY.get((asin, mp))
+    if fam and fam["total"] >= 2:
+        ctx.append(t("issue.family_short_all")
+                   if fam["blocked"] >= fam["total"]
+                   else t("issue.family_short_partial",
+                          blocked=fam["blocked"], total=fam["total"]))
+    if not own["had_sales"]:
+        ctx.append(t("issue.never_sold"))
+    if also:
+        ctx.append(also)
+
+    if own["state"] == "blocked":
+        bg, fg = ERR_BG, ERR_TEXT
+        line1 = ("🔴 " + t("issue.blocked_since",
+                           date=fmt_issue_date(own["first_seen"]))
+                 + " · " + cause_label(own["cause"] or None))
+        edge = ERR_TEXT
+    else:
+        bg, fg = WARN_BG, WARN_TEXT
+        line1 = "🟡 " + t("issue.selling_warnings", n=len(own["rows"]))
+        edge = ACCENT
+
+    # вторая строка не рендерится пустой: пустая подстановка одна на
+    # строке закрывает HTML-блок (правило 1)
+    line2 = (f'<div style="font-size:12px;color:#57534A;margin-top:2px;">'
+             f'{" · ".join(ctx)}</div>') if ctx else ""
+    html = (
+        f'<div style="background:{bg};border-radius:8px;padding:8px 12px;'
+        f'margin:6px 0 8px;font-size:13px;">'
+        f'<div style="font-weight:700;color:{fg};">{line1}</div>'
+        f"{line2}</div>"
+    )
+    return html, edge, own
 
 
 # ---- карточки
@@ -607,11 +657,19 @@ for x in chunk:
     badges_html = (f'<div style="margin-top:6px;">{_badges}</div>'
                    if _badges else "")
 
-    # HTML одной строкой: у карточки может не быть линейки или значков,
-    # и на переносах пустые участки превращаются в блок кода markdown.
+    # Amazon Issues — только свои товары: реплика идёт из аккаунта продавца,
+    # по конкурентам этих данных не бывает. Плашка внутри карточки, кромка
+    # перекрашивается: blocked/warning ловятся глазом при прокрутке.
+    plate_html, edge, own_issues = ("", None, None)
+    if not r["is_competitor"]:
+        plate_html, edge, own_issues = issue_plate(
+            asin, mp, str(r["sku_group"] or ""))
+
+    # HTML одной строкой: у карточки может не быть линейки, значков или
+    # плашки, и на переносах пустые участки превращаются в блок кода markdown.
     st.markdown(
         f'<div class="ls-card" style="background:{CARD};'
-        f'border:1px solid {BORDER};border-left:3px solid {color};'
+        f'border:1px solid {BORDER};border-left:4px solid {edge or color};'
         f'border-radius:0 12px 12px 0;padding:14px 18px;margin-bottom:10px;'
         f'display:flex;gap:16px;">'
         f'<div style="flex:0 0 92px;">{thumb}</div>'
@@ -622,16 +680,18 @@ for x in chunk:
         f"{label} · {fetched}</span></div>"
         f'<div style="font-size:13px;color:{INK};margin:6px 0 8px;">'
         f'{short or t("catalog.no_data_row")}</div>'
+        f"{plate_html}"
         f"{ruler}"
         f'<div style="margin-top:6px;">{chips}</div>'
         f"{badges_html}</div></div>",
         unsafe_allow_html=True,
     )
 
-    # Amazon Issues — только свои товары: реплика идёт из аккаунта продавца,
-    # по конкурентам этих данных не бывает
-    if not r["is_competitor"]:
-        issue_badge(asin, mp, str(r["sku_group"] or ""))
+    # раскрытие с деталями — под карточкой (st.expander внутрь HTML
+    # не вставить), подписано ASIN'ом, чтобы не терялась связь в списке
+    if own_issues:
+        with st.expander(t("issue.details_title", asin=asin)):
+            issue_details(AIDX.get(asin) or [], str(r["sku_group"] or ""))
 
 if pages > 1:
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)

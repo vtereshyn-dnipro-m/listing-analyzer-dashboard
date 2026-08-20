@@ -20,6 +20,8 @@ is_buyable. severity из реплики здесь нигде не участв
 """
 from __future__ import annotations
 
+import re
+
 import pandas as pd
 import streamlit as st
 
@@ -93,6 +95,26 @@ def cause_label(cause: str | None) -> str:
     key = f"issue.cause.{c}"
     val = t(key)
     return val if val != key else c
+
+
+# ISO-дата в текстах Amazon: 2026-08-12T00:00:00.000Z
+_ISO_RE = re.compile(
+    r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?")
+
+
+def extract_deadline(summary: dict) -> tuple[str, pd.Timestamp] | None:
+    """Первый дедлайн из текстов Amazon по паре: (подпись кода, дата).
+
+    Amazon пишет срок прямо в message ISO-датой; отдельного поля в реплике
+    нет, поэтому вытаскиваем регуляркой."""
+    for row in summary.get("rows") or []:
+        m = _ISO_RE.search(row.get("message") or "")
+        if not m:
+            continue
+        ts = pd.to_datetime(m.group(0), errors="coerce", utc=True)
+        if not pd.isna(ts):
+            return code_label(row.get("code")), ts
+    return None
 
 
 def code_label(code: str | None) -> str:
