@@ -19,7 +19,9 @@ from config import TITLE_LIMIT as _TL_DEFAULT
 from i18n import t
 from services.db import get_conn
 from services.settings import get_int, get_float
-from services.economics import econ_map, fmt_money, fmt_conversion
+from services.economics import (
+    econ_map, fmt_money, fmt_conversion, money_at_risk, RULE_RISK,
+)
 from services.worklog import worklog_map, work_badges
 from services.attributes import (
     attrs_map, missing_critical, fill_state, node_short,
@@ -223,6 +225,81 @@ if df.empty:
     st.caption(t("common.no_data"))
     st.stop()
 
+# ---- группы фильтра: по ИСТОЧНИКУ проблемы, а не по конкретной причине.
+# Amazon — состояние пары из listing_issues; Контент и Поиск — правила
+# Диагноза из diagnosis (те же rule_id, что на дашборде).
+CONTENT_RULES = {"title_over_limit", "few_images", "no_video", "no_aplus",
+                 "low_reviews", "few_attributes", "out_of_stock"}
+SEARCH_RULES = {"low_ctr", "hard_to_scan"}
+_STATE_RULE = {"blocked": "amazon_blocked", "fba_out": "amazon_fba_out",
+               "warning": "amazon_warning"}
+
+
+@st.cache_data(ttl=300)
+def load_rule_pairs() -> dict:
+    """(asin, marketplace) -> множество rule_id из diagnosis."""
+    try:
+        conn = get_conn()
+        d = pd.read_sql(
+            "SELECT DISTINCT asin, marketplace, rule_id FROM diagnosis", conn)
+        conn.close()
+    except Exception:
+        return {}
+    out: dict = {}
+    for _, rr in d.iterrows():
+        out.setdefault((str(rr["asin"]), str(rr["marketplace"])),
+                       set()).add(str(rr["rule_id"]))
+    return out
+
+
+RULE_PAIRS = load_rule_pairs()
+
+
+def _pair_state(asin: str, mp: str) -> str:
+    """Состояние конкретной пары товар × рынок — не худшее по всем рынкам."""
+    return (ISSUES.get((str(asin), str(mp).lower()))
+            or {"state": "none"})["state"]
+
+
+def _pair_rules(asin: str, mp: str) -> set:
+    return RULE_PAIRS.get((str(asin), str(mp)), set())
+
+
+def in_group(asin: str, mp: str, group: str) -> bool:
+    if group == "amazon":
+        return _pair_state(asin, mp) != "none"
+    target = CONTENT_RULES if group == "content" else SEARCH_RULES
+    return bool(_pair_rules(asin, mp) & target)
+
+
+def group_risk(asin: str, mp: str, group: str) -> float:
+    """Деньги под риском пары в рамках группы — для сортировки, как
+    в Диагнозе: выручка × худший коэффициент правила группы."""
+    e = ECON.get((asin, mp)) or {}
+    rev = e.get("revenue_30d")
+    if group == "amazon":
+        s = ISSUES.get((asin, mp))
+        if not s or s["state"] == "none":
+            return 0.0
+        fam = FAMILY.get((asin, mp))
+        family_alive = (fam["blocked"] < fam["total"]) if fam else False
+        return money_at_risk(_STATE_RULE[s["state"]], rev,
+                             had_sales=s["had_sales"],
+                             family_alive=family_alive)
+    hit = _pair_rules(asin, mp) & (CONTENT_RULES if group == "content"
+                                   else SEARCH_RULES)
+    if not hit:
+        return 0.0
+    try:
+        return float(rev or 0) * max(RULE_RISK.get(r_, 0.03) for r_ in hit)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+_pairs_all = set(zip(df["asin"].astype(str), df["marketplace"].astype(str)))
+N_GRP = {g: sum(1 for a, m in _pairs_all if in_group(a, m, g))
+         for g in ("amazon", "content", "search")}
+
 # ---- фильтры
 f1, f2, f3, f4 = st.columns([1.8, 1.6, 1.4, 2.4])
 _who_opts = ["all", "ours", "comp"]
@@ -236,26 +313,24 @@ mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
                         placeholder=t("list.all_mp"))
 only_problems = f3.checkbox(t("catalog.only_problems"))
 
-# фильтр по Amazon Issues: все / с проблемами / FBA кончился / снятые
-_iss_opts = ["all", "problems", "fba", "blocked"]
-_iss_lbl = {"all": t("issue.f_all"), "problems": t("issue.f_problems"),
-            "fba": t("issue.f_fba"), "blocked": t("issue.f_blocked")}
+# фильтр по источнику проблемы, счётчики — по парам (asin, marketplace).
+# «С проблемами» отдавал 850 из 922 — не фильтр, а почти весь каталог;
+# «Не продаются» и «FBA кончился» — подвиды одного источника (Amazon).
+_grp_opts = ["all", "amazon", "content", "search"]
+_grp_lbl = {"all": t("issue.f_all"),
+            "amazon": f'{t("issue.f_amazon")} {N_GRP["amazon"]}',
+            "content": f'{t("issue.f_content")} {N_GRP["content"]}',
+            "search": f'{t("issue.f_search")} {N_GRP["search"]}'}
 try:
     iss_f = f4.segmented_control(
-        "issues", _iss_opts, default="all",
-        format_func=lambda k: _iss_lbl[k], selection_mode="single",
-        label_visibility="collapsed", key="cat_issues")
+        "группа", _grp_opts, default="all",
+        format_func=lambda k: _grp_lbl[k], selection_mode="single",
+        label_visibility="collapsed", key="cat_group")
 except AttributeError:
-    iss_f = f4.radio("issues", _iss_opts, horizontal=True,
-                     format_func=lambda k: _iss_lbl[k],
-                     label_visibility="collapsed", key="cat_issues")
+    iss_f = f4.radio("группа", _grp_opts, horizontal=True,
+                     format_func=lambda k: _grp_lbl[k],
+                     label_visibility="collapsed", key="cat_group")
 iss_f = iss_f or "all"
-
-
-def _pair_state(asin: str, mp: str) -> str:
-    """Состояние конкретной пары товар × рынок — не худшее по всем рынкам:
-    иначе заблокированный на IT ASIN попадал в «Не продаются» и на живом ES."""
-    return (ISSUES.get((str(asin), str(mp).lower())) or {"state": "none"})["state"]
 
 qc, vc = st.columns([4, 1.6])
 q = qc.text_input("Поиск", label_visibility="collapsed",
@@ -285,14 +360,8 @@ if q.strip():
         | view["sku_group"].astype(str).str.lower().str.contains(ql, na=False)
         | view["title"].astype(str).str.lower().str.contains(ql, na=False)
     ]
-if iss_f == "problems":
-    view = view[[_pair_state(a, m) != "none"
-                 for a, m in zip(view["asin"], view["marketplace"])]]
-elif iss_f == "fba":
-    view = view[[_pair_state(a, m) == "fba_out"
-                 for a, m in zip(view["asin"], view["marketplace"])]]
-elif iss_f == "blocked":
-    view = view[[_pair_state(a, m) == "blocked"
+if iss_f != "all":
+    view = view[[in_group(str(a), str(m), iss_f)
                  for a, m in zip(view["asin"], view["marketplace"])]]
 
 rows = []
@@ -317,8 +386,15 @@ def _rev(x) -> float:
         return 0.0
 
 
-rows.sort(key=lambda x: (order[x["lvl"]], -_rev(x),
-                         -(x["mx"]["title_len"] or 0)))
+if iss_f == "all":
+    rows.sort(key=lambda x: (order[x["lvl"]], -_rev(x),
+                             -(x["mx"]["title_len"] or 0)))
+else:
+    # внутри группы — по деньгам под риском, как в Диагнозе: в «Amazon»
+    # это даёт красные блокировки сверху, затем fba_out, затем жёлтые
+    rows.sort(key=lambda x: (
+        -group_risk(str(x["r"]["asin"]), str(x["r"]["marketplace"]), iss_f),
+        order[x["lvl"]], -_rev(x)))
 
 healthy = sum(1 for x in rows if x["lvl"] == "ok")
 st.markdown(
