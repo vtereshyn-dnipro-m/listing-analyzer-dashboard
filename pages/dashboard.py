@@ -45,6 +45,7 @@ RULE_GROUP = {
     "few_attributes": "attributes",
     "hard_to_scan": "title",
     "amazon_blocked": "amazon",
+    "amazon_fba_out": "amazon",
     "amazon_warning": "amazon",
 }
 MUTED = "#8A8578"
@@ -266,7 +267,7 @@ def build_card_args(r: pd.Series, product_title: str | None) -> dict:
     if rule == "out_of_stock":
         return dict(kind_label=t("card.stock"), headline=t("pain.out_of_stock"),
                     ruler_html="", money=risk_txt or money)
-    if rule in ("amazon_blocked", "amazon_warning"):
+    if rule in ("amazon_blocked", "amazon_fba_out", "amazon_warning"):
         # текст боли уже собран в services/issues.py через t() на лету;
         # детали (дата, остаток, коды, message) лежат в cause
         return dict(kind_label=t("card.amazon"), headline=str(r["pain"]),

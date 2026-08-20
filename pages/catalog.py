@@ -28,8 +28,8 @@ from services.search import (
     search_map, fmt_int, fmt_pct, ctr_state,
 )
 from services.issues import (
-    issues_map, asin_index, family_map, extract_deadline, MONITORED,
-    cause_label, code_label, fmt_issue_date,
+    issues_map, asin_index, family_map, extract_deadline, action_hint,
+    MONITORED, cause_label, code_label, fmt_issue_date,
 )
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
@@ -236,10 +236,10 @@ mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
                         placeholder=t("list.all_mp"))
 only_problems = f3.checkbox(t("catalog.only_problems"))
 
-# фильтр по Amazon Issues: все / с проблемами / снятые с продажи
-_iss_opts = ["all", "problems", "blocked"]
+# фильтр по Amazon Issues: все / с проблемами / FBA кончился / снятые
+_iss_opts = ["all", "problems", "fba", "blocked"]
 _iss_lbl = {"all": t("issue.f_all"), "problems": t("issue.f_problems"),
-            "blocked": t("issue.f_blocked")}
+            "fba": t("issue.f_fba"), "blocked": t("issue.f_blocked")}
 try:
     iss_f = f4.segmented_control(
         "issues", _iss_opts, default="all",
@@ -287,6 +287,9 @@ if q.strip():
     ]
 if iss_f == "problems":
     view = view[[_pair_state(a, m) != "none"
+                 for a, m in zip(view["asin"], view["marketplace"])]]
+elif iss_f == "fba":
+    view = view[[_pair_state(a, m) == "fba_out"
                  for a, m in zip(view["asin"], view["marketplace"])]]
 elif iss_f == "blocked":
     view = view[[_pair_state(a, m) == "blocked"
@@ -439,6 +442,8 @@ def issue_details(entries: list, group_sku: str = "") -> None:
             state_txt = "🔴 " + t("issue.blocked_since",
                                   date=fmt_issue_date(s["first_seen"],
                                                       with_year=True))
+        elif s["state"] == "fba_out":
+            state_txt = "🟠 " + t("issue.fba_out")
         else:
             state_txt = f"🟡 {t('issue.mp_selling')}"
         head = f"<b>{str(m).upper()}</b>"
@@ -502,10 +507,15 @@ def issue_plate(asin: str, mp: str,
     entries = AIDX.get(asin) or []
 
     # «также: FR (там продаётся), IT (там снят)» — состояние каждой пары
-    others = [(str(m).upper(),
-               t("issue.also_blocked", mp=str(m).upper())
-               if s["state"] == "blocked"
-               else t("issue.also_alive", mp=str(m).upper()))
+    def _also(m: str, s: dict) -> str:
+        mpu = str(m).upper()
+        if s["state"] == "blocked":
+            return t("issue.also_blocked", mp=mpu)
+        if s["state"] == "fba_out":
+            return t("issue.also_fba", mp=mpu)
+        return t("issue.also_alive", mp=mpu)
+
+    others = [(str(m).upper(), _also(m, s))
               for m, s in entries if s["state"] != "none" and m != mp]
     also = (t("issue.also_markets",
               mps=", ".join(txt for _, txt in sorted(others)))
@@ -522,6 +532,8 @@ def issue_plate(asin: str, mp: str,
         return "", None, None
 
     ctx: list[str] = []
+    if own["state"] == "fba_out":
+        ctx.append(t("issue.fba_out_ctx"))
     if own["state"] == "warning":
         dl = extract_deadline(own)
         if dl:
@@ -547,26 +559,37 @@ def issue_plate(asin: str, mp: str,
     if also:
         ctx.append(also)
 
+    # цвет — по asin_state Кабинета (агрегат всех SKU этого ASIN),
+    # а не по is_buyable одного SKU: FBA-SKU может быть не-buyable
+    # при живом FBM того же ASIN
     if own["state"] == "blocked":
         bg, fg = ERR_BG, ERR_TEXT
         line1 = ("🔴 " + t("issue.blocked_since",
                            date=fmt_issue_date(own["first_seen"]))
                  + " · " + cause_label(own["cause"] or None))
         edge = ERR_TEXT
+    elif own["state"] == "fba_out":
+        bg, fg = "#FCE8DC", ACCENT
+        line1 = "🟠 " + t("issue.fba_out")
+        edge = ACCENT
     else:
         bg, fg = WARN_BG, WARN_TEXT
         line1 = "🟡 " + t("issue.selling_warnings", n=len(own["rows"]))
-        edge = ACCENT
+        edge = "#EF9F27"   # жёлтая кромка под жёлтую плашку;
+        # оранжевая (#E8590C) теперь занята fba_out
 
-    # вторая строка не рендерится пустой: пустая подстановка одна на
-    # строке закрывает HTML-блок (правило 1)
+    # третья строка — что ДЕЛАТЬ; вторая и третья не рендерятся пустыми:
+    # пустая подстановка одна на строке закрывает HTML-блок (правило 1)
+    act = action_hint(own)
     line2 = (f'<div style="font-size:12px;color:#57534A;margin-top:2px;">'
              f'{" · ".join(ctx)}</div>') if ctx else ""
+    line3 = (f'<div style="font-size:12.5px;color:{INK};font-weight:600;'
+             f'margin-top:3px;">→ {act}</div>') if act else ""
     html = (
         f'<div style="background:{bg};border-radius:8px;padding:8px 12px;'
         f'margin:6px 0 8px;font-size:13px;">'
         f'<div style="font-weight:700;color:{fg};">{line1}</div>'
-        f"{line2}</div>"
+        f"{line2}{line3}</div>"
     )
     return html, edge, own
 
