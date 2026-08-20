@@ -13,12 +13,14 @@ from __future__ import annotations
 
 import base64
 import json
+from datetime import datetime, timezone
 
 import requests
 import streamlit as st
 
+from i18n import t
 from services.db import cfg
-from services.settings import get_setting
+from services.settings import get_setting, save_setting
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
@@ -28,6 +30,50 @@ DEFAULTS = {
     "photo_audit": ("gemini", "gemini-3.5-flash"),
     "agents": ("anthropic", "claude-sonnet-5"),
 }
+
+
+PROVIDER_NAME = {"gemini": "Gemini", "anthropic": "Anthropic"}
+
+# маркеры «кончились деньги/квота» в теле ошибки провайдера
+_NO_CREDIT_MARKERS = ("credit balance", "insufficient_quota", "quota exceeded",
+                      "resource_exhausted", "billing")
+
+
+def _is_no_credit(status: int, body: str) -> bool:
+    if status == 402:
+        return True
+    b = (body or "").lower()
+    return status in (400, 403, 429) and any(m in b for m in _NO_CREDIT_MARKERS)
+
+
+def _set_last_error(provider: str, code: str | None) -> None:
+    """Состояние последней ошибки провайдера в app_settings
+    (ai.last_error.<provider>, с меткой времени). code=None — сброс при
+    успешном вызове. Пишем только при ИЗМЕНЕНИИ: save_setting чистит
+    весь st.cache_data, на каждый вызов это делать нельзя."""
+    key = f"ai.last_error.{provider}"
+    cur = get_setting(key, "") or ""
+    try:
+        if code is None:
+            if cur:
+                save_setting(key, "")
+        elif not cur.startswith(code):
+            stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M")
+            save_setting(key, f"{code} {stamp}")
+    except Exception:
+        pass   # диагностика не должна ронять сам вызов ИИ
+
+
+def no_credit_banner(task: str) -> None:
+    """Предупреждение ДО кнопок генерации: у выбранного провайдера
+    последний вызов упал с no_credit. Кнопки не блокируются — человек
+    может пополнить счёт в соседней вкладке и нажать снова."""
+    provider, _ = task_config(task)
+    if str(get_setting(f"ai.last_error.{provider}", "") or "").startswith("no_credit"):
+        st.warning(t("ai.no_credit_banner",
+                     provider=PROVIDER_NAME.get(provider, provider)))
+        st.page_link("pages/settings.py", label=t("nav.settings"),
+                     icon=":material/settings:")
 
 
 def task_config(task: str) -> tuple[str, str]:
@@ -78,8 +124,11 @@ def _call_gemini(model: str, prompt: str,
         timeout=timeout,
     )
     if r.status_code != 200:
+        if _is_no_credit(r.status_code, r.text):
+            _set_last_error("gemini", "no_credit")
         st.error(f"Gemini HTTP {r.status_code}: {r.text[:300]}")
         return None
+    _set_last_error("gemini", None)
     return _clean_json(r.json()["candidates"][0]["content"]["parts"][0]["text"])
 
 
@@ -105,8 +154,11 @@ def _call_anthropic(model: str, prompt: str,
         timeout=timeout,
     )
     if r.status_code != 200:
+        if _is_no_credit(r.status_code, r.text):
+            _set_last_error("anthropic", "no_credit")
         st.error(f"Anthropic HTTP {r.status_code}: {r.text[:300]}")
         return None
+    _set_last_error("anthropic", None)
     text = "".join(b.get("text", "") for b in r.json().get("content", []))
     return _clean_json(text)
 

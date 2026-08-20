@@ -55,25 +55,33 @@ def _load_secrets() -> dict:
     return _SECRETS
 
 
-def cfg(name: str, default: Optional[str] = None) -> Optional[str]:
-    """Читает секрет: env -> secrets.toml на диске -> st.secrets (Streamlit Cloud) -> default.
-    Третий шаг нужен, потому что на Streamlit Cloud секреты не всегда доступны
-    как обычный файл на диске — только через встроенный st.secrets."""
+def cfg_source(name: str,
+               default: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
+    """(значение, источник): env -> secrets.toml на диске -> st.secrets ->
+    default. Источник нужен диагностике в Настройках — «а тот ли ключ
+    подставился» иначе не проверить, не читая логи."""
     if name in os.environ:
-        return os.environ[name]
+        return os.environ[name], "env"
 
     val = _load_secrets().get(name)
     if val is not None:
-        return val
+        return val, "secrets.toml"
 
     try:
         import streamlit as st
         if name in st.secrets:
-            return st.secrets[name]
+            return st.secrets[name], "st.secrets"
     except Exception:
         pass
 
-    return default
+    return default, None
+
+
+def cfg(name: str, default: Optional[str] = None) -> Optional[str]:
+    """Читает секрет: env -> secrets.toml на диске -> st.secrets (Streamlit Cloud) -> default.
+    Третий шаг нужен, потому что на Streamlit Cloud секреты не всегда доступны
+    как обычный файл на диске — только через встроенный st.secrets."""
+    return cfg_source(name, default)[0]
 
 
 # ---------------------------------------------------------------- подключение
