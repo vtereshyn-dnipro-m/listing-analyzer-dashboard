@@ -38,6 +38,23 @@ BLOCK_CAUSES = {
     "missing_image", "gpsr",
 }
 
+# код проблемы -> причина блокировки. Нужно, чтобы распознать причину,
+# которую Кабинет замаскировал приоритетом out_of_stock: при нулевом
+# остатке suppression_cause всегда «нет товара», даже если листинг
+# на самом деле лежит из-за EPR. 18448 (атрибуты) сюда не входит —
+# он ничего не блокирует.
+CODE_CAUSE = {
+    "100530": "epr",
+    "100527": "gpsr",
+    "100622": "compliance_docs",
+    "100526": "compliance_docs",
+    "100632": "compliance_docs",
+    "18320": "missing_image",
+    "100899": "variant_conflict",
+    "100390": "hazmat",
+    "101265": "generic",       # ограничение категории: блокирует, своей причины нет
+}
+
 
 # ---------------------------------------------------------------- helpers
 
@@ -149,6 +166,35 @@ def load_issues() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _masked_cause(rows: list) -> tuple[str, object] | None:
+    """Причина, которую приоритет out_of_stock скрыл: (cause_id, first_seen).
+
+    Кабинет при нулевом остатке всегда пишет suppression_cause =
+    out_of_stock, даже если листинг лежит из-за EPR. Если блокирующая
+    проблема появилась РАНЬШЕ обнуления — причина в ней, а сток кончился
+    следствием простоя.
+
+    Момента обнуления в реплике нет, поэтому за него берётся самая ранняя
+    неблокирующая строка пары (её Кабинет и заводит на сток). Если
+    неблокирующих строк нет вовсе — блокирующая заведомо не позже, и
+    причина всё равно она.
+    """
+    blocking, plain = [], []
+    for r in rows:
+        ts = pd.to_datetime(r.get("first_seen"), errors="coerce")
+        if pd.isna(ts):
+            continue
+        cause_id = CODE_CAUSE.get(_text(r.get("code")))
+        (blocking if cause_id else plain).append((ts, cause_id))
+    if not blocking:
+        return None
+    blocking.sort(key=lambda x: x[0])
+    ts_block, cause_id = blocking[0]
+    if plain and ts_block >= min(ts for ts, _ in plain):
+        return None      # блокировка появилась не раньше обнуления
+    return cause_id, ts_block
+
+
 def _summary(g: pd.DataFrame) -> dict:
     """Сводка по паре товар×рынок: ОДНА запись на пару, не на каждый код."""
     rows = []
@@ -203,9 +249,14 @@ def _summary(g: pd.DataFrame) -> dict:
                                                    errors="coerce")))
     message = with_msg[0]["message"] if with_msg else ""
 
+    masked = _masked_cause(rows) if cause == "out_of_stock" else None
+
     return {
         "state": state,
         "cause": cause,
+        # причина, которую приоритет out_of_stock скрыл: (cause_id, first_seen)
+        # или None. Сток кончился как СЛЕДСТВИЕ простоя, а не как причина.
+        "masked": masked,
         "had_sales": had_sales,
         "first_seen": None if pd.isna(first_seen) else first_seen,
         "stock": stock,
@@ -333,8 +384,17 @@ def build_pains(imap: dict | None = None) -> pd.DataFrame:
             continue
         if s["state"] == "blocked":
             if s["cause"] == "out_of_stock":
-                continue
-            cause_id = s["cause"] if s["cause"] in BLOCK_CAUSES else "generic"
+                # по чистому «нет товара» боль не создаём — в Диагнозе уже
+                # есть своё правило по остаткам. Но если приоритет
+                # out_of_stock скрыл более раннюю блокирующую причину,
+                # боль создаём по НЕЙ: иначе товар не попадёт в Диагноз
+                # вовсе, а сток пополнят и листинг всё равно не встанет.
+                if not s.get("masked"):
+                    continue
+                cause_id = s["masked"][0]
+            else:
+                cause_id = (s["cause"] if s["cause"] in BLOCK_CAUSES
+                            else "generic")
             rule, sev = "amazon_blocked", "red"
             pain = t(f"pain.amazon_blocked.{cause_id}")
             action = t(f"action.amazon_blocked.{cause_id}")
