@@ -64,6 +64,13 @@ def _set_last_error(provider: str, code: str | None) -> None:
         pass   # диагностика не должна ронять сам вызов ИИ
 
 
+def reset_last_error(provider: str) -> None:
+    """Сброс ai.last_error.<provider> — та же логика, что при успешной
+    генерации. Зовётся и из «Проверить связь» в Настройках: иначе баннер
+    «баланс исчерпан» висит после починки ключа до первой генерации."""
+    _set_last_error(provider, None)
+
+
 def no_credit_banner(task: str) -> None:
     """Предупреждение ДО кнопок генерации: у выбранного провайдера
     последний вызов упал с no_credit. Кнопки не блокируются — человек
