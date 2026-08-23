@@ -610,6 +610,12 @@ def issue_plate(asin: str, mp: str,
     ctx: list[str] = []
     if own["state"] == "fba_out":
         ctx.append(t("issue.fba_out_ctx"))
+    # «Нет товара» скрыло более раннюю блокирующую причину — говорим о ней,
+    # иначе Каталог советует пополнить сток, а листинг лежит из-за EPR
+    if own.get("masked"):
+        ctx.append(t("issue.masked_by",
+                     cause=cause_label(own["masked"][0]),
+                     date=fmt_issue_date(own["masked"][1])))
     if own["state"] == "warning":
         dl = extract_deadline(own)
         if dl:

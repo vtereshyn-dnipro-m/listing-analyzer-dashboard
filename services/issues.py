@@ -38,6 +38,59 @@ BLOCK_CAUSES = {
     "missing_image", "gpsr",
 }
 
+# Код проблемы -> причина блокировки. Нужно, чтобы распознать причину,
+# которую Кабинет замаскировал приоритетом out_of_stock: при нулевом
+# остатке suppression_cause всегда «нет товара», даже если листинг
+# лежит из-за EPR.
+#
+# Список сверен с фактическими данными (SELECT DISTINCT issue_code по
+# listing_issues, 849 открытых строк, 29 кодов). Здесь только те коды,
+# у которых есть СВОЯ формулировка причины; всё незнакомое считается
+# блокирующим с причиной generic — см. code_cause().
+CODE_CAUSE = {
+    "100530": "epr",               # ERN (Польша)
+    "100529": "epr",               # ERN (DE)
+    "100792": "epr",               # EPREL registration rejected
+    "100527": "gpsr",              # manufacturer info
+    "100623": "gpsr",              # manufacturer info (ES/EU)
+    "100528": "gpsr",              # responsible person (NL/EU)
+    "100594": "gpsr",              # responsible person (ES/EU)
+    "100624": "gpsr",              # responsible person info
+    "100622": "compliance_docs",   # GPSR: предупреждения и безопасность (ES/EU)
+    "100526": "compliance_docs",   # GPSR: предупреждения и безопасность (NL/EU)
+    "100632": "compliance_docs",   # GPSR: общие требования безопасности (DE)
+    "18616": "compliance_docs",    # Account Health: conformiteitsdocument
+    "100540": "compliance_docs",   # Document rejected
+    "18320": "missing_image",      # нет главного изображения
+    "100899": "variant_conflict",  # Child ASIN conflict
+    "100900": "variant_conflict",  # Variation inconsistency
+    "100893": "variant_conflict",  # Variation missing attributes
+    "100898": "variant_conflict",  # Variation theme mismatch
+    "90244": "variant_conflict",   # Invalid variation theme value
+    "100390": "hazmat",            # ps_eMobilityDevices compliance
+}
+
+# Коды, которые сами по себе НЕ блокируют: они лишь сопутствуют.
+# Проверено по данным: 18448 стоит на 276 парах, из них заблокированы 20 —
+# то есть 93% листингов с этим кодом продаются. Признак покупаемости
+# в реплике принадлежит ЛИСТИНГУ и дублируется во всех его строках,
+# поэтому «not_buyable» у кода означает соседство с настоящей причиной,
+# а не собственную блокировку. Плюс правило из CLAUDE.md: ошибки
+# атрибутов помечены ERROR и ни на что не влияют.
+BENIGN_CODES = {"18448"}
+
+
+def code_cause(code: str | None) -> str | None:
+    """Причина блокировки по коду: конкретная, generic или None (безобидный).
+
+    Дефолт для незнакомого кода — блокирующий generic: список кодов
+    Amazon пополняет без предупреждения, и молчать про неизвестный код
+    опаснее, чем показать лишнюю боль с «Открыть Fix Listing»."""
+    c = _text(code)
+    if not c or c in BENIGN_CODES:
+        return None
+    return CODE_CAUSE.get(c, "generic")
+
 
 # ---------------------------------------------------------------- helpers
 
@@ -149,6 +202,38 @@ def load_issues() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _masked_cause(rows: list) -> tuple[str, object] | None:
+    """Причина, которую приоритет out_of_stock скрыл: (cause_id, first_seen).
+
+    Кабинет при нулевом остатке всегда пишет suppression_cause =
+    out_of_stock, даже если листинг лежит из-за EPR. Берём самую раннюю
+    блокирующую строку пары — она и есть настоящая причина, а сток
+    кончился следствием простоя.
+
+    Про даты. Изначально здесь сравнивался first_seen блокирующей строки
+    с «моментом обнуления», за который бралась самая ранняя неблокирующая
+    строка — в предположении, что Кабинет заводит на сток отдельную
+    строку. Данные это опровергли: у пар с suppression_cause =
+    out_of_stock встречаются только коды настоящих проблем (18448, 100530,
+    100390, 18320), строки «нет товара» не существует. Сравнивать не с чем,
+    поэтому сравнение убрано: наличие блокирующей причины достаточно.
+    Дата в ответе — first_seen этой причины, для показа «с ДД.ММ».
+    """
+    found = []
+    for r in rows:
+        cause_id = code_cause(r.get("code"))
+        if cause_id:
+            found.append((pd.to_datetime(r.get("first_seen"), errors="coerce"),
+                          cause_id))
+    if not found:
+        return None
+    dated = [(ts, c) for ts, c in found if not pd.isna(ts)]
+    if dated:
+        dated.sort(key=lambda x: x[0])
+        return dated[0][1], dated[0][0]
+    return found[0][1], None   # дат нет — причина известна, дата неизвестна
+
+
 def _summary(g: pd.DataFrame) -> dict:
     """Сводка по паре товар×рынок: ОДНА запись на пару, не на каждый код."""
     rows = []
@@ -203,9 +288,14 @@ def _summary(g: pd.DataFrame) -> dict:
                                                    errors="coerce")))
     message = with_msg[0]["message"] if with_msg else ""
 
+    masked = _masked_cause(rows) if cause == "out_of_stock" else None
+
     return {
         "state": state,
         "cause": cause,
+        # причина, которую приоритет out_of_stock скрыл: (cause_id, first_seen)
+        # или None. Сток кончился как СЛЕДСТВИЕ простоя, а не как причина.
+        "masked": masked,
         "had_sales": had_sales,
         "first_seen": None if pd.isna(first_seen) else first_seen,
         "stock": stock,
@@ -333,8 +423,17 @@ def build_pains(imap: dict | None = None) -> pd.DataFrame:
             continue
         if s["state"] == "blocked":
             if s["cause"] == "out_of_stock":
-                continue
-            cause_id = s["cause"] if s["cause"] in BLOCK_CAUSES else "generic"
+                # по чистому «нет товара» боль не создаём — в Диагнозе уже
+                # есть своё правило по остаткам. Но если приоритет
+                # out_of_stock скрыл более раннюю блокирующую причину,
+                # боль создаём по НЕЙ: иначе товар не попадёт в Диагноз
+                # вовсе, а сток пополнят и листинг всё равно не встанет.
+                if not s.get("masked"):
+                    continue
+                cause_id = s["masked"][0]
+            else:
+                cause_id = (s["cause"] if s["cause"] in BLOCK_CAUSES
+                            else "generic")
             rule, sev = "amazon_blocked", "red"
             pain = t(f"pain.amazon_blocked.{cause_id}")
             action = t(f"action.amazon_blocked.{cause_id}")
