@@ -35,6 +35,9 @@ from services.seo import (
     build_keyword_table, coverage, compress_phrase,
     TIER_LABEL, TIER_COLOR, TIERS,
 )
+from services.flatfile import (
+    load_accepted_titles, build_flat_export, build_csv_export,
+)
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
@@ -678,6 +681,30 @@ with tab_queue:
                           label_visibility="collapsed", key="syn-mode")
     q_mode = q_mode or "cards"
 
+    # ---- выгрузка принятых тайтлов для загрузки в Amazon
+    # Берём из listing_changes, а не из очереди: правку могли принять на
+    # вкладке «любой товар», и в очередь title_over_limit такой товар
+    # не попадает — иначе выгрузка молча теряла бы строки.
+    _day = pd.Timestamp.now().strftime("%Y-%m-%d")
+    _acc = load_accepted_titles(tuple(mp_sel) if mp_sel else None)
+    e1, e2, e3 = st.columns([2, 2, 4])
+    if _acc.empty:
+        e1.button(t("export.flat"), disabled=True, key="exp-flat-none",
+                  help=t("export.nothing"))
+        e2.button(t("export.csv"), disabled=True, key="exp-csv-none")
+        e3.caption(t("export.nothing"))
+    else:
+        _fname, _fmime, _fdata = build_flat_export(_acc, _day)
+        e1.download_button(f'{t("export.flat")} · {len(_acc)}', _fdata,
+                           file_name=_fname, mime=_fmime, key="exp-flat")
+        _cname, _cmime, _cdata = build_csv_export(_acc, _day)
+        e2.download_button(t("export.csv"), _cdata, file_name=_cname,
+                           mime=_cmime, key="exp-csv")
+        _mps_txt = ", ".join(sorted(_acc["marketplace"].unique())).upper()
+        e3.caption(t("export.hint", n=len(_acc), mps=_mps_txt))
+        _weak = int(_acc["sku_fallback"].sum())
+        if _weak:
+            e3.caption("⚠ " + t("export.sku_fallback", n=_weak))
 
     view = rows
     if mp_sel:
