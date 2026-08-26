@@ -842,14 +842,16 @@ with tab_queue:
     # не попадает — иначе выгрузка молча теряла бы строки.
     _day = pd.Timestamp.now().strftime("%Y-%m-%d")
     _acc = load_accepted_titles(tuple(mp_sel) if mp_sel else None)
-    e1, e2, e3 = st.columns([2.2, 2, 4])
+    # третья колонка держит место под кнопку прямой отправки по API:
+    # когда она появится, соседние не поедут и подписи не переверстаются
+    e1, e2, e3, e4 = st.columns([2.0, 1.6, 2.0, 3.4])
     if _acc.empty:
         # неактивны и с прямой подсказкой, что сделать: раньше две серые
         # кнопки просто терялись и было непонятно, почему они не нажимаются
         e1.button(t("export.flat"), disabled=True, key="exp-flat-none",
                   help=t("export.accept_first"))
         e2.button(t("export.csv"), disabled=True, key="exp-csv-none")
-        e3.caption(f'{t("export.nothing")} — {t("export.accept_first")}')
+        e4.caption(f'{t("export.nothing")} — {t("export.accept_first")}')
     else:
         # есть что выгружать — основная кнопка страницы, выделена цветом
         _fname, _fmime, _fdata = build_flat_export(_acc, _day)
@@ -860,10 +862,10 @@ with tab_queue:
         e2.download_button(t("export.csv"), _cdata, file_name=_cname,
                            mime=_cmime, key="exp-csv")
         _mps_txt = ", ".join(sorted(_acc["marketplace"].unique())).upper()
-        e3.caption(t("export.hint", n=len(_acc), mps=_mps_txt))
+        e4.caption(t("export.hint", n=len(_acc), mps=_mps_txt))
         _weak = int(_acc["sku_fallback"].sum())
         if _weak:
-            e3.caption("⚠ " + t("export.sku_fallback", n=_weak))
+            e4.caption("⚠ " + t("export.sku_fallback", n=_weak))
 
     view = rows
     if mp_sel:
