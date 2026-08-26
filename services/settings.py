@@ -20,6 +20,17 @@ DEFAULTS = {
     "provider.photo_audit": "gemini",
     "provider.agents": "anthropic",
     "ai.fallback": "off",
+    # потолок ответа модели. 2000 не хватало: у Claude 5 расширенное мышление
+    # включено ПО УМОЛЧАНИЮ, весь бюджет уходил в thinking и текст ответа
+    # не начинался — приходило stop_reason=max_tokens с пустым текстом
+    "ai.max_tokens.title_split": "8000",
+    "ai.max_tokens.photo_audit": "8000",
+    "ai.max_tokens.agents": "8000",
+    # adaptive | disabled. Сплит тайтла — форматная задача, размышление ей
+    # не нужно и только съедает бюджет; аудит фото рассуждением живёт
+    "ai.thinking.title_split": "disabled",
+    "ai.thinking.photo_audit": "adaptive",
+    "ai.thinking.agents": "adaptive",
     "limit.title": "75",
     "limit.highlights": "125",
     "threshold.min_reviews": "50",

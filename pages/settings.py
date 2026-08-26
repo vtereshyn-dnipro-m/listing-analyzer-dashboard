@@ -16,7 +16,7 @@ import streamlit as st
 from i18n import t
 from services.ai import reset_last_error
 from services.db import get_conn, cfg, cfg_source
-from services.settings import get_setting, save_setting
+from services.settings import get_setting, get_int, save_setting
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
@@ -209,6 +209,27 @@ for task, label, prov_default in TASKS:
         "модель", opts,
         index=opts.index(cur_model) if cur_model in opts else 0,
         label_visibility="collapsed", key=f"model-{task}")
+
+    # потолок ответа и режим мышления — рядом с моделью: 2000 не хватало,
+    # у моделей Claude 5 мышление включено по умолчанию и съедало бюджет
+    lim_key, think_key = f"ai.max_tokens.{task}", f"ai.thinking.{task}"
+    cur_lim = get_int(lim_key, 8000)
+    cur_think = get_setting(think_key, "adaptive") or "adaptive"
+    l1, l2 = st.columns([1.6, 2.4])
+    lim_choice = l1.number_input(
+        t("set.max_tokens"), 1000, 64000, cur_lim, 1000,
+        key=f"lim-{task}", help=t("set.max_tokens_help"))
+    think_opts = ["adaptive", "disabled"]
+    think_choice = l2.selectbox(
+        t("set.thinking"), think_opts,
+        index=think_opts.index(cur_think) if cur_think in think_opts else 0,
+        format_func=lambda v: (t("set.thinking_adaptive") if v == "adaptive"
+                               else t("set.thinking_off")),
+        key=f"think-{task}", help=t("set.thinking_help"))
+    if int(lim_choice) != cur_lim or think_choice != cur_think:
+        save_setting(lim_key, int(lim_choice))
+        save_setting(think_key, think_choice)
+        st.rerun()
 
     if prov_choice != cur_prov or (model_choice != cur_model
                                    and model_choice != "—"):

@@ -213,6 +213,31 @@ def phrase_line(phrase: str, metrics: dict) -> str:
     return f"{phrase} (покупок {int(pur)})"
 
 
+TOP_PHRASES = 25
+
+
+def _trim_phrases(keep: list[str], kw_df: pd.DataFrame | None) -> list[str]:
+    """Топ-25 по весу + все must_keep, порядок исходного списка сохраняем.
+
+    Без таблицы обрезаем просто по числу: длинный список фраз раздувает
+    промпт и отъедает бюджет ответа."""
+    if len(keep) <= TOP_PHRASES:
+        return keep
+    if kw_df is None or kw_df.empty:
+        return keep[:TOP_PHRASES]
+    cols = kw_df.columns
+    p_col = "search_query" if "search_query" in cols else "phrase"
+    w_col = "weight" if "weight" in cols else "w"
+    if p_col not in cols or w_col not in cols or "tier" not in cols:
+        return keep[:TOP_PHRASES]
+    ranked = kw_df.sort_values(w_col, ascending=False)
+    top = {str(p) for p in ranked[p_col].head(TOP_PHRASES)}
+    must = {str(p) for p, tier in zip(ranked[p_col], ranked["tier"])
+            if tier == "must_keep"}
+    allowed = top | must
+    return [p for p in keep if p in allowed]
+
+
 def generate_split(title: str, marketplace: str,
                    skill_text: str, keep: list[str], forbid: list[str],
                    kw_df: pd.DataFrame | None = None) -> dict | None:
@@ -221,7 +246,11 @@ def generate_split(title: str, marketplace: str,
     kw_df — таблица фраз с фактами SQP: из неё в промпт уходят покупки
     и конверсия по каждой фразе, чтобы модель при выборе между фразами
     близкого веса предпочитала конвертирующие."""
+    # Промпт держим компактным: в него уходит топ-25 фраз по весу плюс ВСЕ
+    # must_keep (по ним идут покупки, терять нельзя даже если вес мал).
+    # Раньше уходила вся таблица — это раздувало запрос и съедало бюджет.
     metrics = kw_metrics(kw_df)
+    keep = _trim_phrases(keep, kw_df)
     kw_lines = []
     if keep:
         # про скобки говорим только когда метрики есть: без SQP их не будет,

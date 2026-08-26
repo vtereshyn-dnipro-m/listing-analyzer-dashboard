@@ -83,6 +83,21 @@ def no_credit_banner(task: str) -> None:
                      icon=":material/settings:")
 
 
+def task_limits(task: str) -> tuple[int, str]:
+    """(max_tokens, режим мышления) для задачи — из Настроек.
+
+    Расширенное мышление у моделей Claude 5 включено по умолчанию: если
+    max_tokens мал, весь бюджет уходит в thinking и до текста ответа дело
+    не доходит — приходит stop_reason=max_tokens с пустым текстом. Ровно
+    это и ломало сплит тайтлов при лимите 2000."""
+    try:
+        mt = int(float(get_setting(f"ai.max_tokens.{task}", "8000") or 8000))
+    except (TypeError, ValueError):
+        mt = 8000
+    mode = str(get_setting(f"ai.thinking.{task}", "adaptive") or "adaptive")
+    return max(1000, mt), ("disabled" if mode == "disabled" else "adaptive")
+
+
 def task_config(task: str) -> tuple[str, str]:
     """(provider, model) для задачи."""
     prov_default, model_default = DEFAULTS.get(task, ("gemini", "gemini-3.5-flash"))
@@ -150,8 +165,8 @@ def _clean_json(text: str) -> dict | None:
     return None
 
 
-def _call_gemini(model: str, prompt: str,
-                 imgs: list[tuple[str, bytes]], timeout: int) -> dict | None:
+def _call_gemini(model: str, prompt: str, imgs: list[tuple[str, bytes]],
+                 timeout: int, max_tokens: int = 8000) -> dict | None:
     key = cfg("GEMINI_API_KEY")
     if not key:
         st.error("GEMINI_API_KEY не найден в секретах.")
@@ -165,7 +180,8 @@ def _call_gemini(model: str, prompt: str,
         GEMINI_URL.format(model=model),
         headers={"x-goog-api-key": str(key).strip()},
         json={"contents": [{"parts": parts}],
-              "generationConfig": {"responseMimeType": "application/json"}},
+              "generationConfig": {"responseMimeType": "application/json",
+                                   "maxOutputTokens": max_tokens}},
         timeout=timeout,
     )
     if r.status_code != 200:
@@ -191,8 +207,21 @@ def _call_gemini(model: str, prompt: str,
     return data
 
 
-def _call_anthropic(model: str, prompt: str,
-                    imgs: list[tuple[str, bytes]], timeout: int) -> dict | None:
+def _anthropic_body(model: str, content: list, max_tokens: int,
+                    thinking: str) -> dict:
+    """Тело запроса к Anthropic. thinking=disabled отправляем явно: у моделей
+    Claude 5 мышление включено по умолчанию, а для форматной задачи оно
+    только съедает бюджет ответа."""
+    body = {"model": model, "max_tokens": max_tokens,
+            "messages": [{"role": "user", "content": content}]}
+    if thinking == "disabled":
+        body["thinking"] = {"type": "disabled"}
+    return body
+
+
+def _call_anthropic(model: str, prompt: str, imgs: list[tuple[str, bytes]],
+                    timeout: int, max_tokens: int = 8000,
+                    thinking: str = "adaptive") -> dict | None:
     key = cfg("ANTHROPIC_API_KEY")
     if not key:
         st.error("ANTHROPIC_API_KEY не найден в секретах.")
@@ -208,8 +237,7 @@ def _call_anthropic(model: str, prompt: str,
         headers={"x-api-key": str(key).strip(),
                  "anthropic-version": "2023-06-01",
                  "content-type": "application/json"},
-        json={"model": model, "max_tokens": 2000,
-              "messages": [{"role": "user", "content": content}]},
+        json=_anthropic_body(model, content, max_tokens, thinking),
         timeout=timeout,
     )
     if r.status_code != 200:
@@ -222,12 +250,17 @@ def _call_anthropic(model: str, prompt: str,
     text = "".join(b.get("text", "") for b in body.get("content", []))
     data = _clean_json(text)
     if data is None:
-        # HTTP 200 и пустой/неразобранный ответ раньше давали тихий None:
-        # stop_reason=max_tokens означает обрезанный JSON — это чинится лимитом
+        # что РЕАЛЬНО пришло: типы блоков и расход токенов. «Пустой текст
+        # при stop_reason=max_tokens» = весь бюджет ушёл в thinking
         stop = str(body.get("stop_reason") or "")
-        tail = f" · stop_reason={stop}" if stop else ""
-        _report(f"Anthropic {model}: ответ не JSON{tail} — "
-                + (text[:400] if text else "пустой текст"))
+        blocks = ", ".join(sorted({str(b.get("type")) for b
+                                   in body.get("content", [])})) or "нет блоков"
+        usage = body.get("usage") or {}
+        spent = (f"out={usage.get('output_tokens')}"
+                 if usage.get("output_tokens") is not None else "")
+        _report(f"Anthropic {model}: ответ не JSON · stop_reason={stop or '—'}"
+                f" · блоки: {blocks} · max_tokens={max_tokens} {spent} — "
+                + (text[:400] if text else "текста нет"))
         return None
     _clear_report()
     return data
@@ -239,14 +272,16 @@ def generate_json(task: str, prompt: str,
     """Вызов ИИ по задаче. Провайдер и модель берутся из Настроек.
     Возвращает распарсенный JSON или None (ошибка уже показана в UI)."""
     provider, model = task_config(task)
+    max_tokens, thinking = task_limits(task)
     imgs = _fetch_images(images or [])
     if images and not imgs:
         st.error("Не удалось загрузить ни одного изображения.")
         return None
     try:
         if provider == "anthropic":
-            return _call_anthropic(model, prompt, imgs, timeout)
-        return _call_gemini(model, prompt, imgs, timeout)
+            return _call_anthropic(model, prompt, imgs, timeout,
+                                   max_tokens, thinking)
+        return _call_gemini(model, prompt, imgs, timeout, max_tokens)
     except requests.Timeout:
         _report(f"{PROVIDER_NAME.get(provider, provider)} {model}: "
                 f"нет ответа за {timeout} с (таймаут)")
