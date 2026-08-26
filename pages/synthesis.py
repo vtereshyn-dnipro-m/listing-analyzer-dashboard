@@ -35,7 +35,7 @@ from services.serp import (
     VISIBLE_MOBILE, VISIBLE_DESKTOP,
 )
 from services.seo import (
-    build_keyword_table, coverage, compress_phrase,
+    build_keyword_table, coverage, compress_phrase, phrase_present,
     TIER_LABEL, TIER_COLOR, TIERS,
 )
 from services.flatfile import (
@@ -68,8 +68,9 @@ BASE_PROMPT = """Ты эксперт по Amazon-листингам бренда
 {title}
 
 ЗАДАЧА — сплит с сохранением поискового веса, а не просто обрезка:
-- title максимум {title_limit} символов
-- highlights максимум {highlights_limit} символов
+- title: целься в {title_target} символов. ЖЁСТКИЙ лимит {title_limit},
+  два символа — запас, промах по лимиту делает результат непригодным
+- highlights: целься в {highlights_target}, жёсткий лимит {highlights_limit}
 - dropped — что выброшено на ревью человеку
 
 ПОРЯДОК ПРИОРИТЕТОВ:
@@ -84,6 +85,11 @@ BASE_PROMPT = """Ты эксперт по Amazon-листингам бренда
    не помещаются, оставляй ту, у которой есть покупки: она приводит деньги,
    а фраза без покупок только собирает показы. Фразу с покупками не сокращай
    и не выбрасывай в пользу фразы с нулём покупок.
+
+7. ДЛИНА — ЖЁСТКОЕ ТРЕБОВАНИЕ. Прежде чем выдать ответ, посчитай длину
+   title и highlights В СИМВОЛАХ (с пробелами). Если хоть одна больше
+   лимита — сократи и пересчитай заново, и так пока не уложишься.
+   Сокращай за счёт менее ценных слов, а не за счёт фраз MUST KEEP.
 
 Ответь ТОЛЬКО валидным JSON без markdown:
 {{"title": "...", "highlights": "...", "dropped": ["...", "..."]}}"""
@@ -241,7 +247,8 @@ def _trim_phrases(keep: list[str], kw_df: pd.DataFrame | None) -> list[str]:
 
 def generate_split(title: str, marketplace: str,
                    skill_text: str, keep: list[str], forbid: list[str],
-                   kw_df: pd.DataFrame | None = None) -> dict | None:
+                   kw_df: pd.DataFrame | None = None,
+                   retry_note: str = "") -> dict | None:
     """Генерация сплита. Провайдер и модель — из Настроек (задача title_split).
 
     kw_df — таблица фраз с фактами SQP: из неё в промпт уходят покупки
@@ -273,8 +280,124 @@ def generate_split(title: str, marketplace: str,
         title=title,
         title_limit=TITLE_LIMIT,
         highlights_limit=HIGHLIGHTS_LIMIT,
+        title_target=max(1, TITLE_LIMIT - LENGTH_MARGIN),
+        highlights_target=max(1, HIGHLIGHTS_LIMIT - LENGTH_MARGIN),
     )
+    if retry_note:
+        prompt += "\n\n" + retry_note
     return generate_json("title_split", prompt, timeout=120)
+
+
+LENGTH_MARGIN = 2      # запас к лимиту, который просим у модели
+MAX_ATTEMPTS = 3       # первая попытка + два автоповтора
+
+
+def trim_to_word(text: str, limit: int) -> str:
+    """Обрезка строго по границе слова, никогда посреди слова.
+
+    Хвостовую пунктуацию и разделители убираем: «…1650W ·» выглядит
+    как обрыв, а не как законченный тайтл."""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit + 1]
+    if " " in cut:
+        cut = cut[:cut.rindex(" ")]
+    else:
+        cut = cut[:limit]           # одно слово длиннее лимита — режем как есть
+    return cut.rstrip(" ,;·—–-|/")
+
+
+def keeps_all(text: str, hl: str, keep: list[str]) -> bool:
+    """Все must_keep-фразы по-прежнему на месте (в title или highlights)."""
+    combined = f"{text} {hl}"
+    return all(phrase_present(p, combined) for p in keep)
+
+
+def enforce_limits(res: dict, must_keep: list[str]) -> tuple[dict, dict]:
+    """Последний рубеж: режем сами, но только если не теряем must_keep.
+
+    Возвращает (результат, отметки). Если обрезка убивает обязательную
+    фразу — НЕ режем: пусть человек правит руками, это честнее, чем
+    молча выбросить фразу, по которой идут покупки."""
+    marks = {"trimmed": [], "over": []}
+    out = dict(res)
+    for field, limit, key in (("title", TITLE_LIMIT, "title"),
+                              ("highlights", HIGHLIGHTS_LIMIT, "highlights")):
+        val = str(out.get(field) or "")
+        if len(val) <= limit:
+            continue
+        cand = trim_to_word(val, limit)
+        probe = dict(out)
+        probe[field] = cand
+        if cand and keeps_all(str(probe.get("title") or ""),
+                              str(probe.get("highlights") or ""), must_keep):
+            out[field] = cand
+            marks["trimmed"].append(key)
+        else:
+            marks["over"].append(key)
+    return out, marks
+
+
+def over_limits(res: dict) -> list[str]:
+    """Какие поля не влезли в лимит — для решения о повторе."""
+    bad = []
+    if len(str(res.get("title") or "")) > TITLE_LIMIT:
+        bad.append(f"title {len(str(res.get('title') or ''))}/{TITLE_LIMIT}")
+    if len(str(res.get("highlights") or "")) > HIGHLIGHTS_LIMIT:
+        bad.append("highlights "
+                   f"{len(str(res.get('highlights') or ''))}/{HIGHLIGHTS_LIMIT}")
+    return bad
+
+
+def retry_note(res: dict) -> str:
+    """Указание на повтор: насколько именно промахнулись и что делать."""
+    lines = []
+    for field, limit in (("title", TITLE_LIMIT),
+                         ("highlights", HIGHLIGHTS_LIMIT)):
+        n = len(str(res.get(field) or ""))
+        if n > limit:
+            lines.append(
+                f"Предыдущий вариант {field} был {n} символов при лимите "
+                f"{limit} — сократи РОВНО на {n - limit + LENGTH_MARGIN} "
+                "символов. Не добавляй новых слов, только убирай лишние "
+                "и сокращай единицы измерения.")
+    return "ПОВТОР. " + " ".join(lines) if lines else ""
+
+
+def generate_guarded(title: str, marketplace: str, skill_text: str,
+                     keep: list[str], forbid: list[str],
+                     kw_df: pd.DataFrame | None,
+                     must_keep: list[str]) -> tuple[dict | None, dict]:
+    """Генерация с гарантией длины: до трёх попыток, затем обрезка.
+
+    Модель промахивается по длине (77 при лимите 75), и человеку
+    приходилось жать «Перегенерировать» руками. Теперь: просим с запасом,
+    при промахе повторяем с точным указанием на сколько сократить,
+    и только после трёх неудач режем сами — по границе слова и не теряя
+    must_keep. Возвращает (результат, статистика)."""
+    stats = {"attempts": 0, "retried": 0, "trimmed": 0, "over": 0}
+    res = None
+    note = ""
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        stats["attempts"] += 1
+        res = generate_split(title, marketplace, skill_text, keep, forbid,
+                             kw_df=kw_df, retry_note=note)
+        if res is None:
+            return None, stats
+        if not over_limits(res):
+            return res, stats
+        if attempt < MAX_ATTEMPTS:
+            stats["retried"] += 1
+            note = retry_note(res)
+
+    res, marks = enforce_limits(res, must_keep)
+    if marks["trimmed"]:
+        stats["trimmed"] = 1
+        res["trimmed_fields"] = marks["trimmed"]
+    if marks["over"]:
+        stats["over"] = 1
+        res["over_fields"] = marks["over"]
+    return res, stats
 
 
 def run_checks(new_title: str, new_hl: str,
@@ -481,6 +604,7 @@ def save_coverage(asin: str, mp: str, cov: dict) -> None:
 def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
     """Пакетная генерация: только черновики, ничего не применяется."""
     done, failed = 0, 0
+    stats = {"attempts": 0, "retried": 0, "trimmed": 0, "over": 0}
     errors: list[str] = []
     bar = st.progress(0.0, text=t("synth.batch_run"))
     for i, x in enumerate(items, 1):
@@ -493,9 +617,13 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
             keep = kw.loc[kw["tier"].isin(["must_keep", "preferred"]),
                           "search_query"].tolist()
             forbid = kw.loc[kw["tier"] == "forbid", "search_query"].tolist()
+        must = (kw.loc[kw["tier"] == "must_keep", "search_query"].tolist()
+                if not kw.empty else [])
         try:
-            res = generate_split(title, mp, skill_text, keep, forbid,
-                                 kw_df=kw)
+            res, st_one = generate_guarded(title, mp, skill_text, keep, forbid,
+                                           kw, must)
+            for k in stats:
+                stats[k] += st_one.get(k, 0)
         except Exception as e:
             # раньше здесь было `except Exception: res = None` — причина
             # провала терялась без следа
@@ -516,7 +644,7 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
                 errors.append(f"{asin} ({mp}): {err}")
     bar.empty()
     st.cache_data.clear()
-    return {"done": done, "failed": failed, "errors": errors}
+    return {"done": done, "failed": failed, "errors": errors, "stats": stats}
 
 
 @st.cache_data(ttl=300)
@@ -788,6 +916,8 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
         after = str(res.get("title") or "")
         hl = str(res.get("highlights") or "")
         dropped = res.get("dropped") or []
+        trimmed = res.get("trimmed_fields") or []
+        over = res.get("over_fields") or []
         cov = None
         skill_v = skill_version
     elif draft is not None:
@@ -796,6 +926,7 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
         dropped = [d for d in str(draft.get("dropped") or "").split("; ") if d]
         cov = draft.get("coverage_score")
         skill_v = int(draft.get("skill_version") or 0)
+        trimmed, over = [], []
     else:
         return
     if not after:
@@ -835,6 +966,13 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
                                esc(hl), True)
         st.markdown(body, unsafe_allow_html=True)
         st.caption(t("synth.diff_hint"))
+        # обрезанный нами вариант помечаем явно: человек должен видеть,
+        # что часть текста убрал код, а не модель
+        if trimmed:
+            st.warning("✂ " + t("synth.trimmed_note",
+                                fields=", ".join(trimmed)))
+        if over:
+            st.error("⚠ " + t("synth.over_note", fields=", ".join(over)))
 
         # выброшенное занимало три строки и оттесняло кнопки вниз
         if dropped:
@@ -980,6 +1118,13 @@ with tab_queue:
         if _out["done"]:
             st.success(t("synth.batch_done", done=_out["done"],
                          failed=_out["failed"]))
+            _s = _out.get("stats") or {}
+            if _s.get("attempts"):
+                st.caption(t("synth.guard_stats", att=_s["attempts"],
+                             n=_out["done"] + _out["failed"],
+                             retried=_s.get("retried", 0),
+                             trimmed=_s.get("trimmed", 0),
+                             over=_s.get("over", 0)))
         else:
             st.error(t("synth.batch_all_failed", failed=_out["failed"]))
         for _line in _out.get("errors", [])[:5]:
@@ -1108,10 +1253,12 @@ with tab_queue:
                 if st.button(t("synth.generate"), type="primary",
                              key=f"gen-{asin}-{mp}"):
                     with st.spinner(f"Режу по методологии v{skill_version}..."):
-                        res = generate_split(title, mp, skill_text,
-                                             keep_list, forbid_list,
-                                             kw_df=kw_edit if not kw_edit.empty
-                                             else kw)
+                        _must = (kw.loc[kw["tier"] == "must_keep",
+                                        "search_query"].tolist()
+                                 if not kw.empty else [])
+                        res, _st = generate_guarded(
+                            title, mp, skill_text, keep_list, forbid_list,
+                            kw_edit if not kw_edit.empty else kw, _must)
                     if res:
                         save_draft(asin, mp, title, res, skill_version)
                         if not kw.empty:
@@ -1198,8 +1345,11 @@ with tab_review:
                     forbid = kw.loc[kw["tier"] == "forbid",
                                     "search_query"].tolist()
                 with st.spinner(t("synth.regenerate")):
-                    res = generate_split(before, mp, skill_text, keep,
-                                         forbid, kw_df=kw)
+                    _rmust = (kw.loc[kw["tier"] == "must_keep",
+                                     "search_query"].tolist()
+                              if not kw.empty else [])
+                    res, _rst = generate_guarded(before, mp, skill_text, keep,
+                                                 forbid, kw, _rmust)
                 if res:
                     save_draft(asin, mp, before, res, skill_version)
                     if not kw.empty:
@@ -1340,10 +1490,12 @@ with tab_any:
                 if st.button(t("synth.generate"), type="primary",
                              key=f"any-gen-{a_asin}-{a_mp}"):
                     with st.spinner(f"Режу по методологии v{skill_version}..."):
-                        ares = generate_split(a_title, a_mp, skill_text,
-                                              a_keep, a_forbid,
-                                              kw_df=a_edit
-                                              if not a_edit.empty else a_kw)
+                        _amust = (a_kw.loc[a_kw["tier"] == "must_keep",
+                                          "search_query"].tolist()
+                                  if not a_kw.empty else [])
+                        ares, _ast = generate_guarded(
+                            a_title, a_mp, skill_text, a_keep, a_forbid,
+                            a_edit if not a_edit.empty else a_kw, _amust)
                     if ares:
                         save_draft(a_asin, a_mp, a_title, ares, skill_version)
                         if not a_kw.empty:
