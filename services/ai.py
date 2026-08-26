@@ -103,13 +103,51 @@ def _fetch_images(urls: list[str]) -> list[tuple[str, bytes]]:
     return out
 
 
+# последняя ошибка вызова — в session_state, потому что st.error не
+# переживает st.rerun(): страница перерисовывается и сообщение пропадает.
+# Именно так провалы и оставались молчаливыми.
+LAST_CALL_KEY = "ai.last_call_error"
+
+
+def _report(detail: str) -> None:
+    """Показать ошибку сейчас и запомнить, чтобы пережила перерисовку."""
+    try:
+        st.session_state[LAST_CALL_KEY] = detail
+    except Exception:
+        pass
+    st.error(detail)
+
+
+def _clear_report() -> None:
+    try:
+        st.session_state.pop(LAST_CALL_KEY, None)
+    except Exception:
+        pass
+
+
+def last_call_error() -> str | None:
+    """Текст последней ошибки вызова ИИ (переживает rerun)."""
+    try:
+        return st.session_state.get(LAST_CALL_KEY)
+    except Exception:
+        return None
+
+
 def _clean_json(text: str) -> dict | None:
-    t = text.strip()
+    t = (text or "").strip()
     t = t.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
     try:
         return json.loads(t)
     except Exception:
-        return None
+        pass
+    # модель часто добавляет фразу до/после JSON — вытаскиваем тело по скобкам
+    i, j = t.find("{"), t.rfind("}")
+    if 0 <= i < j:
+        try:
+            return json.loads(t[i:j + 1])
+        except Exception:
+            return None
+    return None
 
 
 def _call_gemini(model: str, prompt: str,
@@ -133,10 +171,24 @@ def _call_gemini(model: str, prompt: str,
     if r.status_code != 200:
         if _is_no_credit(r.status_code, r.text):
             _set_last_error("gemini", "no_credit")
-        st.error(f"Gemini HTTP {r.status_code}: {r.text[:300]}")
+        _report(f"Gemini HTTP {r.status_code} · {model}: {r.text[:400]}")
         return None
     _set_last_error("gemini", None)
-    return _clean_json(r.json()["candidates"][0]["content"]["parts"][0]["text"])
+    try:
+        cand = r.json()["candidates"][0]
+        text = cand["content"]["parts"][0]["text"]
+    except Exception:
+        _report(f"Gemini {model}: ответ без текста — {r.text[:400]}")
+        return None
+    data = _clean_json(text)
+    if data is None:
+        # HTTP 200, но тело не разобралось — раньше это молчало полностью
+        reason = str(cand.get("finishReason") or "")
+        tail = f" · finishReason={reason}" if reason else ""
+        _report(f"Gemini {model}: ответ не JSON{tail} — {text[:400]}")
+        return None
+    _clear_report()
+    return data
 
 
 def _call_anthropic(model: str, prompt: str,
@@ -163,11 +215,22 @@ def _call_anthropic(model: str, prompt: str,
     if r.status_code != 200:
         if _is_no_credit(r.status_code, r.text):
             _set_last_error("anthropic", "no_credit")
-        st.error(f"Anthropic HTTP {r.status_code}: {r.text[:300]}")
+        _report(f"Anthropic HTTP {r.status_code} · {model}: {r.text[:400]}")
         return None
     _set_last_error("anthropic", None)
-    text = "".join(b.get("text", "") for b in r.json().get("content", []))
-    return _clean_json(text)
+    body = r.json()
+    text = "".join(b.get("text", "") for b in body.get("content", []))
+    data = _clean_json(text)
+    if data is None:
+        # HTTP 200 и пустой/неразобранный ответ раньше давали тихий None:
+        # stop_reason=max_tokens означает обрезанный JSON — это чинится лимитом
+        stop = str(body.get("stop_reason") or "")
+        tail = f" · stop_reason={stop}" if stop else ""
+        _report(f"Anthropic {model}: ответ не JSON{tail} — "
+                + (text[:400] if text else "пустой текст"))
+        return None
+    _clear_report()
+    return data
 
 
 def generate_json(task: str, prompt: str,
@@ -184,6 +247,11 @@ def generate_json(task: str, prompt: str,
         if provider == "anthropic":
             return _call_anthropic(model, prompt, imgs, timeout)
         return _call_gemini(model, prompt, imgs, timeout)
+    except requests.Timeout:
+        _report(f"{PROVIDER_NAME.get(provider, provider)} {model}: "
+                f"нет ответа за {timeout} с (таймаут)")
+        return None
     except Exception as e:
-        st.error(f"Ошибка вызова ИИ ({provider}/{model}): {e}")
+        _report(f"Ошибка вызова ИИ ({provider}/{model}): "
+                f"{type(e).__name__}: {e}")
         return None 
