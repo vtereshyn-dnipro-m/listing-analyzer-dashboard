@@ -24,7 +24,9 @@ from config import TITLE_LIMIT as _TL_DEFAULT, HIGHLIGHTS_LIMIT as _HL_DEFAULT
 from i18n import t
 from services.db import get_conn, cfg
 from services.settings import get_setting, get_int
-from services.ai import generate_json, task_config, no_credit_banner
+from services.ai import (
+    generate_json, task_config, no_credit_banner, last_call_error,
+)
 from services.economics import econ_map, money_at_risk, fmt_money
 from services.serp import (
     readability, facts_extracted, render_serp_row,
@@ -449,6 +451,7 @@ def save_coverage(asin: str, mp: str, cov: dict) -> None:
 def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
     """Пакетная генерация: только черновики, ничего не применяется."""
     done, failed = 0, 0
+    errors: list[str] = []
     bar = st.progress(0.0, text=t("synth.batch_run"))
     for i, x in enumerate(items, 1):
         r = x["r"]
@@ -463,8 +466,11 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
         try:
             res = generate_split(title, mp, skill_text, keep, forbid,
                                  kw_df=kw)
-        except Exception:
+        except Exception as e:
+            # раньше здесь было `except Exception: res = None` — причина
+            # провала терялась без следа
             res = None
+            errors.append(f"{asin} ({mp}): {type(e).__name__}: {e}")
         if res:
             save_draft(asin, mp, title, res, skill_version)
             if not kw.empty:
@@ -473,9 +479,14 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
             done += 1
         else:
             failed += 1
+            # ошибку уже показал слой ИИ, но st.rerun() её сотрёт —
+            # забираем текст с собой, чтобы показать после перерисовки
+            err = last_call_error()
+            if err and (not errors or errors[-1] != f"{asin} ({mp}): {err}"):
+                errors.append(f"{asin} ({mp}): {err}")
     bar.empty()
     st.cache_data.clear()
-    return {"done": done, "failed": failed}
+    return {"done": done, "failed": failed, "errors": errors}
 
 
 @st.cache_data(ttl=300)
@@ -851,9 +862,24 @@ with tab_queue:
                  disabled=not _top,
                  help=None if _top else t("synth.batch_none")):
         res = batch_generate(_top, skill_text, skill_version)
-        st.success(t("synth.batch_done", done=res["done"],
-                     failed=res["failed"]))
+        # st.rerun() стирает всё, что нарисовал этот прогон, включая
+        # st.error слоя ИИ — поэтому итог кладём в session_state
+        # и показываем уже ПОСЛЕ перерисовки
+        st.session_state["batch_outcome"] = res
         st.rerun()
+    # итог прошлой партии — переживает st.rerun(), поэтому ошибки видны
+    _out = st.session_state.pop("batch_outcome", None)
+    if _out:
+        if _out["done"]:
+            st.success(t("synth.batch_done", done=_out["done"],
+                         failed=_out["failed"]))
+        else:
+            st.error(t("synth.batch_all_failed", failed=_out["failed"]))
+        for _line in _out.get("errors", [])[:5]:
+            st.code(_line, language=None)
+        if len(_out.get("errors", [])) > 5:
+            st.caption(f"… ещё {len(_out['errors']) - 5}")
+
     b3.caption(t("synth.batch_hint") + " · "
                + t("synth.batch_pending", n=len(_pending)))
 
