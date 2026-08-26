@@ -641,6 +641,10 @@ st.markdown(
     unsafe_allow_html=True)
 
 pending = load_drafts_for_review()
+# черновики по паре — чтобы в очереди показать «было/стало» без перехода
+# на вкладку разбора; после перезагрузки страницы результат не теряется
+PENDING_MAP = ({(r["asin"], r["marketplace"]): r for _, r in pending.iterrows()}
+               if not pending.empty else {})
 all_products = load_all_products()
 tab_queue, tab_review, tab_any = st.tabs([
     f"{t('synth.tab_queue')} · {len(rows)}",
@@ -688,6 +692,62 @@ def render_card_head(x: dict) -> None:
         unsafe_allow_html=True)
 
 
+def render_result(asin: str, mp: str, before: str, draft) -> None:
+    """Блок «было / стало» с длинами и кнопкой «Принять».
+
+    Источник — свежий результат из session_state, иначе последний
+    несогласованный черновик из synthesis_drafts: после перезагрузки
+    страницы человек должен видеть то же, что видел до неё."""
+    res = st.session_state.get(f"res-{asin}-{mp}")
+    if res:
+        after = str(res.get("title") or "")
+        hl = str(res.get("highlights") or "")
+        dropped = res.get("dropped") or []
+        cov = None
+        skill_v = skill_version
+    elif draft is not None:
+        after = str(draft.get("title_after") or "")
+        hl = str(draft.get("highlights_after") or "")
+        dropped = [d for d in str(draft.get("dropped") or "").split("; ") if d]
+        cov = draft.get("coverage_score")
+        skill_v = int(draft.get("skill_version") or 0)
+    else:
+        return
+    if not after:
+        return
+
+    checks = run_checks(after, hl, [], [])
+    failed = [m for ok, m in checks if not ok]
+
+    st.markdown(eyebrow(t("synth.result")), unsafe_allow_html=True)
+    st.markdown(f"**{t('synth.was')}** · {len(before)} {t('synth.chars')}")
+    st.code(before, language=None)
+    st.markdown(f"**{t('synth.became')}** · title {len(after)}/{TITLE_LIMIT} · "
+                f"highlights {len(hl)}/{HIGHLIGHTS_LIMIT}")
+    st.code(after, language=None)
+    if hl:
+        st.code(hl, language=None)
+    if dropped:
+        st.caption(f"{t('synth.dropped')}: " + " · ".join(dropped))
+    st.markdown(" · ".join(("✅ " if ok else "❌ ") + m for ok, m in checks))
+
+    a1, a2, a3 = st.columns([1.4, 1.4, 4])
+    if a1.button(t("synth.accept_short"), type="primary", disabled=bool(failed),
+                 help=None if not failed else t("synth.fix_first"),
+                 key=f"q-acc-{asin}-{mp}"):
+        if accept_change(asin, mp, before,
+                         {"title": after, "highlights": hl, "dropped": dropped},
+                         cov, skill_v, GEMINI_MODEL):
+            st.session_state.pop(f"res-{asin}-{mp}", None)
+            st.success(t("synth.accepted_ok"))
+            st.rerun()
+    if a2.button(t("synth.regenerate"), key=f"q-re-{asin}-{mp}"):
+        st.session_state.pop(f"res-{asin}-{mp}", None)
+        st.rerun()
+    if cov is not None and not pd.isna(cov):
+        a3.caption(f"Coverage {float(cov):.0f}%")
+
+
 # ================================================================ очередь
 with tab_queue:
     # Кнопки сегмента переносились на вторую строку — «принято» уезжало вниз
@@ -713,8 +773,11 @@ with tab_queue:
         '</style>',
         unsafe_allow_html=True)
 
+    # Фильтр «все / с SQP / без черновика / принято» убран: человек открывает
+    # страницу работать, а его заставляли сначала выбрать режим. Путь теперь
+    # один: открыл -> сгенерировал -> посмотрел было/стало -> принял -> выгрузил.
     with st.container(key="syn_filters"):
-        f1, f2, f3, f4 = st.columns([2.0, 1.4, 3.2, 1.7])
+        f1, f2, f3 = st.columns([4.0, 1.8, 1.7])
         query = f1.text_input("q", label_visibility="collapsed",
                               placeholder=t("synth.search"))
         mps = sorted({x["r"]["marketplace"] for x in rows})
@@ -722,28 +785,14 @@ with tab_queue:
                                 label_visibility="collapsed",
                                 placeholder=t("list.all_mp"))
         try:
-            scope = f3.segmented_control(
-                "фильтр", ["all", "sqp", "todo", "done"], default="all",
-                format_func=lambda k: {"all": t("work.all"),
-                                       "sqp": t("work.with_sqp"),
-                                       "todo": t("work.no_draft"),
-                                       "done": t("work.accepted")}[k],
-                selection_mode="single", label_visibility="collapsed",
-                key="syn-scope", help=t("synth.batch_hint"))
-        except AttributeError:
-            scope = f3.radio("фильтр", ["all", "sqp", "todo", "done"],
-                             horizontal=True,
-                             label_visibility="collapsed", key="syn-scope")
-        scope = scope or "all"
-        try:
-            q_mode = f4.segmented_control(
+            q_mode = f3.segmented_control(
                 "вид", ["cards", "table"], default="cards",
                 format_func=lambda k: t("list.cards") if k == "cards"
                 else t("list.table"),
                 selection_mode="single", label_visibility="collapsed",
                 key="syn-mode")
         except AttributeError:
-            q_mode = f4.radio("вид", ["cards", "table"], horizontal=True,
+            q_mode = f3.radio("вид", ["cards", "table"], horizontal=True,
                               label_visibility="collapsed", key="syn-mode")
         q_mode = q_mode or "cards"
 
@@ -753,16 +802,20 @@ with tab_queue:
     # не попадает — иначе выгрузка молча теряла бы строки.
     _day = pd.Timestamp.now().strftime("%Y-%m-%d")
     _acc = load_accepted_titles(tuple(mp_sel) if mp_sel else None)
-    e1, e2, e3 = st.columns([2, 2, 4])
+    e1, e2, e3 = st.columns([2.2, 2, 4])
     if _acc.empty:
+        # неактивны и с прямой подсказкой, что сделать: раньше две серые
+        # кнопки просто терялись и было непонятно, почему они не нажимаются
         e1.button(t("export.flat"), disabled=True, key="exp-flat-none",
-                  help=t("export.nothing"))
+                  help=t("export.accept_first"))
         e2.button(t("export.csv"), disabled=True, key="exp-csv-none")
-        e3.caption(t("export.nothing"))
+        e3.caption(f'{t("export.nothing")} — {t("export.accept_first")}')
     else:
+        # есть что выгружать — основная кнопка страницы, выделена цветом
         _fname, _fmime, _fdata = build_flat_export(_acc, _day)
-        e1.download_button(f'{t("export.flat")} · {len(_acc)}', _fdata,
-                           file_name=_fname, mime=_fmime, key="exp-flat")
+        e1.download_button(f'⬇ {t("export.flat")} · {len(_acc)}', _fdata,
+                           file_name=_fname, mime=_fmime, key="exp-flat",
+                           type="primary")
         _cname, _cmime, _cdata = build_csv_export(_acc, _day)
         e2.download_button(t("export.csv"), _cdata, file_name=_cname,
                            mime=_cmime, key="exp-csv")
@@ -775,12 +828,6 @@ with tab_queue:
     view = rows
     if mp_sel:
         view = [x for x in view if x["r"]["marketplace"] in mp_sel]
-    if scope == "sqp":
-        view = [x for x in view if x["sqp_state"] == "ready"]
-    elif scope == "todo":
-        view = [x for x in view if not x["draft"].get("drafts")]
-    elif scope == "done":
-        view = [x for x in view if x["accepted"]]
     if query.strip():
         q = query.strip().lower()
         view = [x for x in view
@@ -796,7 +843,7 @@ with tab_queue:
                 if not x["draft"].get("drafts")]
     b1, b2, b3 = st.columns([1.4, 2.2, 4])
     batch_n = b1.selectbox(
-        "партия", [10, 20, 50, 100, 0], index=1,
+        "партия", [5, 10, 20, 50, 100, 0], index=2,
         format_func=lambda n: t("synth.batch_all") if n == 0 else f"top-{n}",
         label_visibility="collapsed", key="batch-n")
     _top = _pending if batch_n == 0 else _pending[:batch_n]
@@ -900,6 +947,10 @@ with tab_queue:
                                      left_label=f"{TITLE_LIMIT} {t('ruler.limit')}",
                                      right_label=f"+{x['over']} {t('ruler.cut')}"),
                     unsafe_allow_html=True)
+
+                # Результат — СРАЗУ под оригиналом, до таблицы фраз: раньше
+                # черновик уезжал на другую вкладку, за 25 строк SQP.
+                render_result(asin, mp, title, PENDING_MAP.get((asin, mp)))
 
                 st.markdown(eyebrow(t("synth.keywords")),
                             unsafe_allow_html=True)
