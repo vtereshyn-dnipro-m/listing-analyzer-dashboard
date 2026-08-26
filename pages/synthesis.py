@@ -76,6 +76,11 @@ BASE_PROMPT = """Ты эксперт по Amazon-листингам бренда
    milímetros → mm, Newton-metros → Nm, voltios → V. Сокращай, а не выбрасывай.
 4. Фразы FORBID не должны появиться ни в title, ни в highlights.
 5. Всё, что не влезло, перечисли в dropped — человек решит.
+6. КОНВЕРСИЯ ВАЖНЕЕ ПОКАЗОВ. У фраз в скобках указаны покупки за 4 недели
+   и конверсия (покупки / клики). Когда две фразы близки по весу и обе
+   не помещаются, оставляй ту, у которой есть покупки: она приводит деньги,
+   а фраза без покупок только собирает показы. Фразу с покупками не сокращай
+   и не выбрасывай в пользу фразы с нулём покупок.
 
 Ответь ТОЛЬКО валидным JSON без markdown:
 {{"title": "...", "highlights": "...", "dropped": ["...", "..."]}}"""
@@ -166,13 +171,64 @@ def load_keywords(asin: str, mp: str) -> pd.DataFrame:
 
 # ---------------------------------------------------------------- генерация
 
+def kw_metrics(kw_df: pd.DataFrame | None) -> dict:
+    """фраза -> (покупки, клики). Таблица приходит в двух видах: как её
+    отдаёт services.seo (search_query / purchases / clicks) и как её
+    переименовал kw_editor для показа (phrase / pur / clk)."""
+    if kw_df is None or kw_df.empty:
+        return {}
+    cols = kw_df.columns
+    p_col = "search_query" if "search_query" in cols else "phrase"
+    pur_col = "purchases" if "purchases" in cols else "pur"
+    clk_col = "clicks" if "clicks" in cols else "clk"
+    if p_col not in cols or pur_col not in cols:
+        return {}
+    out = {}
+    for _, r in kw_df.iterrows():
+        pur = r.get(pur_col)
+        clk = r.get(clk_col)
+        out[str(r[p_col])] = (
+            0.0 if pd.isna(pur) else float(pur),
+            0.0 if clk is None or pd.isna(clk) else float(clk),
+        )
+    return out
+
+
+def phrase_line(phrase: str, metrics: dict) -> str:
+    """«фраза (покупок 12, конверсия 8,0%)» — конверсионный сигнал модели.
+
+    Конверсия = покупки / клики: фраза может собирать показы и клики, но
+    не приводить заказы, и при равном весе она должна уступать."""
+    m = metrics.get(phrase)
+    if not m:
+        return phrase
+    pur, clk = m
+    if pur <= 0:
+        return f"{phrase} (покупок 0)"
+    if clk > 0:
+        conv = f"{pur / clk * 100:.1f}".replace(".", ",")
+        return f"{phrase} (покупок {int(pur)}, конверсия {conv}%)"
+    return f"{phrase} (покупок {int(pur)})"
+
+
 def generate_split(title: str, marketplace: str,
-                   skill_text: str, keep: list[str], forbid: list[str]) -> dict | None:
-    """Генерация сплита. Провайдер и модель — из Настроек (задача title_split)."""
+                   skill_text: str, keep: list[str], forbid: list[str],
+                   kw_df: pd.DataFrame | None = None) -> dict | None:
+    """Генерация сплита. Провайдер и модель — из Настроек (задача title_split).
+
+    kw_df — таблица фраз с фактами SQP: из неё в промпт уходят покупки
+    и конверсия по каждой фразе, чтобы модель при выборе между фразами
+    близкого веса предпочитала конвертирующие."""
+    metrics = kw_metrics(kw_df)
     kw_lines = []
     if keep:
-        kw_lines.append("ОБЯЗАТЕЛЬНО сохрани дословно (в title или highlights): "
-                        + "; ".join(keep))
+        # про скобки говорим только когда метрики есть: без SQP их не будет,
+        # и обещание в промпте оказалось бы ложным
+        head = ("ОБЯЗАТЕЛЬНО сохрани дословно (в title или highlights); "
+                "в скобках — покупки за 4 недели и конверсия (покупки/клики): "
+                if metrics else
+                "ОБЯЗАТЕЛЬНО сохрани дословно (в title или highlights): ")
+        kw_lines.append(head + "; ".join(phrase_line(p, metrics) for p in keep))
     if forbid:
         kw_lines.append("ЗАПРЕЩЕНО использовать: " + "; ".join(forbid))
     keywords_block = "\n".join(kw_lines) if kw_lines else ""
@@ -405,7 +461,8 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
                           "search_query"].tolist()
             forbid = kw.loc[kw["tier"] == "forbid", "search_query"].tolist()
         try:
-            res = generate_split(title, mp, skill_text, keep, forbid)
+            res = generate_split(title, mp, skill_text, keep, forbid,
+                                 kw_df=kw)
         except Exception:
             res = None
         if res:
@@ -837,7 +894,9 @@ with tab_queue:
                              key=f"gen-{asin}-{mp}"):
                     with st.spinner(f"Режу по методологии v{skill_version}..."):
                         res = generate_split(title, mp, skill_text,
-                                             keep_list, forbid_list)
+                                             keep_list, forbid_list,
+                                             kw_df=kw_edit if not kw_edit.empty
+                                             else kw)
                     if res:
                         save_draft(asin, mp, title, res, skill_version)
                         if not kw.empty:
@@ -924,7 +983,8 @@ with tab_review:
                     forbid = kw.loc[kw["tier"] == "forbid",
                                     "search_query"].tolist()
                 with st.spinner(t("synth.regenerate")):
-                    res = generate_split(before, mp, skill_text, keep, forbid)
+                    res = generate_split(before, mp, skill_text, keep,
+                                         forbid, kw_df=kw)
                 if res:
                     save_draft(asin, mp, before, res, skill_version)
                     if not kw.empty:
@@ -1066,7 +1126,9 @@ with tab_any:
                              key=f"any-gen-{a_asin}-{a_mp}"):
                     with st.spinner(f"Режу по методологии v{skill_version}..."):
                         ares = generate_split(a_title, a_mp, skill_text,
-                                              a_keep, a_forbid)
+                                              a_keep, a_forbid,
+                                              kw_df=a_edit
+                                              if not a_edit.empty else a_kw)
                     if ares:
                         save_draft(a_asin, a_mp, a_title, ares, skill_version)
                         if not a_kw.empty:
