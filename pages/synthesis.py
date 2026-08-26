@@ -633,53 +633,62 @@ def render_card_head(x: dict) -> None:
 
 # ================================================================ очередь
 with tab_queue:
-    b1, b2, b3 = st.columns([1.6, 2, 3])
-    batch_n = b1.selectbox("партия", [10, 20, 50], index=1,
-                           format_func=lambda n: f"top-{n}",
-                           label_visibility="collapsed", key="batch-n")
-    if b2.button(f"{t('synth.batch_run')} ({batch_n})", type="primary"):
-        top = [x for x in sorted(rows, key=lambda z: -z["risk"])
-               if not x["draft"].get("drafts")][:batch_n]
-        if not top:
-            st.info(t("synth.batch_none"))
-        else:
-            res = batch_generate(top, skill_text, skill_version)
-            st.success(t("synth.batch_done", done=res["done"],
-                         failed=res["failed"]))
-            st.rerun()
-    b3.caption(t("synth.batch_hint"))
+    # Кнопки сегмента переносились на вторую строку — «принято» уезжало вниз
+    # и выглядело сломанным элементом. Держим строку целой: запрещаем
+    # перенос внутри группы кнопок и ужимаем отступы. Колонки Streamlit
+    # при этом сжимаются по контенту, а не растягиваются на всю ширину.
+    st.markdown(
+        '<style>'
+        '.st-key-syn_filters div[data-testid="stHorizontalBlock"]'
+        '{flex-wrap:nowrap;gap:8px;align-items:center;}'
+        # у группы кнопок display:block, поэтому одного flex-wrap мало —
+        # переводим её во flex; сами кнопки лежат во ВЛОЖЕННОМ div, перенос
+        # запрещаем и ему, иначе «принято» и «Таблица» уезжают на вторую строку
+        '.st-key-syn_filters div[data-testid="stButtonGroup"]'
+        '{display:flex !important;flex-wrap:nowrap !important;gap:2px;}'
+        '.st-key-syn_filters div[data-testid="stButtonGroup"] > div'
+        '{display:flex !important;flex-wrap:nowrap !important;}'
+        '.st-key-syn_filters div[data-testid="stButtonGroup"] button'
+        '{padding-left:10px !important;padding-right:10px !important;'
+        'white-space:nowrap !important;}'
+        '.st-key-syn_filters div[data-testid="stButtonGroup"] p'
+        '{font-size:13px !important;white-space:nowrap !important;}'
+        '</style>',
+        unsafe_allow_html=True)
 
-    f1, f2, f3, f4 = st.columns([2.6, 1.7, 2.2, 1.5])
-    query = f1.text_input("q", label_visibility="collapsed",
-                          placeholder=t("synth.search"))
-    mps = sorted({x["r"]["marketplace"] for x in rows})
-    mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
-                            placeholder=t("list.all_mp"))
-    try:
-        scope = f3.segmented_control(
-            "фильтр", ["all", "sqp", "todo", "done"], default="all",
-            format_func=lambda k: {"all": t("work.all"),
-                                   "sqp": t("work.with_sqp"),
-                                   "todo": t("work.no_draft"),
-                                   "done": t("work.accepted")}[k],
-            selection_mode="single", label_visibility="collapsed",
-            key="syn-scope", help=t("synth.batch_hint"))
-    except AttributeError:
-        scope = f3.radio("фильтр", ["all", "sqp", "todo", "done"],
-                         horizontal=True,
-                         label_visibility="collapsed", key="syn-scope")
-    scope = scope or "all"
-    try:
-        q_mode = f4.segmented_control(
-            "вид", ["cards", "table"], default="cards",
-            format_func=lambda k: t("list.cards") if k == "cards"
-            else t("list.table"),
-            selection_mode="single", label_visibility="collapsed",
-            key="syn-mode")
-    except AttributeError:
-        q_mode = f4.radio("вид", ["cards", "table"], horizontal=True,
-                          label_visibility="collapsed", key="syn-mode")
-    q_mode = q_mode or "cards"
+    with st.container(key="syn_filters"):
+        f1, f2, f3, f4 = st.columns([2.0, 1.4, 3.2, 1.7])
+        query = f1.text_input("q", label_visibility="collapsed",
+                              placeholder=t("synth.search"))
+        mps = sorted({x["r"]["marketplace"] for x in rows})
+        mp_sel = f2.multiselect("MP", mps, default=[],
+                                label_visibility="collapsed",
+                                placeholder=t("list.all_mp"))
+        try:
+            scope = f3.segmented_control(
+                "фильтр", ["all", "sqp", "todo", "done"], default="all",
+                format_func=lambda k: {"all": t("work.all"),
+                                       "sqp": t("work.with_sqp"),
+                                       "todo": t("work.no_draft"),
+                                       "done": t("work.accepted")}[k],
+                selection_mode="single", label_visibility="collapsed",
+                key="syn-scope", help=t("synth.batch_hint"))
+        except AttributeError:
+            scope = f3.radio("фильтр", ["all", "sqp", "todo", "done"],
+                             horizontal=True,
+                             label_visibility="collapsed", key="syn-scope")
+        scope = scope or "all"
+        try:
+            q_mode = f4.segmented_control(
+                "вид", ["cards", "table"], default="cards",
+                format_func=lambda k: t("list.cards") if k == "cards"
+                else t("list.table"),
+                selection_mode="single", label_visibility="collapsed",
+                key="syn-mode")
+        except AttributeError:
+            q_mode = f4.radio("вид", ["cards", "table"], horizontal=True,
+                              label_visibility="collapsed", key="syn-mode")
+        q_mode = q_mode or "cards"
 
     # ---- выгрузка принятых тайтлов для загрузки в Amazon
     # Берём из listing_changes, а не из очереди: правку могли принять на
@@ -721,6 +730,28 @@ with tab_queue:
                 if q in str(x["r"]["asin"]).lower()
                 or q in str(x["r"].get("sku_group") or "").lower()
                 or q in str(x["r"]["title"] or "").lower()]
+
+    # ---- пакетная генерация: партия берётся из ТЕКУЩЕЙ выборки, поэтому
+    # блок стоит после фильтров. Раньше он был выше и молча работал по всей
+    # очереди — «top-20» на отфильтрованном экране означал другие товары.
+    # Товары с черновиком пропускаем: перегенерировать их незачем.
+    _pending = [x for x in sorted(view, key=lambda z: -z["risk"])
+                if not x["draft"].get("drafts")]
+    b1, b2, b3 = st.columns([1.4, 2.2, 4])
+    batch_n = b1.selectbox(
+        "партия", [10, 20, 50, 100, 0], index=1,
+        format_func=lambda n: t("synth.batch_all") if n == 0 else f"top-{n}",
+        label_visibility="collapsed", key="batch-n")
+    _top = _pending if batch_n == 0 else _pending[:batch_n]
+    if b2.button(f"{t('synth.batch_run')} ({len(_top)})", type="primary",
+                 disabled=not _top,
+                 help=None if _top else t("synth.batch_none")):
+        res = batch_generate(_top, skill_text, skill_version)
+        st.success(t("synth.batch_done", done=res["done"],
+                     failed=res["failed"]))
+        st.rerun()
+    b3.caption(t("synth.batch_hint") + " · "
+               + t("synth.batch_pending", n=len(_pending)))
 
     if not view:
         st.caption(t("catalog.nothing"))
