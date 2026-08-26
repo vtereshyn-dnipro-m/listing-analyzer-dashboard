@@ -83,8 +83,10 @@ def facts_extracted(title: str, highlights: str = "") -> dict:
 
 def render_serp_row(title: str, limit: int, label: str, note_ok: str) -> str:
     """Одна карточка выдачи: видимая часть зелёным, обрезанная — оранжевым."""
-    t = str(title or "")
-    visible, cut = t[:limit], t[limit:]
+    # переменную нельзя звать t: перекрывает функцию перевода t() ниже —
+    # на обрезанном тайтле это давало TypeError: 'str' object is not callable
+    text = str(title or "")
+    visible, cut = text[:limit], text[limit:]
     body = (f'<span style="background:{OK_BG};">{esc(visible)}</span>'
             + (f'<span style="background:{CUT_BG};color:{MUTED};">'
                f'{esc(cut)}…</span>' if cut else ""))

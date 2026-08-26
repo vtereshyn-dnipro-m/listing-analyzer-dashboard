@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+from difflib import SequenceMatcher
 
 import pandas as pd
 import streamlit as st
@@ -30,7 +31,7 @@ from services.ai import (
 from services.economics import econ_map, money_at_risk, fmt_money
 from services.serp import (
     readability, facts_extracted, render_serp_row,
-    render_first_glance, render_ai_view, load_competitors,
+    render_first_glance, render_ai_view, load_competitors, esc,
     VISIBLE_MOBILE, VISIBLE_DESKTOP,
 )
 from services.seo import (
@@ -732,6 +733,50 @@ def render_card_head(x: dict) -> None:
         unsafe_allow_html=True)
 
 
+DIFF_BG = "#DCEEE0"       # подсветка того, что модель изменила
+OK_GREEN = "#2F6B3A"
+ERR_RED = "#A32D2D"
+
+
+def diff_html(before: str, after: str) -> str:
+    """«Стало» с подсветкой отличий от «было», по словам.
+
+    Пословно, а не посимвольно: посимвольный дифф в тайтле даёт рваную
+    подсветку внутри слов, читать невозможно."""
+    a = re.findall(r"\S+\s*", before)
+    b = re.findall(r"\S+\s*", after)
+    out = []
+    for tag, _i1, _i2, j1, j2 in SequenceMatcher(None, a, b).get_opcodes():
+        chunk = esc("".join(b[j1:j2]))
+        if not chunk:
+            continue
+        out.append(chunk if tag == "equal" else
+                   f'<span style="background:{DIFF_BG};border-radius:3px;">'
+                   f"{chunk}</span>")
+    return "".join(out)
+
+
+def counter_html(n: int, limit: int) -> str:
+    """Счётчик длины: красный при превышении, зелёный в пределах."""
+    color = ERR_RED if n > limit else OK_GREEN
+    return (f'<span class="ls-mono" style="color:{color};font-weight:700;">'
+            f"{n}/{limit}</span>")
+
+
+def field_html(label: str, counter: str, body: str, top_line: bool) -> str:
+    """Поле карточки: подпись со счётчиком и текст. HTML одной строкой."""
+    border = ("border-top:1px solid #E7E4DD;margin-top:10px;padding-top:10px;"
+              if top_line else "")
+    return (
+        f'<div style="{border}">'
+        f'<div style="font-size:11.5px;letter-spacing:.06em;color:#57534A;'
+        f'text-transform:uppercase;margin-bottom:4px;">{label} {counter}</div>'
+        f'<div class="ls-mono" style="font-size:13px;line-height:1.55;'
+        f'color:#1A1815;white-space:pre-wrap;word-break:break-word;">'
+        f"{body}</div></div>"
+    )
+
+
 def render_result(asin: str, mp: str, before: str, draft) -> None:
     """Блок «было / стало» с длинами и кнопкой «Принять».
 
@@ -759,33 +804,64 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
     checks = run_checks(after, hl, [], [])
     failed = [m for ok, m in checks if not ok]
 
-    st.markdown(eyebrow(t("synth.result")), unsafe_allow_html=True)
-    st.markdown(f"**{t('synth.was')}** · {len(before)} {t('synth.chars')}")
-    st.code(before, language=None)
-    st.markdown(f"**{t('synth.became')}** · title {len(after)}/{TITLE_LIMIT} · "
-                f"highlights {len(hl)}/{HIGHLIGHTS_LIMIT}")
-    st.code(after, language=None)
-    if hl:
-        st.code(hl, language=None)
-    if dropped:
-        st.caption(f"{t('synth.dropped')}: " + " · ".join(dropped))
-    st.markdown(" · ".join(("✅ " if ok else "❌ ") + m for ok, m in checks))
+    # Рамку рисуем контейнеру с ключом: кнопки и раскрывашка — обычные
+    # виджеты Streamlit, внутрь HTML их не вставить, а внутрь контейнера —
+    # можно, и тогда они оказываются в той же карточке.
+    card_key = f"rescard-{asin}-{mp}"
+    st.markdown(
+        f'<style>.st-key-{card_key}{{background:#FFFFFF;'
+        'border:1px solid #E7E4DD;border-left:3px solid #E8590C;'
+        'border-radius:0 12px 12px 0;padding:14px 16px;margin-bottom:12px;}'
+        f'.st-key-{card_key} div[data-testid="stExpander"]'
+        '{border:none;box-shadow:none;}'
+        '</style>',
+        unsafe_allow_html=True)
 
-    a1, a2, a3 = st.columns([1.4, 1.4, 4])
-    if a1.button(t("synth.accept_short"), type="primary", disabled=bool(failed),
-                 help=None if not failed else t("synth.fix_first"),
-                 key=f"q-acc-{asin}-{mp}"):
-        if accept_change(asin, mp, before,
-                         {"title": after, "highlights": hl, "dropped": dropped},
-                         cov, skill_v, GEMINI_MODEL):
+    with st.container(key=card_key):
+        st.markdown(eyebrow(t("synth.result")), unsafe_allow_html=True)
+        # «было» и «стало» — одним блоком, разделены линией; в «стало»
+        # подсвечено то, что модель заменила или добавила
+        body = (
+            field_html(t("synth.was"),
+                       f'<span class="ls-mono" style="color:#57534A;">'
+                       f'{len(before)}</span>', esc(before), False)
+            + field_html(t("synth.became"),
+                         counter_html(len(after), TITLE_LIMIT),
+                         diff_html(before, after), True)
+        )
+        if hl:
+            body += field_html("item highlights",
+                               counter_html(len(hl), HIGHLIGHTS_LIMIT),
+                               esc(hl), True)
+        st.markdown(body, unsafe_allow_html=True)
+        st.caption(t("synth.diff_hint"))
+
+        # выброшенное занимало три строки и оттесняло кнопки вниз
+        if dropped:
+            with st.expander(f"{t('synth.dropped')} · {len(dropped)}"):
+                st.markdown(" · ".join(f"`{d}`" for d in dropped))
+
+        st.markdown(" · ".join(("✅ " if ok else "❌ ") + m
+                               for ok, m in checks))
+
+        # ширины подобраны так, чтобы «Перегенерировать» не переносилось
+        a1, a2, a3 = st.columns([1.3, 2.1, 3.6])
+        if a1.button(t("synth.accept_short"), type="primary",
+                     disabled=bool(failed),
+                     help=None if not failed else t("synth.fix_first"),
+                     key=f"q-acc-{asin}-{mp}"):
+            if accept_change(asin, mp, before,
+                             {"title": after, "highlights": hl,
+                              "dropped": dropped},
+                             cov, skill_v, GEMINI_MODEL):
+                st.session_state.pop(f"res-{asin}-{mp}", None)
+                st.success(t("synth.accepted_ok"))
+                st.rerun()
+        if a2.button(t("synth.regenerate"), key=f"q-re-{asin}-{mp}"):
             st.session_state.pop(f"res-{asin}-{mp}", None)
-            st.success(t("synth.accepted_ok"))
             st.rerun()
-    if a2.button(t("synth.regenerate"), key=f"q-re-{asin}-{mp}"):
-        st.session_state.pop(f"res-{asin}-{mp}", None)
-        st.rerun()
-    if cov is not None and not pd.isna(cov):
-        a3.caption(f"Coverage {float(cov):.0f}%")
+        if cov is not None and not pd.isna(cov):
+            a3.caption(f"Coverage {float(cov):.0f}%")
 
 
 # ================================================================ очередь
