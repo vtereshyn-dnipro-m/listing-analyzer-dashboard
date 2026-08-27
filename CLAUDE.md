@@ -140,6 +140,8 @@ Coverage Score (доля сохранённого поискового веса)
 `protected_keywords`, `synthesis_drafts`, `synthesis_coverage`,
 `synthesis_changes`, `sqp_reports`, `asin_economics`.
 Пишет: `synthesis_drafts`, `synthesis_coverage`, `synthesis_changes`.
+Выгрузка для Amazon — настоящий шаблон Seller Central, см.
+`services/flatfile_template.py`.
 
 ### `photo.py` — «Фото и A+»
 Аудит визуала через vision-модель. Вкладка «Галерея» — главное фото + галерея
@@ -177,14 +179,15 @@ min_images, границы рейтинга) и ведётся реестр ис
 `app_settings`.
 
 ### `settings.py` — «Настройки»
-Три блока: статус подключений (Gemini, Anthropic, ScrapingDog, Lakebase —
+Четыре блока: статус подключений (Gemini, Anthropic, ScrapingDog, Lakebase —
 маска ключа + кнопка проверки связи), выбор провайдера и модели под каждую
 задачу `services/ai.py` (`title_split`, `photo_audit`, `agents`; списки
-моделей тянутся живьём из API провайдеров) и тумблер автопереключения при
-перегрузке. Ключи API здесь не хранятся и не вводятся — только в Streamlit
-Secrets, наружу идёт лишь хвост ключа. Пороги правил живут в «Методологии»,
-сюда вынесена ссылка.
-Читает и пишет: `app_settings` (через `services.settings`).
+моделей тянутся живьём из API провайдеров), загрузка эталонов flat file
+и ссылка на пороги правил (они живут в «Методологии»). Ключи API здесь
+не хранятся и не вводятся — только в Streamlit Secrets, наружу идёт лишь
+хвост ключа.
+Читает и пишет: `app_settings` (через `services.settings`),
+`flatfile_templates` (через `services.flatfile_template`).
 
 ---
 
@@ -261,6 +264,19 @@ Coverage считается кодом: доля сохранённого вес
 в Матрице и Каталоге.
 Таблицы: `synthesis_drafts`, `synthesis_changes`, `photo_analysis`.
 
+### `services/flatfile.py` и `services/flatfile_template.py`
+Выгрузка принятых правок в загружаемый файл Amazon. `flatfile_template`
+разбирает эталон (вкладка «Plantilla», строки 1–6 служебные, данные с 7-й),
+хранит его в `flatfile_templates` со срезанными строками данных и собирает
+готовый файл ХИРУРГИЕЙ ПО ZIP: подменяется ровно один XML листа, остальные
+42 части архива копируются байт в байт. Пересохранение через openpyxl не
+годится — теряются settings первой строки, выпадающие списки и картинки.
+`flatfile` раскладывает строки по шаблонам (один шаблон покрывает 30 типов
+товара из 60, диапазоны не пересекаются), даёт CSV для человека и список
+непопавших строк с причиной.
+Таблицы: `synthesis_changes`, `flatfile_templates`, `listing_attributes`,
+`catalog_source`, `listing_issues`, `product_matrix`.
+
 ### `components/ui.py`
 Визуальные компоненты и палитра: `inject_fonts()` (CSS-переменные, скрытие
 служебных элементов Streamlit, адаптив и тумблер «мобильный вид»), `eyebrow`,
@@ -299,6 +315,7 @@ en → сам ключ (забытый перевод виден в UI, без �
 | `synthesis_changes` | принятые правки Синтеза (замыкают цикл «до/после»), `change_type` на вырост | synthesis | synthesis, worklog, flatfile |
 | `listing_changes` | универсальная «поле — было — стало», пишут другие процессы | не наш код | не наш код |
 | `photo_analysis` | аудиты галереи и A+ (`analysis_type`) | photo | photo, worklog |
+| `flatfile_templates` | эталоны шаблонов Amazon flat file по маркетплейсам | settings | flatfile |
 | `app_settings` | key/value настройки | methodology, страница «Настройки» | все страницы через `services.settings` |
 | `policy_sources` | реестр источников политик Amazon | methodology | methodology |
 | `policy_alerts` | обнаруженные изменения политик | ноутбук | methodology |
@@ -315,6 +332,8 @@ en → сам ключ (забытый перевод виден в UI, без �
 ```
 python tests/test_ai_errors.py
 python tests/test_length_guard.py
+python tests/test_batch_counts_saves.py
+python tests/test_flatfile_export.py
 ```
 
 `test_ai_errors.py` — регрессия на самый дорогой класс поломок:
@@ -323,6 +342,12 @@ python tests/test_length_guard.py
 таймаут, сброс ошибки при успехе и главное — что сообщение переживает
 `st.rerun()`. Ломать эти проверки нельзя: молчаливый провал генерации
 стоил часов диагностики при починке в одну строку.
+
+`test_flatfile_export.py` — выгрузка обязана быть настоящим файлом
+Amazon: служебные строки 1–6 доходят без правок, колонки ищутся по
+машинному имени из строки 5, подпись частичного обновления берётся из
+шаблона, а не хардкодится, строка с непокрытым типом товара попадает
+в список проблем, а не теряется.
 
 `test_length_guard.py` — гарантия лимита: запас в промпте, автоповтор,
 обрезка по границе слова, отказ резать при потере must_keep.

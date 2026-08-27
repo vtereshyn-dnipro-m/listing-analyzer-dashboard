@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from difflib import SequenceMatcher
 
 import pandas as pd
@@ -39,7 +40,8 @@ from services.seo import (
     TIER_LABEL, TIER_COLOR, TIERS,
 )
 from services.flatfile import (
-    load_accepted_titles, build_flat_export, build_csv_export,
+    load_accepted_titles, plan_export, plan_signature, build_flat_cached,
+    build_csv_export,
 )
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
@@ -1089,19 +1091,34 @@ with tab_queue:
         e2.button(t("export.csv"), disabled=True, key="exp-csv-none")
         e4.caption(f'{t("export.nothing")} — {t("export.accept_first")}')
     else:
-        # есть что выгружать — основная кнопка страницы, выделена цветом
-        _fname, _fmime, _fdata = build_flat_export(_acc, _day)
-        e1.download_button(f'⬇ {t("export.flat")} · {len(_acc)}', _fdata,
-                           file_name=_fname, mime=_fmime, key="exp-flat",
-                           type="primary")
+        # раскладываем по шаблонам Amazon: один шаблон покрывает часть типов
+        # товара, поэтому файлов может быть несколько, а часть строк может
+        # не попасть никуда — про такие говорим прямо, а не молчим
+        _plan, _bad = plan_export(_acc)
+        _in = sum(len(i["rows"]) for i in _plan)
         _cname, _cmime, _cdata = build_csv_export(_acc, _day)
+        if _plan:
+            _fname, _fmime, _fdata = build_flat_cached(
+                _plan, plan_signature(_plan), _day)
+            e1.download_button(f'⬇ {t("export.flat")} · {_in}', _fdata,
+                               file_name=_fname, mime=_fmime, key="exp-flat",
+                               type="primary")
+        else:
+            e1.button(t("export.flat"), disabled=True, key="exp-flat-notpl",
+                      help=t("export.no_template"))
         e2.download_button(t("export.csv"), _cdata, file_name=_cname,
                            mime=_cmime, key="exp-csv")
         _mps_txt = ", ".join(sorted(_acc["marketplace"].unique())).upper()
-        e4.caption(t("export.hint", n=len(_acc), mps=_mps_txt))
-        _weak = int(_acc["sku_fallback"].sum())
-        if _weak:
-            e4.caption("⚠ " + t("export.sku_fallback", n=_weak))
+        e4.caption(t("export.hint", n=_in, mps=_mps_txt,
+                     files=len(_plan) or 1))
+        if _bad:
+            _why = Counter(b["reason"] for b in _bad)
+            e4.caption("⚠ " + t("export.skipped", n=len(_bad)) + " — " +
+                       ", ".join(f'{t("export.why_" + k)}: {v}'
+                                 for k, v in _why.most_common()))
+            with e4.expander(t("export.skipped_list"), expanded=False):
+                st.dataframe(pd.DataFrame(_bad), hide_index=True,
+                             use_container_width=True)
 
     view = rows
     if mp_sel:

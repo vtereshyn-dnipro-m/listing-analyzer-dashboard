@@ -1,21 +1,28 @@
 # -*- coding: utf-8 -*-
 """
-pages/settings.py — Настройки: подключения, модели ИИ, пороги правил.
+pages/settings.py — Настройки: подключения, модели ИИ, шаблоны, пороги.
 
 Ключи API здесь НЕ хранятся и не вводятся — они живут в Streamlit Secrets.
-На странице только: статус подключения (маска ключа + проверка связи),
-выбор провайдера и модели под задачи (список тянется живьём из API
-провайдеров) и ссылка на пороги правил, которые читают все страницы
-из app_settings.
+На странице: статус подключения (маска ключа + проверка связи), выбор
+провайдера и модели под задачи (список тянется живьём из API провайдеров),
+загрузка эталонов flat file и ссылка на пороги правил, которые читают все
+страницы из app_settings.
+
+Эталон flat file лежит здесь, а не на «Синтезе», потому что это разовое
+администраторское действие: шаблон Amazon перевыпускает раз в несколько
+месяцев, а выгрузка идёт каждый день.
 """
 from __future__ import annotations
 
+import pandas as pd
 import requests
 import streamlit as st
 
 from i18n import t
 from services.ai import reset_last_error
 from services.db import get_conn, cfg, cfg_source
+from services.flatfile_template import (
+    parse_template, save_template, templates_for)
 from services.settings import get_setting, get_int, save_setting
 from components.ui import inject_fonts, eyebrow
 
@@ -252,6 +259,79 @@ if not gem_list:
     st.caption(t("set.models_unavailable", provider="Gemini"))
 if not ant_list:
     st.caption(t("set.models_unavailable", provider="Anthropic"))
+
+st.divider()
+
+# ================================================== шаблоны flat file
+# Amazon принимает не произвольную таблицу, а свой файл со служебными
+# строками 1–6. Взять их неоткуда, кроме как из настоящего шаблона, —
+# поэтому человек загружает его сюда один раз, а мы храним эталон
+# с вырезанными строками данных.
+st.markdown(eyebrow(t("set.templates")), unsafe_allow_html=True)
+st.caption(t("set.templates_hint"))
+
+
+@st.cache_data(ttl=300)
+def known_marketplaces() -> list[str]:
+    try:
+        conn = get_conn()
+        df = pd.read_sql(
+            "SELECT DISTINCT marketplace FROM product_matrix "
+            "WHERE marketplace IS NOT NULL AND marketplace <> ''", conn)
+        conn.close()
+        mps = sorted({str(x).lower() for x in df["marketplace"]})
+        return mps or ["es"]
+    except Exception:
+        return ["es"]
+
+
+tc1, tc2 = st.columns([1, 3])
+tpl_mp = tc1.selectbox(t("set.tpl_marketplace"), known_marketplaces(),
+                       key="tpl-mp")
+ups = tc2.file_uploader(t("set.tpl_upload"), type=["xlsm", "xlsx"],
+                        accept_multiple_files=True, key="tpl-up")
+
+if ups and st.button(t("set.tpl_save"), type="primary", key="tpl-save"):
+    for up in ups:
+        try:
+            parsed = parse_template(up.name, up.getvalue())
+        except Exception as e:
+            st.error(f"{up.name}: {e}")
+            continue
+        err = save_template(tpl_mp, parsed)
+        note = t("set.tpl_saved", name=parsed["file_name"],
+                 types=len(parsed["product_types"]),
+                 rows=parsed["rows_seen"])
+        if err:
+            # эталон лёг в сессию: выгрузка заработает сейчас, но до
+            # применения миграции он не переживёт перезапуск
+            st.warning(f"{note} · {t('set.tpl_session')}")
+            st.code(err)
+        else:
+            st.success(note)
+
+_saved = templates_for(tpl_mp)
+if not _saved:
+    st.caption(t("set.tpl_none"))
+else:
+    st.dataframe(
+        pd.DataFrame([{
+            "file": x["file_name"],
+            "types": len(x.get("product_types") or []),
+            "rows": x.get("rows_seen") or 0,
+            "action": x.get("partial_label") or "",
+            "store": x.get("stored") or "db",
+        } for x in _saved]),
+        hide_index=True, use_container_width=True,
+        column_config={
+            "file": st.column_config.TextColumn(t("set.tpl_c_file")),
+            "types": st.column_config.NumberColumn(t("set.tpl_c_types")),
+            "rows": st.column_config.NumberColumn(t("set.tpl_c_rows")),
+            "action": st.column_config.TextColumn(t("set.tpl_c_action")),
+            "store": st.column_config.TextColumn(t("set.tpl_c_store")),
+        })
+    _cov = sorted({p for x in _saved for p in (x.get("product_types") or [])})
+    st.caption(t("set.tpl_coverage", n=len(_cov)))
 
 st.divider()
 
