@@ -496,7 +496,7 @@ def load_accepted() -> dict:
             SELECT DISTINCT ON (asin, marketplace)
                    asin, marketplace, accepted_at, status, after_len,
                    coverage_score
-            FROM listing_changes
+            FROM synthesis_changes
             ORDER BY asin, marketplace, accepted_at DESC
             """, conn)
         conn.close()
@@ -518,11 +518,10 @@ def accept_change(asin: str, mp: str, before: str, result: dict,
         with conn, conn.cursor() as cur:
             cur.execute(
                 """
-                INSERT INTO listing_changes
-                    (asin, marketplace, change_type, before_title, before_len,
-                     after_title, after_len, after_highlights,
-                     after_highlights_len, dropped, coverage_score,
-                     skill_version, model, status)
+                INSERT INTO synthesis_changes
+                    (asin, marketplace, change_type, before_text, before_len,
+                     after_text, after_len, after_extra, after_extra_len,
+                     dropped, coverage_score, skill_version, model, status)
                 VALUES (%s,%s,'title_split',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                         'accepted')
                 """,
@@ -560,8 +559,9 @@ def load_drafts_for_review() -> pd.DataFrame:
                 ORDER BY c.created_at DESC LIMIT 1
             ) c ON TRUE
             WHERE NOT EXISTS (
-                SELECT 1 FROM listing_changes lc
-                WHERE lc.asin = d.asin AND lc.marketplace = d.marketplace
+                SELECT 1 FROM synthesis_changes sc
+                WHERE sc.asin = d.asin AND sc.marketplace = d.marketplace
+                  AND sc.change_type = 'title_split'
             )
             ORDER BY d.asin, d.marketplace, d.created_at DESC
             """, conn)
@@ -1073,7 +1073,7 @@ with tab_queue:
         q_mode = q_mode or "cards"
 
     # ---- выгрузка принятых тайтлов для загрузки в Amazon
-    # Берём из listing_changes, а не из очереди: правку могли принять на
+    # Берём из synthesis_changes, а не из очереди: правку могли принять на
     # вкладке «любой товар», и в очередь title_over_limit такой товар
     # не попадает — иначе выгрузка молча теряла бы строки.
     _day = pd.Timestamp.now().strftime("%Y-%m-%d")

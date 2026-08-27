@@ -31,7 +31,7 @@ def load_worklog() -> pd.DataFrame:
             c AS (
                 SELECT DISTINCT ON (asin, marketplace)
                        asin, marketplace, accepted_at, status, coverage_score
-                FROM listing_changes
+                FROM synthesis_changes
                 ORDER BY asin, marketplace, accepted_at DESC
             ),
             g AS (
