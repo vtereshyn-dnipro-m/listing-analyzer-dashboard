@@ -548,8 +548,11 @@ def load_drafts_for_review() -> pd.DataFrame:
             """
             SELECT DISTINCT ON (d.asin, d.marketplace)
                    d.id, d.asin, d.marketplace, d.created_at,
-                   d.title_before, d.title_after, d.highlights_after,
-                   d.dropped, d.skill_version, c.coverage_score
+                   d.original_title AS title_before,
+                   d.new_title      AS title_after,
+                   d.new_highlights AS highlights_after,
+                   d.dropped_words  AS dropped,
+                   d.skill_version, c.coverage_score
             FROM synthesis_drafts d
             LEFT JOIN LATERAL (
                 SELECT coverage_score FROM synthesis_coverage c
