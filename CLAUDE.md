@@ -296,7 +296,8 @@ en → сам ключ (забытый перевод виден в UI, без �
 | `synthesis_skill` | версионированные методологии по `scope` | methodology | synthesis, photo, methodology |
 | `synthesis_drafts` | сгенерированные сплиты со `skill_version` | synthesis | synthesis, worklog |
 | `synthesis_coverage` | Coverage Score по генерации | synthesis | synthesis |
-| `listing_changes` | принятые правки (замыкают цикл «до/после») | synthesis | synthesis, worklog |
+| `synthesis_changes` | принятые правки Синтеза (замыкают цикл «до/после»), `change_type` на вырост | synthesis | synthesis, worklog, flatfile |
+| `listing_changes` | универсальная «поле — было — стало», пишут другие процессы | не наш код | не наш код |
 | `photo_analysis` | аудиты галереи и A+ (`analysis_type`) | photo | photo, worklog |
 | `app_settings` | key/value настройки | methodology, страница «Настройки» | все страницы через `services.settings` |
 | `policy_sources` | реестр источников политик Amazon | methodology | methodology |

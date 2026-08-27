@@ -2,7 +2,7 @@
 """
 services/flatfile.py — выгрузка принятых тайтлов для загрузки в Amazon.
 
-Источник — listing_changes со статусом accepted: это и есть «правка,
+Источник — synthesis_changes со статусом accepted: это и есть «правка,
 которую человек принял». Прямой отправки в Amazon нет и не планируется:
 файл выгружается, человек грузит его сам через Seller Central.
 
@@ -75,11 +75,13 @@ def load_accepted_titles(marketplaces: tuple | None = None) -> pd.DataFrame:
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (asin, marketplace)
-                   asin, marketplace, before_title, after_title, after_len,
-                   accepted_at
-            FROM listing_changes
+                   asin, marketplace,
+                   before_text AS before_title,
+                   after_text  AS after_title,
+                   after_len, accepted_at
+            FROM synthesis_changes
             WHERE status = 'accepted' AND change_type = 'title_split'
-              AND after_title IS NOT NULL AND after_title <> ''
+              AND after_text IS NOT NULL AND after_text <> ''
             ORDER BY asin, marketplace, accepted_at DESC
             """, conn)
         conn.close()
