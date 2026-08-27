@@ -121,7 +121,7 @@ HTML-атрибута рвут тег. Внутри атрибутов кавы�
 BSR парсится из `raw` регулярками, потому что ключ и формат зависят от языка
 страницы.
 Читает: `product_matrix`, `listing_snapshots`, плюс через сервисы —
-`asin_economics`, `synthesis_drafts`, `listing_changes`, `photo_analysis`.
+`asin_economics`, `synthesis_drafts`, `synthesis_changes`, `photo_analysis`.
 Атрибуты и поисковую сводку берёт из `services.attributes` и
 `services.search`.
 
@@ -138,8 +138,8 @@ Coverage Score (доля сохранённого поискового веса)
 разбор черновиков, любой товар.
 Читает: `diagnosis`, `listing_snapshots`, `product_matrix`, `synthesis_skill`,
 `protected_keywords`, `synthesis_drafts`, `synthesis_coverage`,
-`listing_changes`, `sqp_reports`, `asin_economics`.
-Пишет: `synthesis_drafts`, `synthesis_coverage`, `listing_changes`.
+`synthesis_changes`, `sqp_reports`, `asin_economics`.
+Пишет: `synthesis_drafts`, `synthesis_coverage`, `synthesis_changes`.
 
 ### `photo.py` — «Фото и A+»
 Аудит визуала через vision-модель. Вкладка «Галерея» — главное фото + галерея
@@ -259,7 +259,7 @@ Coverage считается кодом: доля сохранённого вес
 След работы по товару: черновики сплита, принятые правки, грейды фото и A+ —
 одной картой `(asin, marketplace) → dict`. Даёт HTML-значки для строк
 в Матрице и Каталоге.
-Таблицы: `synthesis_drafts`, `listing_changes`, `photo_analysis`.
+Таблицы: `synthesis_drafts`, `synthesis_changes`, `photo_analysis`.
 
 ### `components/ui.py`
 Визуальные компоненты и палитра: `inject_fonts()` (CSS-переменные, скрытие
