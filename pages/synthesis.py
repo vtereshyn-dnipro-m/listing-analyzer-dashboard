@@ -451,9 +451,14 @@ def save_draft(asin: str, mp: str, original: str, result: dict, skill_version: i
                  json.dumps(result, ensure_ascii=False)),
             )
         conn.close()
+        st.session_state.pop(f"save-err-{asin}-{mp}", None)
         return True
     except Exception as e:
-        st.warning(t("common.save_failed", e=e))
+        # текст кладём в session_state: st.warning не переживает st.rerun(),
+        # а именно так провал сохранения и оставался незамеченным
+        detail = f"{type(e).__name__}: {e}"
+        st.session_state[f"save-err-{asin}-{mp}"] = detail
+        st.warning(t("common.save_failed", e=detail))
         return False
 
 
@@ -603,7 +608,7 @@ def save_coverage(asin: str, mp: str, cov: dict) -> None:
 
 def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
     """Пакетная генерация: только черновики, ничего не применяется."""
-    done, failed = 0, 0
+    done, failed, unsaved = 0, 0, 0
     stats = {"attempts": 0, "retried": 0, "trimmed": 0, "over": 0}
     errors: list[str] = []
     bar = st.progress(0.0, text=t("synth.batch_run"))
@@ -630,11 +635,19 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
             res = None
             errors.append(f"{asin} ({mp}): {type(e).__name__}: {e}")
         if res:
-            save_draft(asin, mp, title, res, skill_version)
-            if not kw.empty:
-                save_coverage(asin, mp, coverage(
-                    kw, res.get("title", ""), res.get("highlights", "")))
-            done += 1
+            # считаем именно сохранение: раньше done увеличивался после
+            # генерации, и партия рапортовала «5 готово» при пустой таблице
+            if save_draft(asin, mp, title, res, skill_version):
+                if not kw.empty:
+                    save_coverage(asin, mp, coverage(
+                        kw, res.get("title", ""), res.get("highlights", "")))
+                done += 1
+            else:
+                unsaved += 1
+                err = st.session_state.get(f"save-err-{asin}-{mp}")
+                errors.append(f"{asin} ({mp}): "
+                              + t("synth.save_failed_short")
+                              + (f" — {err}" if err else ""))
         else:
             failed += 1
             # ошибку уже показал слой ИИ, но st.rerun() её сотрёт —
@@ -644,7 +657,8 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
                 errors.append(f"{asin} ({mp}): {err}")
     bar.empty()
     st.cache_data.clear()
-    return {"done": done, "failed": failed, "errors": errors, "stats": stats}
+    return {"done": done, "failed": failed, "unsaved": unsaved,
+            "errors": errors, "stats": stats}
 
 
 @st.cache_data(ttl=300)
@@ -973,6 +987,11 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
                                 fields=", ".join(trimmed)))
         if over:
             st.error("⚠ " + t("synth.over_note", fields=", ".join(over)))
+        # черновик не записался — на экране он есть, а в базе нет:
+        # после перезагрузки страницы пропадёт
+        _serr = st.session_state.get(f"save-err-{asin}-{mp}")
+        if _serr:
+            st.error("⚠ " + t("synth.not_saved", e=_serr))
 
         # выброшенное занимало три строки и оттесняло кнопки вниз
         if dropped:
@@ -1115,6 +1134,10 @@ with tab_queue:
     # итог прошлой партии — переживает st.rerun(), поэтому ошибки видны
     _out = st.session_state.pop("batch_outcome", None)
     if _out:
+        if _out.get("unsaved"):
+            # сгенерировано, но не легло в базу — самый обидный случай:
+            # раньше он выглядел как успех
+            st.error(t("synth.batch_unsaved", n=_out["unsaved"]))
         if _out["done"]:
             st.success(t("synth.batch_done", done=_out["done"],
                          failed=_out["failed"]))
