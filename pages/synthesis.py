@@ -44,6 +44,10 @@ from services.flatfile import (
     load_accepted_titles, plan_export, plan_signature, build_flat_cached,
     build_csv_export,
 )
+from services.spapi import (
+    missing_secrets, marketplace_meta, push_title, log_push, load_pushes,
+    issues_text,
+)
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
@@ -1192,6 +1196,105 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
 
 
 # ================================================================ очередь
+def render_push_confirm(pushable: list[dict]) -> None:
+    """Подтверждение отправки в Amazon.
+
+    Правил здесь три, и все три — про то, что это чужие живые листинги.
+
+    1. Отправка возможна ТОЛЬКО из этого блока. Кнопка на панели лишь
+       открывает подтверждение, сама ничего не шлёт.
+    2. Товар ровно один. Пачка появится, когда единичная отправка
+       подтвердится на проде, — до тех пор список одиночный намеренно.
+    3. Повтор не запрещаем, но показываем дату и требуем отдельной
+       галочки: «уже отправляли» — частая и дорогая ошибка.
+    """
+    st.markdown(
+        '<style>.st-key-push_box{background:#FFF9F4;border:1px solid #E7E4DD;'
+        'border-left:3px solid #E8590C;border-radius:0 12px 12px 0;'
+        'padding:14px 16px;margin:6px 0 12px;}</style>',
+        unsafe_allow_html=True)
+    with st.container(key="push_box"):
+        st.markdown(eyebrow(t("push.confirm_title")), unsafe_allow_html=True)
+        labels = {f'{r["sku"]} · {r["marketplace"]} · {r["asin"]}': r
+                  for r in pushable}
+        pick = st.selectbox(t("push.pick"), sorted(labels),
+                            key="push-pick")
+        row = labels[pick]
+        meta = marketplace_meta([row["tpl"]])
+        prev = load_pushes().get((row["asin"], row["marketplace"]))
+
+        st.markdown(
+            f'<div style="font-size:13px;line-height:1.7;">'
+            f'<b>{esc(row["sku"])}</b>'
+            f'<span style="color:#57534A;"> · {mp_label(row["marketplace"])}'
+            f' · {esc(row["product_type"])}'
+            f' · {t("push.count", n=1)}</span></div>'
+            f'<div style="font-size:12.5px;color:#57534A;margin-top:6px;">'
+            f'{t("synth.was")}: {esc(row["before"][:160])}</div>'
+            f'<div style="font-size:13px;margin-top:2px;">'
+            f'{t("synth.became")}: <b>{esc(row["title"])}</b> '
+            f'<span class="ls-mono" style="color:#57534A;">'
+            f'{len(row["title"])}/{TITLE_LIMIT}</span></div>',
+            unsafe_allow_html=True)
+
+        if meta is None:
+            st.error(t("push.no_marketplace_id"))
+            return
+        mp_id, lang = meta
+        st.caption(f"marketplaceId {mp_id} · {lang}")
+
+        again = True
+        if prev is not None:
+            when = pd.to_datetime(prev["pushed_at"]).strftime("%d.%m %H:%M")
+            st.warning("↻ " + t("push.already", day=when,
+                                title=str(prev["after_text"])[:80]))
+            again = st.checkbox(t("push.again_ok"), key="push-again")
+
+        c1, c2, c3 = st.columns([1.6, 1.2, 4])
+        if c1.button(t("push.send", n=1), type="primary", disabled=not again,
+                     key="push-send"):
+            res = push_title(row["sku"], row["marketplace"],
+                             row["product_type"], row["title"],
+                             row.get("highlights", ""), mp_id, lang,
+                             TITLE_LIMIT, HIGHLIGHTS_LIMIT)
+            log_err = log_push(row["asin"], row["sku"], row["marketplace"],
+                               row["before"], row["title"],
+                               row.get("highlights", ""), res)
+            st.session_state["push-result"] = dict(
+                res, sku=row["sku"], marketplace=row["marketplace"],
+                log_err=log_err)
+            st.session_state.pop("push-confirm", None)
+            st.cache_data.clear()
+            st.rerun()
+        if c2.button(t("push.cancel"), key="push-cancel"):
+            st.session_state.pop("push-confirm", None)
+            st.rerun()
+
+
+def render_push_result() -> None:
+    """Итог отправки. Переживает rerun: иначе причина отказа пропадёт
+    ровно тогда, когда она нужнее всего."""
+    res = st.session_state.pop("push-result", None)
+    if not res:
+        return
+    accepted = 1 if res.get("ok") else 0
+    st.markdown(t("push.result", ok=accepted, bad=1 - accepted))
+    if res.get("ok"):
+        st.success(f'✓ {res["sku"]} · {res.get("status")}'
+                   + (f' · submissionId {res["submission_id"]}'
+                      if res.get("submission_id") else ""))
+    else:
+        st.error(f'✗ {res["sku"]}: {res.get("error") or res.get("status")}')
+        for line in (issues_text(res.get("issues")) or "").split(" · "):
+            if line:
+                st.code(line, language=None)
+    for s in res.get("skipped") or []:
+        st.caption("⚠ " + s)
+    if res.get("log_err"):
+        # отправили, но следа не осталось — хуже, чем неудачная отправка
+        st.error("⚠ " + t("push.log_failed", e=res["log_err"]))
+
+
 SMALL_MARKET = 5      # меньше товаров в матрице — страна уезжает в «Прочие»
 
 
@@ -1392,6 +1495,24 @@ with tab_queue:
             with e4.expander(t("export.skipped_list"), expanded=False):
                 st.dataframe(pd.DataFrame(_bad), hide_index=True,
                              use_container_width=True)
+
+        # ---- прямая отправка в Amazon: третья кнопка, место под неё
+        # держали с самого начала. Всё, что она делает по нажатию, —
+        # открывает подтверждение. Отправку запускает только вторая кнопка,
+        # внутри подтверждения: это запись в живые листинги клиента.
+        _pushable = [dict(r, marketplace=i["marketplace"], tpl=i["tpl"])
+                     for i in _plan for r in i["rows"]]
+        _miss = missing_secrets()
+        if not _pushable or _miss:
+            e3.button(t("push.button"), disabled=True, key="push-open-off",
+                      help=(t("push.no_keys", keys=", ".join(_miss)) if _miss
+                            else t("export.accept_first")))
+        elif e3.button(t("push.button"), key="push-open"):
+            st.session_state["push-confirm"] = True
+        if st.session_state.get("push-confirm") and _pushable:
+            render_push_confirm(_pushable)
+
+    render_push_result()
 
     view = rows
     if mp_sel:

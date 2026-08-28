@@ -3,8 +3,10 @@
 services/flatfile.py — выгрузка принятых тайтлов для загрузки в Amazon.
 
 Источник — synthesis_changes со статусом accepted: это и есть «правка,
-которую человек принял». Прямой отправки в Amazon нет и не планируется:
-файл выгружается, человек грузит его сам через Seller Central.
+которую человек принял». Файл выгружается, человек грузит его сам через
+Seller Central; прямая отправка по SP-API живёт отдельно — см.
+[services/spapi.py](services/spapi.py). Раскладка по товарам общая
+(`plan_export`): SKU и product_type у обоих путей обязаны совпадать.
 
 Два формата:
   · flat file — настоящий шаблон Amazon (.xlsm, вкладка «Plantilla»):
@@ -83,6 +85,7 @@ def load_accepted_titles(marketplaces: tuple | None = None) -> pd.DataFrame:
                    asin, marketplace,
                    before_text AS before_title,
                    after_text  AS after_title,
+                   after_extra AS highlights,
                    after_len, accepted_at
             FROM synthesis_changes
             WHERE status = 'accepted' AND change_type = 'title_split'
@@ -177,7 +180,14 @@ def plan_export(df: pd.DataFrame) -> tuple[list[dict], list[dict]]:
             plan.setdefault(key, {"marketplace": mp, "tpl": tpl, "rows": []})
             plan[key]["rows"].append({
                 "sku": sku, "product_type": ptype,
-                "title": str(r["after_title"]), "asin": asin, "sku_source": src})
+                "title": str(r["after_title"]), "asin": asin, "sku_source": src,
+                # «было» нужно и диалогу подтверждения отправки, и журналу:
+                # человек перед записью в чужой каталог должен видеть пару
+                "before": str(r.get("before_title") or ""),
+                # Item Highlights нужны прямой отправке; в flat file они
+                # не идут — там обновляется только тайтл
+                "highlights": ("" if pd.isna(r.get("highlights"))
+                               else str(r.get("highlights") or ""))})
 
     return [plan[k] for k in sorted(plan)], problems
 

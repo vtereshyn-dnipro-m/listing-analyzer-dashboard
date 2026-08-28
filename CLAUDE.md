@@ -144,7 +144,9 @@ Coverage Score (доля сохранённого поискового веса)
 `synthesis_changes`, `sqp_reports`, `asin_economics`.
 Пишет: `synthesis_drafts`, `synthesis_coverage`, `synthesis_changes`.
 Выгрузка для Amazon — настоящий шаблон Seller Central, см.
-`services/flatfile_template.py`.
+`services/flatfile_template.py`. Рядом — прямая отправка по SP-API
+(`services/spapi.py`): только по одному товару и только через диалог
+подтверждения.
 
 ### `photo.py` — «Фото и A+»
 Аудит визуала через vision-модель. Вкладка «Галерея» — главное фото + галерея
@@ -289,6 +291,19 @@ Coverage считается кодом: доля сохранённого вес
 Таблицы: `synthesis_changes`, `flatfile_templates`, `listing_attributes`,
 `catalog_source`, `listing_issues`, `product_matrix`.
 
+### `services/spapi.py`
+Прямая отправка принятого тайтла в Amazon (`PATCH /listings/2021-08-01`).
+ЕДИНСТВЕННОЕ место, которое пишет в живые листинги клиента, поэтому
+модуль ничего не решает сам: диалог подтверждения и защита от повтора
+живут на странице, сюда приходит уже подтверждённая ОДНА позиция.
+`marketplace_id` и `language_tag` берутся из машинного имени `item_name`
+в загруженном шаблоне, а не из таблицы в коде: угаданный идентификатор
+рынка означает запись в чужую страну. Политика Amazon с 27.07.2026 —
+тайтл сверх 75 не отправляется вовсе, Item Highlights уходят только
+вместе с укладывающимся тайтлом. Журнал пишется и при успехе, и при
+отказе.
+Таблицы: `listing_push_log` (запись и чтение).
+
 ### `components/ui.py`
 Визуальные компоненты и палитра: `inject_fonts()` (CSS-переменные, скрытие
 служебных элементов Streamlit, адаптив и тумблер «мобильный вид»), `eyebrow`,
@@ -328,6 +343,7 @@ en → сам ключ (забытый перевод виден в UI, без �
 | `listing_changes` | универсальная «поле — было — стало», пишут другие процессы | не наш код | не наш код |
 | `photo_analysis` | аудиты галереи и A+ (`analysis_type`) | photo | photo, worklog |
 | `flatfile_templates` | эталоны шаблонов Amazon flat file по маркетплейсам | settings | flatfile |
+| `listing_push_log` | журнал отправок тайтла в Amazon по SP-API: submissionId, статус, причины отказа | synthesis | synthesis |
 | `app_settings` | key/value настройки | methodology, страница «Настройки» | все страницы через `services.settings` |
 | `policy_sources` | реестр источников политик Amazon | methodology | methodology |
 | `policy_alerts` | обнаруженные изменения политик | ноутбук | methodology |
@@ -349,6 +365,7 @@ python tests/test_flatfile_export.py
 python tests/test_synthesis_counters.py
 python tests/test_synthesis_breakdown.py
 python tests/test_prompt_cache.py
+python tests/test_push_amazon.py
 ```
 
 `test_ai_errors.py` — регрессия на самый дорогой класс поломок:
@@ -382,6 +399,14 @@ Amazon: служебные строки 1–6 доходят без правок
 одна на все товары, тайтл и фразы в неё не попадают), половина — что он
 инвалидируется: правка методологии или смена её версии меняют байты.
 Без второго генерации молча шли бы по старой методологии.
+
+`test_push_amazon.py` — отправка пишет в ЖИВЫЕ листинги клиента,
+поэтому главная проверка не «работает ли», а «не срабатывает ли сама»:
+отрисовка подтверждения не шлёт ничего, кнопка на панели только
+открывает диалог, запрос уходит лишь после второй кнопки. Плюс
+marketplace_id только из шаблона, тайтл сверх лимита не отправляется,
+Highlights не уходят без укладывающегося тайтла, журнал пишется и при
+отказе.
 
 `test_length_guard.py` — гарантия лимита: запас в промпте, автоповтор,
 обрезка по границе слова, отказ резать при потере must_keep.
