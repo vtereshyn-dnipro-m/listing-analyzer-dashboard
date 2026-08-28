@@ -195,6 +195,15 @@ check("имя файла ведёт к шаблону-источнику и хр
 check("mime соответствует расширению", mime == ff.XLSX_MIME)
 check("отдаётся непустой файл", len(data) > 3000)
 
+# число на кнопке = число строк в файле. Кнопка подписана суммой по плану,
+# и если сборка положит другое количество, человек скачает не то, что видел
+shown = sum(len(i["rows"]) for i in plan)
+inside = len([r for r in openpyxl.load_workbook(
+    io.BytesIO(data), read_only=True, data_only=True)["Plantilla"]
+    .iter_rows(min_row=7, values_only=True) if any(v is not None for v in r)])
+check(f"число на кнопке ({shown}) совпадает со строками в файле ({inside})",
+      shown == inside == 2)
+
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
       else f"{len(FAILS)} провалов: {FAILS}")

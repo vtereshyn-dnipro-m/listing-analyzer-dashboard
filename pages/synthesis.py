@@ -23,7 +23,7 @@ import pandas as pd
 import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT, HIGHLIGHTS_LIMIT as _HL_DEFAULT
-from i18n import t
+from i18n import t, mp_label
 from services.db import get_conn, cfg
 from services.settings import get_setting, get_int
 from services.ai import (
@@ -58,6 +58,8 @@ GEMINI_URL = (
 
 FORBIDDEN_CHARS = set("!$?_{}^¬¦®©™")
 ACCENT = "#E8590C"
+INK = "#1A1815"
+MUTED = "#57534A"
 
 BASE_PROMPT = """Ты эксперт по Amazon-листингам бренда Dnipro-M.
 
@@ -820,13 +822,50 @@ for _, r in candidates.iterrows():
                       else "off"),
     })
 
+# ---- шапка: разрез по стране рядом с общим числом
+# Разрез читаем из состояния фильтра, а не из переменной: сам фильтр живёт
+# внутри вкладки «Очередь» и рисуется ниже, шапка — выше. Ключ виджета
+# переживает перерисовку, поэтому число в шапке соответствует выбору.
+# Смысл пары чисел — проверяемость: пока видно только общее, нельзя
+# заметить, что разрез по стране считается неверно.
+MP_FILTER_KEY = "syn-mp"
+mp_head = list(st.session_state.get(MP_FILTER_KEY) or [])
+head_rows = ([x for x in rows if x["r"]["marketplace"] in mp_head]
+             if mp_head else rows)
+
 total_risk = sum(x["risk"] for x in rows)
 n_ready = sum(1 for x in rows if x["sqp_state"] == "ready")
+head_risk = sum(x["risk"] for x in head_rows)
+head_ready = sum(1 for x in head_rows if x["sqp_state"] == "ready")
+
+
+def head_metric(before: str, value: str, after: str, total: str,
+                color: str = INK) -> str:
+    """«3 тайтлов сверх лимита · всего 5».
+
+    «всего» стоит в КОНЦЕ своей метрики, а не сразу за числом: иначе
+    «3 · всего 5 тайтлов сверх лимита» читается так, будто пять — это
+    что-то другое. И показывается только при включённом фильтре: без него
+    оба числа совпадают, и вторая половина строки была бы шумом.
+    """
+    tail = (f'<span style="color:{MUTED};font-weight:400;font-size:12.5px;">'
+            f' · {t("synth.of_total", n=total)}</span>') if mp_head else ""
+    lead = f"{before} " if before else ""
+    return (f'{lead}<b style="color:{color}">{value}</b>'
+            f'{" " + after if after else ""}{tail}')
+
+
+_where = (f'<b>{" · ".join(mp_label(m) for m in sorted(mp_head))}</b>'
+          f'<span style="color:{MUTED};"> — </span>') if mp_head else ""
+_sep = f'<span style="color:{MUTED};">&nbsp;&nbsp;·&nbsp;&nbsp;</span>'
 st.markdown(
-    f"{t('synth.at_risk_line')} <b style='color:{ACCENT}'>"
-    f"{fmt_money(total_risk, '')}</b> · "
-    f"{len(rows)} {t('synth.summary')} {n_ready}",
-    unsafe_allow_html=True)
+    _where + _sep.join([
+        head_metric(t("synth.at_risk_line"), fmt_money(head_risk, ""), "",
+                    fmt_money(total_risk, ""), ACCENT),
+        head_metric("", str(len(head_rows)), t("synth.over_limit_n"),
+                    str(len(rows))),
+        head_metric(t("synth.sqp_have"), str(head_ready), "", str(n_ready)),
+    ]), unsafe_allow_html=True)
 
 pending = load_drafts_for_review()
 # черновики по паре — чтобы в очереди показать «было/стало» без перехода
@@ -1059,9 +1098,12 @@ with tab_queue:
         query = f1.text_input("q", label_visibility="collapsed",
                               placeholder=t("synth.search"))
         mps = sorted({x["r"]["marketplace"] for x in rows})
+        # ключ обязателен: шапка страницы читает выбор из session_state,
+        # она рисуется выше этого виджета
         mp_sel = f2.multiselect("MP", mps, default=[],
                                 label_visibility="collapsed",
-                                placeholder=t("list.all_mp"))
+                                placeholder=t("list.all_mp"),
+                                key=MP_FILTER_KEY)
         try:
             q_mode = f3.segmented_control(
                 "вид", ["cards", "table"], default="cards",

@@ -267,7 +267,18 @@ LANGS: dict[str, dict[str, str]] = {
         "synth.tab_review": "Review drafts",
         "synth.tab_any": "Any product",
         "synth.caption": "Compress titles under the limit without losing search weight. Priority follows money at risk.",
-        "synth.summary": "titles over the limit · SQP available for",
+        "synth.over_limit_n": "titles over the limit",
+        "synth.sqp_have": "SQP available for",
+        "synth.of_total": "of {n} total",
+        "mp.com": "USA",
+        "mp.de": "Germany",
+        "mp.es": "Spain",
+        "mp.fr": "France",
+        "mp.it": "Italy",
+        "mp.co.uk": "United Kingdom",
+        "mp.nl": "Netherlands",
+        "mp.se": "Sweden",
+        "mp.pl": "Poland",
         "synth.batch_run": "Generate batch",
         "synth.batch_hint": "The batch takes the highest-risk products without a draft yet. Nothing is applied.",
         "synth.batch_none": "Every product in the queue already has a draft — check the Review drafts tab.",
@@ -861,7 +872,18 @@ LANGS: dict[str, dict[str, str]] = {
         "synth.tab_review": "Разбор черновиков",
         "synth.tab_any": "Любой товар",
         "synth.caption": "Сжатие тайтла под лимит без потери поискового веса. Приоритет — по деньгам под риском.",
-        "synth.summary": "тайтлов сверх лимита · SQP есть у",
+        "synth.over_limit_n": "тайтлов сверх лимита",
+        "synth.sqp_have": "SQP есть у",
+        "synth.of_total": "всего {n}",
+        "mp.com": "США",
+        "mp.de": "Германия",
+        "mp.es": "Испания",
+        "mp.fr": "Франция",
+        "mp.it": "Италия",
+        "mp.co.uk": "Великобритания",
+        "mp.nl": "Нидерланды",
+        "mp.se": "Швеция",
+        "mp.pl": "Польша",
         "synth.batch_run": "Сгенерировать партию",
         "synth.batch_hint": "Партия берёт товары с наибольшими деньгами под риском, у которых ещё нет черновика. Ничего не применяется.",
         "synth.batch_none": "У всех товаров очереди уже есть черновики — загляни во вкладку «Разбор черновиков».",
@@ -1455,7 +1477,18 @@ LANGS: dict[str, dict[str, str]] = {
         "synth.tab_review": "Розбір чернеток",
         "synth.tab_any": "Будь-який товар",
         "synth.caption": "Стиснення тайтла під ліміт без втрати пошукової ваги. Пріоритет — за грошима під ризиком.",
-        "synth.summary": "тайтлів понад ліміт · SQP є у",
+        "synth.over_limit_n": "тайтлів понад ліміт",
+        "synth.sqp_have": "SQP є у",
+        "synth.of_total": "усього {n}",
+        "mp.com": "США",
+        "mp.de": "Німеччина",
+        "mp.es": "Іспанія",
+        "mp.fr": "Франція",
+        "mp.it": "Італія",
+        "mp.co.uk": "Велика Британія",
+        "mp.nl": "Нідерланди",
+        "mp.se": "Швеція",
+        "mp.pl": "Польща",
         "synth.batch_run": "Згенерувати партію",
         "synth.batch_hint": "Партія бере товари з найбільшими грошима під ризиком, у яких ще немає чернетки. Нічого не застосовується.",
         "synth.batch_none": "Усі товари черги вже мають чернетки — заглянь у вкладку «Розбір чернеток».",
@@ -1812,6 +1845,19 @@ def t(key: str, **kwargs) -> str:
     lang = current_lang()
     s = LANGS.get(lang, {}).get(key) or LANGS[DEFAULT_LANG].get(key) or key
     return s.format(**kwargs) if kwargs else s
+
+
+def mp_label(code: str) -> str:
+    """Человеческое имя маркетплейса: «es» -> «Испания».
+
+    Незнакомый код возвращаем заглавными, а не ключом `mp.xx`: страну могут
+    завести в матрице раньше, чем перевод, и сырой ключ в шапке выглядит
+    поломкой, хотя данные в порядке.
+    """
+    key = f"mp.{str(code).lower()}"
+    if key in LANGS.get(current_lang(), {}) or key in LANGS[DEFAULT_LANG]:
+        return t(key)
+    return str(code).upper()
 
 
 def lang_selector() -> None:
