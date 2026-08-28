@@ -118,6 +118,68 @@ def access_token() -> tuple[str | None, str | None]:
     return token, None
 
 
+PARTICIPATIONS_PATH = "/sellers/v1/marketplaceParticipations"
+
+
+def check_connection(region: str = "eu", timeout: int = 30) -> dict:
+    """Проверка связи с SP-API до первой отправки.
+
+    Берём самый лёгкий эндпоинт — список рынков продавца. Он ничего
+    не меняет, но проходит весь путь целиком: refresh token → access token →
+    подписанный запрос. Если авторизация сломана, узнать об этом надо здесь,
+    а не когда «Отправить в Amazon» упадёт на живом товаре.
+
+    Регион по умолчанию европейский: все рынки бренда там. Хост — это
+    не идентификатор рынка, а точка входа API.
+    """
+    out = {"ok": False, "status": "", "markets": [], "suspended": [],
+           "error": "", "missing": missing_secrets()}
+    if out["missing"]:
+        out["error"] = "нет ключей: " + ", ".join(out["missing"])
+        return out
+    token, err = access_token()
+    if not token:
+        out["error"] = err or "нет токена"
+        return out
+    host = REGION_HOST.get(region)
+    if not host:
+        out["error"] = f"неизвестный регион {region}"
+        return out
+    try:
+        r = requests.get(host + PARTICIPATIONS_PATH,
+                         headers={"x-amz-access-token": token},
+                         timeout=timeout)
+    except Exception as e:
+        out["error"] = f"{type(e).__name__}: {e}"
+        return out
+    out["status"] = f"HTTP {r.status_code}"
+    if r.status_code != 200:
+        out["error"] = f"HTTP {r.status_code}: {r.text[:300]}"
+        return out
+    try:
+        body = r.json()
+    except Exception:
+        out["error"] = f"ответ не JSON: {r.text[:300]}"
+        return out
+    items = body.get("payload") if isinstance(body, dict) else body
+    if not isinstance(items, list):
+        out["error"] = f"ответ без списка рынков: {str(body)[:300]}"
+        return out
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        mk = it.get("marketplace") or {}
+        part = it.get("participation") or {}
+        code = str(mk.get("countryCode") or mk.get("id") or "?")
+        out["markets"].append(code)
+        # hasSuspendedListings — ранний сигнал: связь есть, а часть товаров
+        # уже снята с продажи. Молчать об этом на экране проверки нельзя
+        if part.get("hasSuspendedListings"):
+            out["suspended"].append(code)
+    out["ok"] = True
+    return out
+
+
 def build_patches(title: str, highlights: str, mp_id: str, lang: str,
                   title_limit: int, hl_limit: int) -> tuple[list, list[str]]:
     """(патчи, что пропущено и почему).

@@ -196,10 +196,48 @@ check("отказ записан с причиной",
 check("Highlights в журнале только когда реально уходили",
       LOGGED[0][1][5] == "hl" and LOGGED[1][1][5] is None)
 
+# --- проверка связи ДО первой отправки
+def arm_get(payload, code=200):
+    sp.st = type("S", (), {"session_state": {"spapi.token": {
+        "token": "tok", "until": 9e18}}})()
+    sp.cfg = lambda name, default=None: "x"
+    requests.get = lambda url, headers=None, timeout=None: _Resp(payload, code)
+
+
+arm_get({"payload": [
+    {"marketplace": {"id": MP_ID, "countryCode": "ES"},
+     "participation": {"isParticipating": True, "hasSuspendedListings": False}},
+    {"marketplace": {"id": "A1PA6795UKMFR9", "countryCode": "DE"},
+     "participation": {"isParticipating": True, "hasSuspendedListings": True}},
+]})
+conn = sp.check_connection()
+check("связь подтверждена", conn["ok"] and conn["status"] == "HTTP 200")
+check("рынки перечислены кодами стран", conn["markets"] == ["ES", "DE"])
+check("подавленные листинги названы поимённо", conn["suspended"] == ["DE"])
+
+arm_get([{"marketplace": {"countryCode": "ES"},
+          "participation": {"hasSuspendedListings": False}}])
+check("список без обёртки payload тоже разбирается",
+      sp.check_connection()["markets"] == ["ES"])
+
+arm_get({"errors": [{"message": "Unauthorized"}]}, code=403)
+bad_conn = sp.check_connection()
+check("сломанная авторизация видна кодом и телом",
+      not bad_conn["ok"] and "403" in bad_conn["error"]
+      and "Unauthorized" in bad_conn["error"])
+
 # --- секреты
 sp.cfg = lambda name, default=None: None
 check("без секретов отправка объявляется ненастроенной",
       not sp.configured() and len(sp.missing_secrets()) == 4)
+no_keys = sp.check_connection()
+check("проверка связи без ключей называет каждый недостающий",
+      not no_keys["ok"] and len(no_keys["missing"]) == 4
+      and all(k in no_keys["error"] for k in
+              ("SP_API_CLIENT_ID", "SP_API_CLIENT_SECRET",
+               "SP_API_REFRESH_TOKEN", "SP_API_SELLER_ID")))
+check("проверка связи без ключей не ходит в сеть",
+      no_keys["status"] == "")
 
 # =========================== страница: без подтверждения не шлём
 CALLS: list = []
