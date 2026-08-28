@@ -23,6 +23,7 @@ from services.ai import reset_last_error
 from services.db import get_conn, cfg, cfg_source
 from services.flatfile_template import (
     parse_template, save_template, templates_for)
+from services.spapi import check_connection, missing_secrets
 from services.settings import get_setting, get_int, save_setting
 from components.ui import inject_fonts, eyebrow
 
@@ -70,6 +71,14 @@ try:
 except Exception:
     db_ok = False
 
+# SP-API держится на четырёх ключах сразу, и «не подключён» без указания,
+# какого именно не хватает, отправляет человека перебирать секреты вслепую
+sp_missing = missing_secrets()
+sp_info = (t("set.sp_missing", keys=", ".join(sp_missing)) if sp_missing
+           else " · ".join(x for x in (key_info("SP_API_REFRESH_TOKEN"),
+                                       f'seller {cfg("SP_API_SELLER_ID")}')
+                           if x))
+
 rows = [
     ("Gemini API", t("set.purpose_gemini"),
      key_info("GEMINI_API_KEY"), bool(gem_key)),
@@ -77,6 +86,7 @@ rows = [
      key_info("ANTHROPIC_API_KEY"), bool(ant_key)),
     ("ScrapingDog", t("set.purpose_scrapingdog"),
      key_info("SCRAPINGDOG_API_KEY"), bool(dog_key)),
+    ("Amazon SP-API", t("set.purpose_spapi"), sp_info, not sp_missing),
     ("Lakebase", t("set.purpose_db"), "", db_ok),
 ]
 
@@ -126,6 +136,24 @@ if st.button(t("set.check")):
             _probe("ScrapingDog", "https://api.scrapingdog.com/amazon/product",
                    {}, {"api_key": str(dog_key).strip(), "domain": "com",
                         "asin": "B00AP877FS", "country": "us"}, timeout=40)
+        # SP-API проверяем отдельно: важен не сам код ответа, а что видно
+        # в теле — сколько рынков и нет ли подавленных листингов
+        if sp_missing:
+            st.write("Amazon SP-API: ❌ "
+                     + t("set.sp_missing", keys=", ".join(sp_missing)))
+        else:
+            _sp = check_connection()
+            if _sp["ok"]:
+                st.write(f'Amazon SP-API: ✅ {_sp["status"]} · '
+                         + t("set.sp_markets", n=len(_sp["markets"]),
+                             codes=", ".join(_sp["markets"]) or "—"))
+                if _sp["suspended"]:
+                    st.warning("⚠ " + t("set.sp_suspended",
+                                        codes=", ".join(_sp["suspended"])))
+                else:
+                    st.write("· " + t("set.sp_no_suspended"))
+            else:
+                st.write(f'Amazon SP-API: ❌ {_sp["error"]}')
 
 st.divider()
 
