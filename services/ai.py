@@ -148,6 +148,43 @@ def last_call_error() -> str | None:
         return None
 
 
+# расход токенов — единственный способ УБЕДИТЬСЯ, что кэш работает.
+# Метка cache_control не гарантирует попадания: короткий префикс не кэшируется
+# молча, а любое изменение байтов префикса начинает запись заново. Поэтому
+# копим usage по вызовам и показываем на странице.
+USAGE_KEY = "ai.usage"
+USAGE_FIELDS = ("input_tokens", "output_tokens",
+                "cache_creation_input_tokens", "cache_read_input_tokens")
+
+
+def _record_usage(usage: dict) -> None:
+    try:
+        acc = st.session_state.get(USAGE_KEY) or {"calls": 0}
+        acc["calls"] = int(acc.get("calls", 0)) + 1
+        for f in USAGE_FIELDS:
+            acc[f] = int(acc.get(f, 0)) + int(usage.get(f) or 0)
+        st.session_state[USAGE_KEY] = acc
+    except Exception:
+        pass
+
+
+def reset_usage() -> None:
+    """Обнулить счётчик перед партией — иначе цифры складываются с прошлой."""
+    try:
+        st.session_state.pop(USAGE_KEY, None)
+    except Exception:
+        pass
+
+
+def usage_totals() -> dict:
+    """Итог по вызовам с момента reset_usage(): сколько токенов ушло,
+    сколько записано в кэш и сколько прочитано из него."""
+    try:
+        return dict(st.session_state.get(USAGE_KEY) or {})
+    except Exception:
+        return {}
+
+
 def _clean_json(text: str) -> dict | None:
     t = (text or "").strip()
     t = t.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
@@ -166,7 +203,8 @@ def _clean_json(text: str) -> dict | None:
 
 
 def _call_gemini(model: str, prompt: str, imgs: list[tuple[str, bytes]],
-                 timeout: int, max_tokens: int = 8000) -> dict | None:
+                 timeout: int, max_tokens: int = 8000,
+                 system: str | None = None) -> dict | None:
     key = cfg("GEMINI_API_KEY")
     if not key:
         st.error("GEMINI_API_KEY не найден в секретах.")
@@ -176,12 +214,18 @@ def _call_gemini(model: str, prompt: str, imgs: list[tuple[str, bytes]],
         parts.append({"inline_data": {"mime_type": mime,
                                       "data": base64.b64encode(data).decode()}})
     parts.append({"text": prompt})
+    payload = {"contents": [{"parts": parts}],
+               "generationConfig": {"responseMimeType": "application/json",
+                                    "maxOutputTokens": max_tokens}}
+    if system:
+        # у Gemini постоянная часть — systemInstruction; явного cache_control
+        # тут нет, но отделять её всё равно правильно: один и тот же текст
+        # на своём месте, а не смешан с данными товара
+        payload["systemInstruction"] = {"parts": [{"text": system}]}
     r = requests.post(
         GEMINI_URL.format(model=model),
         headers={"x-goog-api-key": str(key).strip()},
-        json={"contents": [{"parts": parts}],
-              "generationConfig": {"responseMimeType": "application/json",
-                                   "maxOutputTokens": max_tokens}},
+        json=payload,
         timeout=timeout,
     )
     if r.status_code != 200:
@@ -190,6 +234,14 @@ def _call_gemini(model: str, prompt: str, imgs: list[tuple[str, bytes]],
         _report(f"Gemini HTTP {r.status_code} · {model}: {r.text[:400]}")
         return None
     _set_last_error("gemini", None)
+    # у Gemini расход лежит в другом месте и под другими именами — приводим
+    # к одним полям, чтобы строка расхода на странице не зависела от провайдера
+    _meta = (r.json().get("usageMetadata") or {})
+    _record_usage({
+        "input_tokens": _meta.get("promptTokenCount") or 0,
+        "output_tokens": _meta.get("candidatesTokenCount") or 0,
+        "cache_read_input_tokens": _meta.get("cachedContentTokenCount") or 0,
+    })
     try:
         cand = r.json()["candidates"][0]
         text = cand["content"]["parts"][0]["text"]
@@ -208,12 +260,21 @@ def _call_gemini(model: str, prompt: str, imgs: list[tuple[str, bytes]],
 
 
 def _anthropic_body(model: str, content: list, max_tokens: int,
-                    thinking: str) -> dict:
+                    thinking: str, system: str | None = None) -> dict:
     """Тело запроса к Anthropic. thinking=disabled отправляем явно: у моделей
     Claude 5 мышление включено по умолчанию, а для форматной задачи оно
-    только съедает бюджет ответа."""
+    только съедает бюджет ответа.
+
+    system идёт отдельным блоком с cache_control: кэш у Anthropic — это
+    совпадение ПРЕФИКСА (порядок tools → system → messages), поэтому всё
+    постоянное обязано лежать в system, а меняющееся от товара к товару —
+    в messages. Метка на последнем блоке system кэширует его целиком.
+    """
     body = {"model": model, "max_tokens": max_tokens,
             "messages": [{"role": "user", "content": content}]}
+    if system:
+        body["system"] = [{"type": "text", "text": system,
+                           "cache_control": {"type": "ephemeral"}}]
     if thinking == "disabled":
         body["thinking"] = {"type": "disabled"}
     return body
@@ -221,7 +282,8 @@ def _anthropic_body(model: str, content: list, max_tokens: int,
 
 def _call_anthropic(model: str, prompt: str, imgs: list[tuple[str, bytes]],
                     timeout: int, max_tokens: int = 8000,
-                    thinking: str = "adaptive") -> dict | None:
+                    thinking: str = "adaptive",
+                    system: str | None = None) -> dict | None:
     key = cfg("ANTHROPIC_API_KEY")
     if not key:
         st.error("ANTHROPIC_API_KEY не найден в секретах.")
@@ -237,7 +299,7 @@ def _call_anthropic(model: str, prompt: str, imgs: list[tuple[str, bytes]],
         headers={"x-api-key": str(key).strip(),
                  "anthropic-version": "2023-06-01",
                  "content-type": "application/json"},
-        json=_anthropic_body(model, content, max_tokens, thinking),
+        json=_anthropic_body(model, content, max_tokens, thinking, system),
         timeout=timeout,
     )
     if r.status_code != 200:
@@ -247,6 +309,7 @@ def _call_anthropic(model: str, prompt: str, imgs: list[tuple[str, bytes]],
         return None
     _set_last_error("anthropic", None)
     body = r.json()
+    _record_usage(body.get("usage") or {})
     text = "".join(b.get("text", "") for b in body.get("content", []))
     data = _clean_json(text)
     if data is None:
@@ -268,9 +331,15 @@ def _call_anthropic(model: str, prompt: str, imgs: list[tuple[str, bytes]],
 
 def generate_json(task: str, prompt: str,
                   images: list[str] | None = None,
-                  timeout: int = 240) -> dict | None:
+                  timeout: int = 240,
+                  system: str | None = None) -> dict | None:
     """Вызов ИИ по задаче. Провайдер и модель берутся из Настроек.
-    Возвращает распарсенный JSON или None (ошибка уже показана в UI)."""
+    Возвращает распарсенный JSON или None (ошибка уже показана в UI).
+
+    system — постоянная часть промпта (методология, правила). У Anthropic
+    она уходит отдельным блоком с cache_control и при партии из нескольких
+    товаров читается из кэша вместо повторной обработки.
+    """
     provider, model = task_config(task)
     max_tokens, thinking = task_limits(task)
     imgs = _fetch_images(images or [])
@@ -280,8 +349,8 @@ def generate_json(task: str, prompt: str,
     try:
         if provider == "anthropic":
             return _call_anthropic(model, prompt, imgs, timeout,
-                                   max_tokens, thinking)
-        return _call_gemini(model, prompt, imgs, timeout, max_tokens)
+                                   max_tokens, thinking, system)
+        return _call_gemini(model, prompt, imgs, timeout, max_tokens, system)
     except requests.Timeout:
         _report(f"{PROVIDER_NAME.get(provider, provider)} {model}: "
                 f"нет ответа за {timeout} с (таймаут)")
