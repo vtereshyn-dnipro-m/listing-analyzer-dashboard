@@ -28,6 +28,7 @@ from services.db import get_conn, cfg
 from services.settings import get_setting, get_int
 from services.ai import (
     generate_json, task_config, no_credit_banner, last_call_error,
+    reset_usage, usage_totals,
 )
 from services.economics import econ_map, money_at_risk, fmt_money
 from services.serp import (
@@ -61,15 +62,25 @@ ACCENT = "#E8590C"
 INK = "#1A1815"
 MUTED = "#57534A"
 
-BASE_PROMPT = """Ты эксперт по Amazon-листингам бренда Dnipro-M.
+# Промпт разделён на постоянную и переменную часть намеренно.
+#
+# Постоянная (SYSTEM_PROMPT) — методология и правила: одинакова для всех
+# товаров партии. Переменная (USER_PROMPT) — исходный тайтл, маркетплейс
+# и фразы: своя у каждого товара.
+#
+# Кэш Anthropic — это совпадение ПРЕФИКСА в порядке tools → system →
+# messages. Пока методология лежала внутри общего текста вперемешку
+# с данными товара, префикс менялся на каждом товаре и кэшироваться было
+# нечему: партия из 20 обрабатывала методологию 20 раз.
+#
+# Версия методологии подставляется в первую строку system осознанно: если
+# скилл перевыпустят, байты префикса изменятся и старый кэш перестанет
+# читаться сам собой. Без этой строки два разных скилла с совпадающим
+# текстом дали бы один кэш.
+SYSTEM_PROMPT = """Ты эксперт по Amazon-листингам бренда Dnipro-M.
 
-МЕТОДОЛОГИЯ (следуй ей строго):
+МЕТОДОЛОГИЯ (версия {skill_version}, следуй ей строго):
 {skill_text}
-
-{keywords_block}
-
-Исходный тайтл (маркетплейс {marketplace}):
-{title}
 
 ЗАДАЧА — сплит с сохранением поискового веса, а не просто обрезка:
 - title: целься в {title_target} символов. ЖЁСТКИЙ лимит {title_limit},
@@ -97,6 +108,24 @@ BASE_PROMPT = """Ты эксперт по Amazon-листингам бренда
 
 Ответь ТОЛЬКО валидным JSON без markdown:
 {{"title": "...", "highlights": "...", "dropped": ["...", "..."]}}"""
+
+# переменная часть: всё, что своё у каждого товара
+USER_PROMPT = """{keywords_block}Исходный тайтл (маркетплейс {marketplace}):
+{title}"""
+
+
+def build_system(skill_text: str, skill_ver: int) -> str:
+    """Постоянная часть промпта. Байты обязаны совпадать от товара к товару,
+    иначе кэшировать нечего."""
+    return SYSTEM_PROMPT.format(
+        skill_version=skill_ver,
+        skill_text=skill_text.replace("{title_limit}", str(TITLE_LIMIT))
+                             .replace("{highlights_limit}", str(HIGHLIGHTS_LIMIT)),
+        title_limit=TITLE_LIMIT,
+        highlights_limit=HIGHLIGHTS_LIMIT,
+        title_target=max(1, TITLE_LIMIT - LENGTH_MARGIN),
+        highlights_target=max(1, HIGHLIGHTS_LIMIT - LENGTH_MARGIN),
+    )
 
 
 # ---------------------------------------------------------------- загрузка
@@ -252,7 +281,8 @@ def _trim_phrases(keep: list[str], kw_df: pd.DataFrame | None) -> list[str]:
 def generate_split(title: str, marketplace: str,
                    skill_text: str, keep: list[str], forbid: list[str],
                    kw_df: pd.DataFrame | None = None,
-                   retry_note: str = "") -> dict | None:
+                   retry_note: str = "",
+                   skill_ver: int = 0) -> dict | None:
     """Генерация сплита. Провайдер и модель — из Настроек (задача title_split).
 
     kw_df — таблица фраз с фактами SQP: из неё в промпт уходят покупки
@@ -274,22 +304,16 @@ def generate_split(title: str, marketplace: str,
         kw_lines.append(head + "; ".join(phrase_line(p, metrics) for p in keep))
     if forbid:
         kw_lines.append("ЗАПРЕЩЕНО использовать: " + "; ".join(forbid))
-    keywords_block = "\n".join(kw_lines) if kw_lines else ""
+    keywords_block = ("\n".join(kw_lines) + "\n\n") if kw_lines else ""
 
-    prompt = BASE_PROMPT.format(
-        skill_text=skill_text.replace("{title_limit}", str(TITLE_LIMIT))
-                             .replace("{highlights_limit}", str(HIGHLIGHTS_LIMIT)),
-        keywords_block=keywords_block,
-        marketplace=marketplace,
-        title=title,
-        title_limit=TITLE_LIMIT,
-        highlights_limit=HIGHLIGHTS_LIMIT,
-        title_target=max(1, TITLE_LIMIT - LENGTH_MARGIN),
-        highlights_target=max(1, HIGHLIGHTS_LIMIT - LENGTH_MARGIN),
-    )
+    prompt = USER_PROMPT.format(keywords_block=keywords_block,
+                                marketplace=marketplace, title=title)
+    # автоповтор — тоже переменная часть: он свой у каждой попытки,
+    # в system ему нельзя, там он ломал бы кэш всей партии
     if retry_note:
         prompt += "\n\n" + retry_note
-    return generate_json("title_split", prompt, timeout=120)
+    return generate_json("title_split", prompt, timeout=120,
+                         system=build_system(skill_text, skill_ver))
 
 
 LENGTH_MARGIN = 2      # запас к лимиту, который просим у модели
@@ -371,7 +395,8 @@ def retry_note(res: dict) -> str:
 def generate_guarded(title: str, marketplace: str, skill_text: str,
                      keep: list[str], forbid: list[str],
                      kw_df: pd.DataFrame | None,
-                     must_keep: list[str]) -> tuple[dict | None, dict]:
+                     must_keep: list[str],
+                     skill_ver: int = 0) -> tuple[dict | None, dict]:
     """Генерация с гарантией длины: до трёх попыток, затем обрезка.
 
     Модель промахивается по длине (77 при лимите 75), и человеку
@@ -385,7 +410,8 @@ def generate_guarded(title: str, marketplace: str, skill_text: str,
     for attempt in range(1, MAX_ATTEMPTS + 1):
         stats["attempts"] += 1
         res = generate_split(title, marketplace, skill_text, keep, forbid,
-                             kw_df=kw_df, retry_note=note)
+                             kw_df=kw_df, retry_note=note,
+                             skill_ver=skill_ver)
         if res is None:
             return None, stats
         if not over_limits(res):
@@ -646,6 +672,9 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
     done, failed, unsaved = 0, 0, 0
     stats = {"attempts": 0, "retried": 0, "trimmed": 0, "over": 0}
     errors: list[str] = []
+    # счётчик токенов обнуляем: иначе к цифрам этой партии прибавится
+    # расход прошлой и «прочитано из кэша» будет выглядеть лучше, чем есть
+    reset_usage()
     bar = st.progress(0.0, text=t("synth.batch_run"))
     for i, x in enumerate(items, 1):
         r = x["r"]
@@ -661,7 +690,7 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
                 if not kw.empty else [])
         try:
             res, st_one = generate_guarded(title, mp, skill_text, keep, forbid,
-                                           kw, must)
+                                           kw, must, skill_version)
             for k in stats:
                 stats[k] += st_one.get(k, 0)
         except Exception as e:
@@ -691,9 +720,10 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
             if err and (not errors or errors[-1] != f"{asin} ({mp}): {err}"):
                 errors.append(f"{asin} ({mp}): {err}")
     bar.empty()
+    usage = usage_totals()
     st.cache_data.clear()
     return {"done": done, "failed": failed, "unsaved": unsaved,
-            "errors": errors, "stats": stats}
+            "errors": errors, "stats": stats, "usage": usage}
 
 
 @st.cache_data(ttl=300)
@@ -1413,6 +1443,21 @@ with tab_queue:
                              over=_s.get("over", 0)))
         else:
             st.error(t("synth.batch_all_failed", failed=_out["failed"]))
+        # расход токенов — единственная проверка, что кэш реально сработал:
+        # метка cache_control ничего не гарантирует, короткий префикс
+        # не кэшируется молча. Ноль прочитанного при непустой записи —
+        # значит префикс менялся между товарами
+        _u = _out.get("usage") or {}
+        if _u.get("calls"):
+            _read = int(_u.get("cache_read_input_tokens", 0))
+            _write = int(_u.get("cache_creation_input_tokens", 0))
+            _fresh = int(_u.get("input_tokens", 0))
+            st.caption(t("synth.usage_line", calls=_u["calls"],
+                         fresh=f"{_fresh:,}".replace(",", " "),
+                         write=f"{_write:,}".replace(",", " "),
+                         read=f"{_read:,}".replace(",", " ")))
+            if _write and not _read:
+                st.caption("⚠ " + t("synth.cache_miss"))
         for _line in _out.get("errors", [])[:5]:
             st.code(_line, language=None)
         if len(_out.get("errors", [])) > 5:
@@ -1544,7 +1589,8 @@ with tab_queue:
                                  if not kw.empty else [])
                         res, _st = generate_guarded(
                             title, mp, skill_text, keep_list, forbid_list,
-                            kw_edit if not kw_edit.empty else kw, _must)
+                            kw_edit if not kw_edit.empty else kw, _must,
+                            skill_version)
                     if res:
                         save_draft(asin, mp, title, res, skill_version)
                         if not kw.empty:
@@ -1635,7 +1681,8 @@ with tab_review:
                                      "search_query"].tolist()
                               if not kw.empty else [])
                     res, _rst = generate_guarded(before, mp, skill_text, keep,
-                                                 forbid, kw, _rmust)
+                                                 forbid, kw, _rmust,
+                                                 skill_version)
                 if res:
                     save_draft(asin, mp, before, res, skill_version)
                     if not kw.empty:
@@ -1781,7 +1828,8 @@ with tab_any:
                                   if not a_kw.empty else [])
                         ares, _ast = generate_guarded(
                             a_title, a_mp, skill_text, a_keep, a_forbid,
-                            a_edit if not a_edit.empty else a_kw, _amust)
+                            a_edit if not a_edit.empty else a_kw, _amust,
+                            skill_version)
                     if ares:
                         save_draft(a_asin, a_mp, a_title, ares, skill_version)
                         if not a_kw.empty:

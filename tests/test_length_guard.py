@@ -31,16 +31,21 @@ L = mod.TITLE_LIMIT
 check(f"лимит title = {L}", L == 75)
 
 # --- промпт: запас и самопроверка
-PROMPTS = []
-mod.generate_json = lambda task, prompt, **kw: (PROMPTS.append(prompt), RESP.pop(0))[1]
+# промпт разделён: правила длины живут в ПОСТОЯННОЙ части (она кэшируется),
+# подсказка автоповтора — в переменной. Ловим обе.
+PROMPTS, SYSTEMS = [], []
+mod.generate_json = lambda task, prompt, system=None, **kw: (
+    PROMPTS.append(prompt), SYSTEMS.append(system or ""), RESP.pop(0))[2]
 RESP = [{"title": "x" * 40, "highlights": "y" * 40, "dropped": []}]
 mod.generate_split("исходный тайтл", "es", "методика", [], [])
-p0 = PROMPTS[0]
-check("в промпте цель = лимит минус запас", f"целься в {L - 2} символов" in p0)
-check("в промпте правило самопроверки длины", "посчитай длину" in p0)
+s0 = SYSTEMS[0]
+check("в промпте цель = лимит минус запас", f"целься в {L - 2} символов" in s0)
+check("в промпте правило самопроверки длины", "посчитай длину" in s0)
+check("правила длины лежат в кэшируемой части, не в данных товара",
+      "посчитай длину" not in PROMPTS[0])
 
 # --- автоповтор: два промаха, потом попадание
-PROMPTS.clear()
+PROMPTS.clear(); SYSTEMS.clear()
 RESP[:] = [{"title": "z" * 80, "highlights": "h", "dropped": []},
            {"title": "z" * 77, "highlights": "h", "dropped": []},
            {"title": "z" * 70, "highlights": "h", "dropped": []}]
@@ -56,7 +61,7 @@ check("в повторе сказано на сколько сократить",
 check("в повторе запрет добавлять слова", "Не добавляй новых слов" in PROMPTS[1])
 
 # --- три промаха -> режем по границе слова
-PROMPTS.clear()
+PROMPTS.clear(); SYSTEMS.clear()
 LONG = "Dnipro-M Martillo Perforador SDS Plus 1650W 5,5J Taladro Percutor Profesional Maletin"
 RESP[:] = [{"title": LONG, "highlights": "h", "dropped": []}] * 3
 res, stats = mod.generate_guarded("t", "es", "s", [], [], None, ["Dnipro-M"])
@@ -70,7 +75,7 @@ check("поле помечено как обрезанное", res.get("trimmed_
 check("must_keep на месте", "Dnipro-M" in res["title"])
 
 # --- обрезка убила бы must_keep -> не режем
-PROMPTS.clear()
+PROMPTS.clear(); SYSTEMS.clear()
 RESP[:] = [{"title": LONG, "highlights": "h", "dropped": []}] * 3
 res, stats = mod.generate_guarded("t", "es", "s", [], [], None, ["Maletin"])
 check("не режем, если теряется must_keep",
@@ -89,7 +94,7 @@ else:
     check("обрезка не делит слово ни на одном лимите", True)
 
 # --- highlights тоже под гарантией
-PROMPTS.clear()
+PROMPTS.clear(); SYSTEMS.clear()
 HL = "y" * 200
 RESP[:] = [{"title": "ok", "highlights": HL, "dropped": []}] * 3
 res, stats = mod.generate_guarded("t", "es", "s", [], [], None, [])
