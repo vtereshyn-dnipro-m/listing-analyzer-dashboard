@@ -67,10 +67,12 @@ def load_catalog() -> pd.DataFrame:
         df = pd.read_sql(
             """
             SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor,
-                   s.fetched_at, s.ok, s.title, s.in_stock, s.review_count, s.raw
+                   s.fetched_at, s.ok, s.title, s.in_stock, s.review_count,
+                   s.is_amazon_choice, s.raw
             FROM product_matrix m
             LEFT JOIN LATERAL (
-                SELECT fetched_at, ok, title, in_stock, review_count, raw
+                SELECT fetched_at, ok, title, in_stock, review_count,
+                       is_amazon_choice, raw
                 FROM listing_snapshots s
                 WHERE s.asin = m.asin AND s.marketplace = m.marketplace
                   AND s.ok = TRUE
@@ -149,6 +151,11 @@ def metrics(row: pd.Series) -> dict:
     raw_stock = row.get("in_stock")
     in_stock = False if pd.isna(raw_stock) else bool(raw_stock)
 
+    # у несобранного товара поле придёт NaN, а NaN в Python истинный —
+    # bool(NaN) дал бы «бейдж есть» там, где данных нет вообще
+    raw_choice = row.get("is_amazon_choice")
+    amazon_choice = False if pd.isna(raw_choice) else bool(raw_choice)
+
     return {
         "title": title,
         "title_len": len(title),
@@ -164,6 +171,7 @@ def metrics(row: pd.Series) -> dict:
         "econ": {},
         "main_img": main_img,
         "coupon": bool(d.get("is_coupon_exists")),
+        "amazon_choice": amazon_choice,
         "collected": collected,
     }
 
@@ -252,7 +260,53 @@ def load_rule_pairs() -> dict:
     return out
 
 
+@st.cache_data(ttl=300)
+def load_lost_choice() -> dict:
+    """(asin, marketplace) -> когда потерян бейдж Amazon's Choice.
+
+    Отдельным запросом, а не через load_rule_pairs: там только набор
+    rule_id, а здесь важна дата — «потерян» без даты не говорит, вчера
+    это случилось или полгода назад.
+    """
+    try:
+        conn = get_conn()
+        d = pd.read_sql(
+            """
+            SELECT DISTINCT ON (asin, marketplace)
+                   asin, marketplace, created_at
+            FROM diagnosis
+            WHERE rule_id = 'lost_amazon_choice'
+            ORDER BY asin, marketplace, created_at DESC
+            """, conn)
+        conn.close()
+    except Exception:
+        return {}
+    return {(str(rr["asin"]), str(rr["marketplace"])): rr["created_at"]
+            for _, rr in d.iterrows()}
+
+
 RULE_PAIRS = load_rule_pairs()
+LOST_CHOICE = load_lost_choice()
+
+
+def choice_chips(mx: dict, asin: str, mp: str) -> list[str]:
+    """Плашки Amazon's Choice: зелёная «есть», красная «потерян».
+
+    Отсутствие бейджа плашкой НЕ показываем: он есть у 19 товаров из всех,
+    и «нет» на каждой второй карточке — это шум, а не сигнал. Значимы два
+    события: бейдж есть и бейдж был, но пропал.
+
+    Когда бейдж на месте, показываем только зелёную, даже если боль
+    lost_amazon_choice ещё висит в diagnosis: боль живёт до следующего
+    сбора, и «потерян» рядом с живым бейджем — прямое враньё.
+    """
+    if mx.get("amazon_choice"):
+        return [chip(t("metric.choice"), t("metric.yes"), "ok")]
+    lost = LOST_CHOICE.get((str(asin), str(mp)))
+    if lost is None or pd.isna(lost):
+        return []
+    return [chip(t("metric.choice_lost"),
+                 pd.to_datetime(lost).strftime("%d.%m.%Y"), "err")]
 
 
 def _pair_state(asin: str, mp: str) -> str:
@@ -712,7 +766,7 @@ for x in chunk:
                      if mx["bsr"] else "—"), "neutral"),
         chip(t("metric.stock"), t("metric.in_stock") if mx["in_stock"] else t("metric.no"),
              "ok" if mx["in_stock"] else "err"),
-    ] + ([
+    ] + choice_chips(mx, asin, mp) + ([
         chip(t("metric.revenue"), fmt_money(_ec.get("revenue_30d"), ""),
              "neutral"),
         chip(t("metric.sessions"), str(int(_ec.get("sessions_30d") or 0)),
