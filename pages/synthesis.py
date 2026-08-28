@@ -48,13 +48,13 @@ from components.ui import inject_fonts, eyebrow, limit_ruler_html
 inject_fonts()
 st.title(t("nav.synthesis"))
 
-GEMINI_MODEL = task_config("title_split")[1]
+# Провайдер и модель задачи «сплит тайтла» — из настроек, на каждой
+# перерисовке. Раньше пара звалась GEMINI_MODEL, хотя задачу мог выполнять
+# Anthropic: имя врало и мешало показать в интерфейсе, чем на самом деле
+# сгенерирован черновик.
+TITLE_PROVIDER, TITLE_MODEL = task_config("title_split")
 TITLE_LIMIT = get_int("limit.title", _TL_DEFAULT)
 HIGHLIGHTS_LIMIT = get_int("limit.highlights", _HL_DEFAULT)
-GEMINI_URL = (
-    "https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{GEMINI_MODEL}:generateContent"
-)
 
 FORBIDDEN_CHARS = set("!$?_{}^¬¦®©™")
 ACCENT = "#E8590C"
@@ -451,7 +451,7 @@ def save_draft(asin: str, mp: str, original: str, result: dict, skill_version: i
                  result.get("title", ""),
                  result.get("highlights", ""),
                  ", ".join(result.get("dropped", [])),
-                 GEMINI_MODEL, skill_version,
+                 TITLE_MODEL, skill_version,
                  json.dumps(result, ensure_ascii=False)),
             )
         conn.close()
@@ -471,16 +471,44 @@ def save_draft(asin: str, mp: str, original: str, result: dict, skill_version: i
 
 @st.cache_data(ttl=60)
 def load_draft_stats() -> dict:
-    """Сколько черновиков и последний Coverage по каждому товару."""
+    """История работы по товару: черновики, Coverage и их место во времени
+    относительно принятой правки.
+
+    Голое «черновиков 7» не отвечает на единственный важный вопрос — принято
+    или нет. Поэтому считаем ещё, сколько черновиков было ДО принятия и
+    сколько появилось ПОСЛЕ: первое говорит, сколько заходов понадобилось,
+    второе — что человек пересматривает уже принятое.
+
+    Слова «отклонено» здесь быть не может: отказ мы нигде не пишем, в
+    synthesis_changes попадает только принятое. Черновик, не ставший
+    правкой, — это перегенерация или брошенная работа, а не отклонение.
+    """
     try:
         conn = get_conn()
         df = pd.read_sql(
             """
+            WITH acc AS (
+                SELECT DISTINCT ON (asin, marketplace)
+                       asin, marketplace, accepted_at, model
+                FROM synthesis_changes
+                WHERE status = 'accepted' AND change_type = 'title_split'
+                ORDER BY asin, marketplace, accepted_at DESC
+            )
             SELECT d.asin, d.marketplace, count(*) AS drafts,
-                   max(c.coverage_score) AS coverage
+                   max(c.coverage_score) AS coverage,
+                   count(*) FILTER (WHERE a.accepted_at IS NOT NULL
+                                      AND d.created_at < a.accepted_at)
+                       AS before_accept,
+                   count(*) FILTER (WHERE a.accepted_at IS NOT NULL
+                                      AND d.created_at > a.accepted_at)
+                       AS after_accept,
+                   max(a.accepted_at) AS accepted_at,
+                   max(d.model) AS last_model
             FROM synthesis_drafts d
             LEFT JOIN synthesis_coverage c
                    ON c.asin = d.asin AND c.marketplace = d.marketplace
+            LEFT JOIN acc a
+                   ON a.asin = d.asin AND a.marketplace = d.marketplace
             GROUP BY d.asin, d.marketplace
             """, conn)
         conn.close()
@@ -499,7 +527,7 @@ def load_accepted() -> dict:
             """
             SELECT DISTINCT ON (asin, marketplace)
                    asin, marketplace, accepted_at, status, after_len,
-                   coverage_score
+                   coverage_score, model
             FROM synthesis_changes
             ORDER BY asin, marketplace, accepted_at DESC
             """, conn)
@@ -555,7 +583,7 @@ def load_drafts_for_review() -> pd.DataFrame:
                    d.new_title      AS title_after,
                    d.new_highlights AS highlights_after,
                    d.dropped_words  AS dropped,
-                   d.skill_version, c.coverage_score
+                   d.model, d.skill_version, c.coverage_score
             FROM synthesis_drafts d
             LEFT JOIN LATERAL (
                 SELECT coverage_score FROM synthesis_coverage c
@@ -891,13 +919,12 @@ def render_card_head(x: dict) -> None:
              f'style="width:42px;height:42px;object-fit:contain;background:#fff;'
              f'border:1px solid #E7E4DD;border-radius:7px;"></div>') if img else ""
     sub = [SQP_LABEL[x["sqp_state"]]]
-    if x["draft"].get("drafts"):
-        cov = x["draft"].get("coverage")
-        sub.append(f"{t('synth.drafts_n')} {int(x['draft']['drafts'])}"
-                   + (f" · Coverage {int(cov)}%" if pd.notna(cov) else ""))
-    if x["accepted"]:
-        sub.append("✓ правка принята "
-                   + pd.to_datetime(x["accepted"]["accepted_at"]).strftime("%d.%m"))
+    hist = history_line(x["draft"], x["accepted"])
+    if hist:
+        sub.append(("✓ " if x["accepted"] else "") + hist)
+    cov = x["draft"].get("coverage")
+    if cov is not None and pd.notna(cov):
+        sub.append(f"Coverage {int(cov)}%")
     edge = ACCENT if x["risk"] else "#E7E4DD"
     st.markdown(
         f'<div class="ls-card" style="background:#fff;border:1px solid #E7E4DD;'
@@ -922,6 +949,55 @@ def render_card_head(x: dict) -> None:
 DIFF_BG = "#DCEEE0"       # подсветка того, что модель изменила
 OK_GREEN = "#2F6B3A"
 ERR_RED = "#A32D2D"
+
+# провайдер по префиксу имени модели: в базе лежит только id модели,
+# а человеку нужен и вендор. Незнакомый префикс — показываем как есть,
+# врать про вендора хуже, чем промолчать
+MODEL_VENDOR = (("claude", "Anthropic"), ("gemini", "Google Gemini"),
+                ("gpt", "OpenAI"))
+
+
+def model_badge(model: str | None, provider: str | None = None) -> str:
+    """«Anthropic · claude-sonnet-5» — чем сгенерирован черновик."""
+    mid = "" if model is None or pd.isna(model) else str(model).strip()
+    if not mid:
+        return ""
+    vendor = (provider or "").strip()
+    for prefix, name in MODEL_VENDOR:
+        if mid.lower().startswith(prefix):
+            vendor = name
+            break
+    else:
+        vendor = {"anthropic": "Anthropic", "gemini": "Google Gemini"}.get(
+            vendor.lower(), vendor)
+    label = f"{vendor} · {mid}" if vendor else mid
+    return (f'<span style="background:#F1EFE9;color:#57534A;font-size:11px;'
+            f'border-radius:5px;padding:2px 8px;white-space:nowrap;">'
+            f'{esc(label)}</span>')
+
+
+def history_line(draft: dict, accepted: dict | None) -> str:
+    """«принят 28.08 · до этого черновиков: 6» вместо «черновиков 7».
+
+    Слова «отклонено» здесь нет намеренно: отказ никуда не пишется, и
+    назвать отклонённым черновик, который просто перегенерировали, —
+    выдумать факт. Говорим то, что знаем: принято или нет и сколько
+    заходов было.
+    """
+    n = int(draft.get("drafts") or 0)
+    if not n and not accepted:
+        return ""
+    if not accepted:
+        return t("synth.hist_none", n=n)
+    day = pd.to_datetime(accepted["accepted_at"]).strftime("%d.%m")
+    before = int(draft.get("before_accept") or 0)
+    after = int(draft.get("after_accept") or 0)
+    line = t("synth.hist_accepted", day=day)
+    if before:
+        line += " · " + t("synth.hist_before", n=before)
+    if after:
+        line += " · " + t("synth.hist_after", n=after)
+    return line
 
 
 def diff_html(before: str, after: str) -> str:
@@ -978,6 +1054,8 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
         over = res.get("over_fields") or []
         cov = None
         skill_v = skill_version
+        # свежий результат сгенерирован тем, что настроено сейчас
+        model_id, model_prov = TITLE_MODEL, TITLE_PROVIDER
     elif draft is not None:
         after = str(draft.get("title_after") or "")
         hl = str(draft.get("highlights_after") or "")
@@ -985,6 +1063,9 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
         cov = draft.get("coverage_score")
         skill_v = int(draft.get("skill_version") or 0)
         trimmed, over = [], []
+        # у сохранённого черновика — та модель, которой его сделали, а не
+        # та, что стоит в настройках сейчас: настройку могли поменять
+        model_id, model_prov = draft.get("model"), None
     else:
         return
     if not after:
@@ -1007,7 +1088,22 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
         unsafe_allow_html=True)
 
     with st.container(key=card_key):
-        st.markdown(eyebrow(t("synth.result")), unsafe_allow_html=True)
+        # заголовок и плашка модели в одной строке: «чем сгенерировано» —
+        # часть подписи результата, а не отдельная строка ниже
+        st.markdown(
+            '<div style="display:flex;align-items:center;gap:10px;'
+            'flex-wrap:wrap;margin-bottom:2px;">'
+            + eyebrow(t("synth.result"))
+            + model_badge(model_id, model_prov) + '</div>',
+            unsafe_allow_html=True)
+        # повторное принятие: правка не ломается, но человек должен знать,
+        # что перезаписывает свой же прошлый выбор — в выгрузку пойдёт
+        # последняя принятая, предыдущая останется только в истории
+        _prev = ACCEPTED.get((asin, mp))
+        if _prev is not None:
+            st.info("↻ " + t("synth.already_accepted",
+                             day=pd.to_datetime(
+                                 _prev["accepted_at"]).strftime("%d.%m")))
         # «было» и «стало» — одним блоком, разделены линией; в «стало»
         # подсвечено то, что модель заменила или добавила
         body = (
@@ -1054,7 +1150,7 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
             if accept_change(asin, mp, before,
                              {"title": after, "highlights": hl,
                               "dropped": dropped},
-                             cov, skill_v, GEMINI_MODEL):
+                             cov, skill_v, TITLE_MODEL):
                 st.session_state.pop(f"res-{asin}-{mp}", None)
                 st.success(t("synth.accepted_ok"))
                 st.rerun()
@@ -1066,7 +1162,112 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
 
 
 # ================================================================ очередь
+SMALL_MARKET = 5      # меньше товаров в матрице — страна уезжает в «Прочие»
+
+
+def market_breakdown(queue: list, products: pd.DataFrame,
+                     selected: list) -> str:
+    """Таблица «строка на страну + итог».
+
+    Смысл тот же, что у пары чисел в шапке, только подробнее: строки
+    обязаны складываться в итог. Если разрез считается неверно, сумма
+    не сойдётся с итогом, и это видно без всякой отладки.
+
+    Полоса показывает долю товаров сверх лимита ВНУТРИ страны, а не долю
+    страны в общей очереди: второе дублировало бы соседнюю колонку, первое
+    отвечает на вопрос «где хуже всего» и сравнимо между строками.
+    """
+    stat: dict[str, dict] = {}
+    for mp in (sorted(products["marketplace"].astype(str).str.lower().unique())
+               if not products.empty else []):
+        stat[mp] = {"products": 0, "over": 0, "risk": 0.0}
+    if not products.empty:
+        for mp, n in (products["marketplace"].astype(str).str.lower()
+                      .value_counts().items()):
+            stat.setdefault(mp, {"products": 0, "over": 0, "risk": 0.0})
+            stat[mp]["products"] = int(n)
+    for x in queue:
+        mp = str(x["r"]["marketplace"]).lower()
+        stat.setdefault(mp, {"products": 0, "over": 0, "risk": 0.0})
+        stat[mp]["over"] += 1
+        stat[mp]["risk"] += x["risk"] or 0.0
+    if not stat:
+        return ""
+
+    sel = {str(m).lower() for m in selected}
+    # «Прочие» собираем только из мелочи и никогда — из выбранной страны:
+    # иначе подсвечивать нечего и разрез не проверить
+    small = [m for m, v in stat.items()
+             if v["products"] < SMALL_MARKET and m not in sel]
+    small = small if len(small) > 1 else []
+    big = [m for m in stat if m not in small]
+    big.sort(key=lambda m: (-stat[m]["over"], -stat[m]["risk"], m))
+
+    def bar(over: int, products_n: int) -> str:
+        pct = (100.0 * over / products_n) if products_n else 0.0
+        color = ACCENT if pct >= 50 else ("#B4763A" if pct >= 20 else OK_GREEN)
+        return (f'<div style="display:flex;align-items:center;gap:7px;">'
+                f'<div style="flex:1;min-width:44px;height:6px;'
+                f'background:#EFEDE7;border-radius:3px;overflow:hidden;">'
+                f'<div style="width:{min(100.0, pct):.1f}%;height:6px;'
+                f'background:{color};border-radius:3px;"></div></div>'
+                f'<span class="ls-mono" style="font-size:11.5px;'
+                f'color:{MUTED};">{pct:.0f}%</span></div>')
+
+    def cell(v: str, align: str = "right", extra: str = "") -> str:
+        return (f'<td style="padding:6px 8px;text-align:{align};'
+                f'border-bottom:1px solid #E7E4DD;{extra}">{v}</td>')
+
+    def row(label: str, v: dict, highlight: bool, strong: bool = False,
+            title: str = "") -> str:
+        bg = "background:#FBF3EC;" if highlight else ""
+        edge = (f"box-shadow:inset 3px 0 0 {ACCENT};" if highlight else "")
+        weight = "font-weight:700;" if strong or highlight else ""
+        top = "border-top:2px solid #E7E4DD;" if strong else ""
+        name = (f'<span style="{weight}">{label}</span>'
+                + (f'<span style="color:{MUTED};font-size:11.5px;"> · '
+                   f'{title}</span>' if title else ""))
+        return (f'<tr style="{bg}{edge}{top}">'
+                + cell(name, "left", weight)
+                + cell(f'<span class="ls-mono">{v["products"]}</span>',
+                       "right", weight)
+                + cell(f'<span class="ls-mono">{v["over"]}</span>',
+                       "right", weight)
+                + cell(bar(v["over"], v["products"]), "left")
+                + cell(f'<span class="ls-mono" '
+                       f'style="color:{ACCENT if v["risk"] else MUTED};">'
+                       f'{fmt_money(v["risk"], "") if v["risk"] else "—"}'
+                       f'</span>', "right", weight)
+                + "</tr>")
+
+    head = ("".join(
+        f'<th style="padding:4px 8px;text-align:{a};font-size:11px;'
+        f'letter-spacing:.06em;text-transform:uppercase;color:{MUTED};'
+        f'font-weight:400;">{h}</th>'
+        for h, a in ((t("synth.bd_market"), "left"),
+                     (t("synth.bd_products"), "right"),
+                     (t("synth.bd_over"), "right"),
+                     (t("synth.bd_share"), "left"),
+                     (t("synth.bd_risk"), "right"))))
+
+    body = "".join(row(mp_label(m), stat[m], m in sel) for m in big)
+    if small:
+        agg = {k: sum(stat[m][k] for m in small)
+               for k in ("products", "over", "risk")}
+        body += row(t("synth.bd_other"), agg, False,
+                    title=", ".join(sorted(small)))
+    total = {k: sum(v[k] for v in stat.values())
+             for k in ("products", "over", "risk")}
+    body += row(t("synth.bd_total"), total, False, strong=True)
+    return (f'<table style="width:100%;border-collapse:collapse;'
+            f'font-size:13px;margin-bottom:10px;"><thead><tr>{head}</tr>'
+            f'</thead><tbody>{body}</tbody></table>')
+
+
 with tab_queue:
+    st.markdown(market_breakdown(rows, all_products, mp_head),
+                unsafe_allow_html=True)
+
     # Кнопки сегмента переносились на вторую строку — «принято» уезжало вниз
     # и выглядело сломанным элементом. Держим строку целой: запрещаем
     # перенос внутри группы кнопок и ужимаем отступы. Колонки Streamlit
@@ -1418,7 +1619,7 @@ with tab_review:
                                   "dropped": (d.get("dropped") or "").split("; ")},
                                  d.get("coverage_score"),
                                  int(d.get("skill_version") or 0),
-                                 GEMINI_MODEL):
+                                 TITLE_MODEL):
                     st.success(t("synth.accepted_ok"))
                     st.rerun()
             if c2.button(t("synth.regenerate"), key=f"re-{asin}-{mp}-{d['id']}"):
@@ -1636,7 +1837,7 @@ with tab_any:
                                   disabled=bool(a_failed),
                                   key=f"any-acc-{a_asin}-{a_mp}"):
                         if accept_change(a_asin, a_mp, a_title, ares, a_cov,
-                                         skill_version, GEMINI_MODEL):
+                                         skill_version, TITLE_MODEL):
                             st.success(t("synth.accepted_ok"))
                             st.rerun()
                     if ac2.button(t("synth.regenerate"),
