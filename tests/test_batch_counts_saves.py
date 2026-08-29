@@ -108,7 +108,7 @@ check("в причине виден товар и текст ошибки схе
       "B0S000" in out["errors"][0]
       and "does not exist" in out["errors"][0])
 check("названо, что именно не сохранилось",
-      "черновик не сохранён" in out["errors"][0])
+      "результат не сохранён" in out["errors"][0])
 
 # --- вставка проходит: сохранено 5
 mod = load_page(fail_on=None)

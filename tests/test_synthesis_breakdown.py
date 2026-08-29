@@ -129,20 +129,20 @@ check("незнакомая модель не получает выдуманн�
 check("пустая модель не рисует плашку",
       syn.model_badge(None) == "" and syn.model_badge(float("nan")) == "")
 
-# --- история черновиков
+# --- история работы по товару
 acc = {"accepted_at": pd.Timestamp("2026-08-28 10:00")}
 check("принято: дата и число заходов до него",
       syn.history_line({"drafts": 7, "before_accept": 6, "after_accept": 0}, acc)
-      == "принят 28.08 · до этого черновиков: 6")
+      == "принят 28.08 · до этого сгенерировано: 6")
 check("принято с первого раза — без лишнего хвоста",
       syn.history_line({"drafts": 1, "before_accept": 0, "after_accept": 0}, acc)
       == "принят 28.08")
-check("черновики после принятия названы отдельно",
-      "после принятия черновиков: 2" in syn.history_line(
+check("сгенерированное после принятия названо отдельно",
+      "после принятия сгенерировано: 2" in syn.history_line(
           {"drafts": 9, "before_accept": 6, "after_accept": 2}, acc))
 check("не принято — сказано прямо",
       syn.history_line({"drafts": 7}, None)
-      == "черновиков: 7 · ни один не принят")
+      == "сгенерировано: 7 · не принято")
 check("слова «отклонено» нет ни в одном варианте",
       all("отклон" not in syn.history_line(d, a) for d, a in (
           ({"drafts": 7, "before_accept": 6, "after_accept": 0}, acc),
