@@ -1537,20 +1537,31 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
                 st.success(t("synth.accepted_ok"))
                 st.rerun()
 
-        # Кнопки жмём в один плотный ряд. Колонки Streamlit тянут ширину
-        # по своим долям и расставляют их с большим зазором, поэтому:
-        # доли по фактической длине подписи, последняя колонка — распорка,
-        # а перенос внутри подписи запрещён css. Природа та же, что
-        # разбирали в PR #14 у segmented_control.
+        # Кнопки жмём вплотную. Прошлая попытка (PR #42) не сработала и
+        # сделала хуже: доли колонок подобрать можно, но КНОПКА внутри
+        # растягивалась на всю долю (width:100%), поэтому между подписями
+        # зияли пустые поля самих кнопок.
+        #
+        # Лечится не долями, а флексом: колонка перестаёт делить ширину
+        # (flex:0 0 auto) и сжимается по содержимому, кнопка перестаёт
+        # тянуться (width:auto). Тогда ряд собирается слева направо
+        # с фиксированным зазором, а последняя колонка-распорка забирает
+        # остаток. Доли при этом почти не важны — они лишь резерв
+        # на случай, если css не доедет.
         st.markdown(
             f'<style>.st-key-{card_key} div[data-testid="stHorizontalBlock"]'
-            '{gap:6px !important;}'
+            '{gap:8px !important;align-items:center;flex-wrap:wrap;}'
             f'.st-key-{card_key} div[data-testid="stColumn"]'
-            '{min-width:auto !important;}'
+            '{flex:0 0 auto !important;width:auto !important;'
+            'min-width:0 !important;}'
+            f'.st-key-{card_key} div[data-testid="stColumn"]:last-child'
+            '{flex:1 1 auto !important;}'
             f'.st-key-{card_key} .stButton button,'
             f'.st-key-{card_key} .stDownloadButton button'
-            '{white-space:nowrap !important;padding-left:12px !important;'
-            'padding-right:12px !important;width:100%;}'
+            '{white-space:nowrap !important;width:auto !important;'
+            'padding-left:14px !important;padding-right:14px !important;}'
+            f'.st-key-{card_key} div[data-testid="stCaptionContainer"] p'
+            '{margin-bottom:0 !important;}'
             '</style>', unsafe_allow_html=True)
         if not editing:
             st.markdown(
@@ -1889,9 +1900,26 @@ with tab_queue:
     # не попадает — иначе выгрузка молча теряла бы строки.
     _day = pd.Timestamp.now().strftime("%Y-%m-%d")
     _acc = load_accepted_titles(tuple(mp_sel) if mp_sel else None)
+    # Та же природа, что в карточке: без флекса кнопки растягиваются
+    # на всю долю колонки, и длинная подпись «для всех принятых · N»
+    # переносится внутри кнопки на две строки.
+    st.markdown(
+        '<style>.st-key-exp_bar div[data-testid="stHorizontalBlock"]'
+        '{gap:8px !important;align-items:center;flex-wrap:wrap;}'
+        '.st-key-exp_bar div[data-testid="stColumn"]'
+        '{flex:0 0 auto !important;width:auto !important;min-width:0 !important;}'
+        '.st-key-exp_bar div[data-testid="stColumn"]:last-child'
+        '{flex:1 1 auto !important;}'
+        '.st-key-exp_bar .stButton button,'
+        '.st-key-exp_bar .stDownloadButton button'
+        '{white-space:nowrap !important;width:auto !important;'
+        'padding-left:14px !important;padding-right:14px !important;}'
+        '</style>', unsafe_allow_html=True)
+    _bar = st.container(key="exp_bar")
     # третья колонка держит место под кнопку прямой отправки по API:
     # когда она появится, соседние не поедут и подписи не переверстаются
-    e1, e2, e3, e4 = st.columns([2.0, 1.6, 2.0, 3.4])
+    with _bar:
+        e1, e2, e3, e4 = st.columns([2.0, 1.6, 2.0, 3.4])
     if _acc.empty:
         # неактивны и с прямой подсказкой, что сделать: раньше две серые
         # кнопки просто терялись и было непонятно, почему они не нажимаются
