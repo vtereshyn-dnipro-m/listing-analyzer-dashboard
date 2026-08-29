@@ -345,7 +345,7 @@ en → сам ключ (забытый перевод виден в UI, без �
 | `synthesis_skill` | версионированные методологии по `scope` | methodology | synthesis, photo, methodology |
 | `synthesis_drafts` | сгенерированные сплиты со `skill_version` | synthesis | synthesis, worklog |
 | `synthesis_coverage` | Coverage Score по генерации | synthesis | synthesis |
-| `synthesis_changes` | принятые правки Синтеза (замыкают цикл «до/после»), `change_type` на вырост | synthesis | synthesis, worklog, flatfile |
+| `synthesis_changes` | принятые правки Синтеза (замыкают цикл «до/после»), `change_type` на вырост, `source` = ai/manual | synthesis | synthesis, worklog, flatfile |
 | `listing_changes` | универсальная «поле — было — стало», пишут другие процессы | не наш код | не наш код |
 | `photo_analysis` | аудиты галереи и A+ (`analysis_type`) | photo | photo, worklog |
 | `flatfile_templates` | эталоны шаблонов Amazon flat file по маркетплейсам | settings | flatfile |
@@ -373,6 +373,7 @@ python tests/test_synthesis_breakdown.py
 python tests/test_prompt_cache.py
 python tests/test_push_amazon.py
 python tests/test_catalog_choice.py
+python tests/test_manual_edit.py
 ```
 
 `test_ai_errors.py` — регрессия на самый дорогой класс поломок:
@@ -421,6 +422,11 @@ Highlights не уходят без укладывающегося тайтла,
 «потерян» рядом с вернувшимся бейджем — враньё; отсутствие бейджа
 не показывается вовсе, иначе шум прячет сигнал.
 
+`test_manual_edit.py` — ручная правка в карточке результата. Источник
+в `synthesis_changes` считается по ФАКТИЧЕСКОМУ тексту, а не по тому,
+что форму открывали: иначе доля ручных правок — мера попадания
+методологии — врёт в обе стороны. Плюс лимит длины руками не обходится.
+
 `test_length_guard.py` — гарантия лимита: запас в промпте, автоповтор,
 обрезка по границе слова, отказ резать при потере must_keep.
 
@@ -454,7 +460,7 @@ Reboot app). Streamlit Cloud подтягивает свежие файлы, н�
 
 ## Данные Amazon: известные особенности
 
-Три места, где данные Amazon означают не то, что написано. Каждое уже
+Четыре места, где данные Amazon означают не то, что написано. Каждое уже
 стоило ошибочных выводов — учитывать при любой работе с этими полями.
 
 **1. Уровень серьёзности от Amazon недостоверен.** EPR приходит как
@@ -483,6 +489,21 @@ Sierras circulares». Первое число — широкая группа: �
 раньше не давала боли вовсе — товар отгружали на склад, а листинг
 не вставал. Теперь причина ищется по кодам строк пары
 (`_masked_cause` в [services/issues.py](services/issues.py)).
+
+**4. Бренд в тайтле Amazon вырезает.** Проверено на живой отправке
+17557000 / es (29.08.2026, submissionId d9dbad06…): отправили
+`Dnipro-M BH-20 Martillo Percutor…`, применилось `BH-20 Martillo
+Percutor…`. Бренд Amazon берёт из поля `brand` и показывает ссылкой
+на магазин, а из `item_name` убирает. Значит место под бренд в 75
+символах тратится впустую, и на первом месте должна стоять ключевая
+фраза, а не код модели. Учтено в методологии с версии 7.
+
+Следствие для кода, которое надо держать в голове: если бренд попадёт
+в `must_keep` по фактам SQP (`services/seo.py`), проверка `keeps_all`
+в [pages/synthesis.py](pages/synthesis.py) будет требовать его в тайтле,
+методология — запрещать, и генерация уйдёт в автоповторы. Сейчас
+конфликт не наблюдался, но при росте покупок по брендовым запросам
+он появится.
 
 **Строки «нет товара» в реплике не существует.** Проверено запросом:
 у пар с `suppression_cause = out_of_stock` встречаются только коды
