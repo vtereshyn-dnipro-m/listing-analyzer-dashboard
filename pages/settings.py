@@ -20,7 +20,7 @@ import streamlit as st
 
 from i18n import t
 from services.ai import reset_last_error
-from services.db import get_conn, cfg, cfg_source
+from services.db import get_conn, cfg, cfg_source, get_engine
 from services.flatfile_template import (
     parse_template, save_template, templates_for)
 from services.spapi import check_connection, missing_secrets
@@ -302,11 +302,9 @@ st.caption(t("set.templates_hint"))
 @st.cache_data(ttl=300)
 def known_marketplaces() -> list[str]:
     try:
-        conn = get_conn()
         df = pd.read_sql(
             "SELECT DISTINCT marketplace FROM product_matrix "
-            "WHERE marketplace IS NOT NULL AND marketplace <> ''", conn)
-        conn.close()
+            "WHERE marketplace IS NOT NULL AND marketplace <> ''", get_engine())
         mps = sorted({str(x).lower() for x in df["marketplace"]})
         return mps or ["es"]
     except Exception:
@@ -350,7 +348,7 @@ else:
             "action": x.get("partial_label") or "",
             "store": x.get("stored") or "db",
         } for x in _saved]),
-        hide_index=True, use_container_width=True,
+        hide_index=True, width="stretch",
         column_config={
             "file": st.column_config.TextColumn(t("set.tpl_c_file")),
             "types": st.column_config.NumberColumn(t("set.tpl_c_types")),

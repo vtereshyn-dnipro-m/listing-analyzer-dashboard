@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t
-from services.db import get_conn
+from services.db import get_conn, get_engine
 from services.settings import get_int, get_float, save_setting
 from components.ui import inject_fonts, eyebrow
 
@@ -39,7 +39,6 @@ scope = st.selectbox(
 @st.cache_data(ttl=60)
 def load_versions(scope_: str) -> pd.DataFrame:
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT id, version, marketplace, skill_text, created_at, is_active
@@ -47,7 +46,7 @@ def load_versions(scope_: str) -> pd.DataFrame:
             WHERE scope = %(scope)s
             ORDER BY version DESC
             """,
-            conn, params={"scope": scope_},
+            get_engine(), params={"scope": scope_},
         )
         conn.close()
         return df
@@ -210,10 +209,8 @@ _STALE_DAYS = 30
 @st.cache_data(ttl=120)
 def load_sources() -> pd.DataFrame:
     try:
-        conn = get_conn()
         df_src = pd.read_sql(
-            "SELECT * FROM policy_sources ORDER BY id", conn)
-        conn.close()
+            "SELECT * FROM policy_sources ORDER BY id", get_engine())
         return df_src
     except Exception:
         return pd.DataFrame()
@@ -290,7 +287,6 @@ _SEV = {"critical": ("#FCEBEB", "#A32D2D", "sev.red"),
 @st.cache_data(ttl=60)
 def load_alerts() -> pd.DataFrame:
     try:
-        conn = get_conn()
         df_a = pd.read_sql(
             """
             SELECT a.*, s.title AS source_title, s.url AS source_url
@@ -298,8 +294,7 @@ def load_alerts() -> pd.DataFrame:
             LEFT JOIN policy_sources s ON s.id = a.source_id
             WHERE a.status = 'new'
             ORDER BY a.detected_at DESC
-            """, conn)
-        conn.close()
+            """, get_engine())
         return df_a
     except Exception:
         return pd.DataFrame()

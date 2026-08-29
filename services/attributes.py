@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t
-from services.db import get_conn
+from services.db import get_conn, get_engine
 
 # доля заполненных атрибутов
 FILL_OK = 0.85     # от этого значения — зелёный
@@ -29,7 +29,6 @@ MIN_BULLETS = 5    # Amazon даёт пять буллетов; меньше —
 def load_attributes() -> pd.DataFrame:
     """Атрибуты и категория по всем ASIN×MP."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT asin, marketplace, product_type,
@@ -38,9 +37,8 @@ def load_attributes() -> pd.DataFrame:
                    has_generic_keyword, bullets_count, has_description
             FROM listing_attributes
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()

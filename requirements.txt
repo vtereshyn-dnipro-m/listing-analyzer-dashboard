@@ -1,6 +1,9 @@
 # --- ядро (шаги 1-6, работает уже сейчас)
 streamlit>=1.37
 psycopg2-binary>=2.9
+# движок для pandas: с голым psycopg2 он предупреждает на каждый
+# запрос, и лог тонет так, что настоящих ошибок не видно
+sqlalchemy>=2.0
 requests>=2.31
 databricks-sdk>=0.30
 # --- секреты: чтение .streamlit/secrets.toml из cron-скриптов

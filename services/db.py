@@ -32,6 +32,7 @@ import os
 from typing import Optional
 
 import psycopg2
+import streamlit as st
 
 DB_SCHEMA = "listing_data"   # все наши таблицы живут здесь
 
@@ -168,6 +169,29 @@ def get_conn():
             "LISTING_LAKEBASE_* (ноутбук) или DATABASE_URL (локально)"
         )
     return _apply_schema(psycopg2.connect(url))
+
+
+@st.cache_resource(show_spinner=False)
+def get_engine():
+    """Движок SQLAlchemy поверх get_conn() — для pandas.
+
+    pandas официально поддерживает только SQLAlchemy-подключения; с голым
+    psycopg2 он работает, но предупреждает на каждый вызов, и лог тонет
+    в этих строках так, что настоящих ошибок не видно.
+
+    creator=get_conn оставляет всю нашу логику на месте: три режима
+    подключения, OAuth-токен Lakebase и search_path продолжают работать
+    как работали. Движок только оборачивает результат.
+
+    NullPool намеренно: у Lakebase токен живёт около часа, и переиспользовать
+    соединение из пула дольше — значит однажды получить отказ авторизации
+    посреди работы. Соединение на запрос — ровно то поведение, что было
+    до появления движка.
+    """
+    from sqlalchemy import create_engine
+    from sqlalchemy.pool import NullPool
+    return create_engine("postgresql+psycopg2://", creator=get_conn,
+                         poolclass=NullPool)
 
 
 # ---------------------------------------------------------------- матрица

@@ -33,7 +33,7 @@ import zipfile
 import pandas as pd
 import streamlit as st
 
-from services.db import get_conn
+from services.db import get_conn, get_engine
 from services.flatfile_template import (
     build_file, sku_for, templates_for, type_index)
 
@@ -58,9 +58,7 @@ def load_sku_map() -> dict:
     # порядок обхода — от запасного к приоритетному: последний перезаписывает
     for source, sql in queries:
         try:
-            conn = get_conn()
-            df = pd.read_sql(sql, conn)
-            conn.close()
+            df = pd.read_sql(sql, get_engine())
         except Exception:
             continue
         for _, r in df.iterrows():
@@ -78,7 +76,6 @@ def load_accepted_titles(marketplaces: tuple | None = None) -> pd.DataFrame:
     Только status = 'accepted' — черновики и отклонённое не выгружаются.
     """
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (asin, marketplace)
@@ -91,8 +88,7 @@ def load_accepted_titles(marketplaces: tuple | None = None) -> pd.DataFrame:
             WHERE status = 'accepted' AND change_type = 'title_split'
               AND after_text IS NOT NULL AND after_text <> ''
             ORDER BY asin, marketplace, accepted_at DESC
-            """, conn)
-        conn.close()
+            """, get_engine())
     except Exception:
         return pd.DataFrame()
     if df.empty:
@@ -123,11 +119,9 @@ def load_product_types() -> dict:
     тип берём из каталога Amazon — он тот же самый.
     """
     try:
-        conn = get_conn()
         df = pd.read_sql(
             "SELECT asin, marketplace, product_type FROM listing_attributes "
-            "WHERE product_type IS NOT NULL AND product_type <> ''", conn)
-        conn.close()
+            "WHERE product_type IS NOT NULL AND product_type <> ''", get_engine())
     except Exception:
         return {}
     return {(str(r["asin"]), str(r["marketplace"]).lower()):

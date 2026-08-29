@@ -14,7 +14,7 @@ import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT, days_to_deadline
 from i18n import t
-from services.db import get_conn
+from services.db import get_conn, get_engine
 from services.settings import get_int
 from services.economics import (
     num,
@@ -59,16 +59,14 @@ st.title(t("nav.dashboard"))
 @st.cache_data(ttl=300)
 def load_diagnosis() -> pd.DataFrame:
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (d.asin, d.marketplace, d.rule_id) d.*
             FROM diagnosis d
             ORDER BY d.asin, d.marketplace, d.rule_id, d.created_at DESC
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()
@@ -77,7 +75,6 @@ def load_diagnosis() -> pd.DataFrame:
 @st.cache_data(ttl=300)
 def load_titles() -> pd.DataFrame:
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (s.asin, s.marketplace)
@@ -87,9 +84,8 @@ def load_titles() -> pd.DataFrame:
             WHERE s.ok = TRUE AND s.title <> ''
             ORDER BY s.asin, s.marketplace, s.fetched_at DESC
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()
@@ -99,12 +95,10 @@ def load_titles() -> pd.DataFrame:
 def load_scope() -> tuple[int, int]:
     """Сколько всего наших товаров в матрице (для «X из Y»)."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             "SELECT count(*) AS n FROM product_matrix WHERE is_competitor = FALSE",
-            conn,
+            get_engine(),
         )
-        conn.close()
         return int(df.iloc[0]["n"]), 0
     except Exception:
         return 0, 0
@@ -114,7 +108,6 @@ def load_scope() -> tuple[int, int]:
 def load_delta() -> tuple[int, int]:
     """Новых / закрытых болей между последним и предыдущим прогоном."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             WITH runs AS (
@@ -141,9 +134,8 @@ def load_delta() -> tuple[int, int]:
                      WHERE l.asin=p.asin AND l.marketplace=p.marketplace
                        AND l.rule_id=p.rule_id)) AS closed
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return int(num(df.iloc[0]["added"])), int(num(df.iloc[0]["closed"]))
     except Exception:
         return 0, 0
@@ -501,7 +493,7 @@ if mode == "table":
             "link": st.column_config.LinkColumn(t("matrix.collect"),
                                                 display_text="→"),
         },
-        hide_index=True, use_container_width=True, height=560,
+        hide_index=True, width="stretch", height=560,
     )
     st.caption(
         f"{len(tbl)} {t('dash.pains_by_products')} {prod.shape[0]} · "
@@ -567,11 +559,9 @@ else:
 # ---- остальной каталог: здоровые отдельно от несобранных
 if total_products:
     try:
-        conn = get_conn()
         collected = pd.read_sql(
             "SELECT count(DISTINCT (asin, marketplace)) AS n "
-            "FROM listing_snapshots WHERE ok = TRUE", conn).iloc[0]["n"]
-        conn.close()
+            "FROM listing_snapshots WHERE ok = TRUE", get_engine()).iloc[0]["n"]
         collected = int(collected or 0)
     except Exception:
         collected = 0

@@ -17,7 +17,7 @@ import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT
 from i18n import t
-from services.db import get_conn
+from services.db import get_conn, get_engine
 from services.settings import get_int, get_float
 from services.economics import (
     econ_map, fmt_money, fmt_conversion, money_at_risk, num, risk_coef,
@@ -64,7 +64,6 @@ PAGE_SIZE = 20
 @st.cache_data(ttl=300)
 def load_catalog() -> pd.DataFrame:
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor,
@@ -84,9 +83,8 @@ def load_catalog() -> pd.DataFrame:
             ) s ON TRUE
             ORDER BY m.is_competitor, m.sku_group, m.asin
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()
@@ -260,10 +258,8 @@ _STATE_RULE = {"blocked": "amazon_blocked", "fba_out": "amazon_fba_out",
 def load_rule_pairs() -> dict:
     """(asin, marketplace) -> множество rule_id из diagnosis."""
     try:
-        conn = get_conn()
         d = pd.read_sql(
-            "SELECT DISTINCT asin, marketplace, rule_id FROM diagnosis", conn)
-        conn.close()
+            "SELECT DISTINCT asin, marketplace, rule_id FROM diagnosis", get_engine())
     except Exception:
         return {}
     out: dict = {}
@@ -282,7 +278,6 @@ def load_lost_choice() -> dict:
     это случилось или полгода назад.
     """
     try:
-        conn = get_conn()
         d = pd.read_sql(
             """
             SELECT DISTINCT ON (asin, marketplace)
@@ -290,8 +285,7 @@ def load_lost_choice() -> dict:
             FROM diagnosis
             WHERE rule_id = 'lost_amazon_choice'
             ORDER BY asin, marketplace, created_at DESC
-            """, conn)
-        conn.close()
+            """, get_engine())
     except Exception:
         return {}
     return {(str(rr["asin"]), str(rr["marketplace"])): rr["created_at"]
@@ -568,7 +562,7 @@ if mode == "table":
             "link": st.column_config.LinkColumn(t("matrix.collect"),
                                                 display_text="→"),
         },
-        hide_index=True, use_container_width=True, height=560,
+        hide_index=True, width="stretch", height=560,
     )
     st.caption(t("list.sort_hint"))
     st.stop()

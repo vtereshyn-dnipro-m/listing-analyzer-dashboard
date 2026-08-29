@@ -26,7 +26,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t
-from services.db import get_conn
+from services.db import get_conn, get_engine
 
 # рынки, по которым Кабинет реально собирает Issues
 MONITORED = {"es", "de", "it", "fr"}
@@ -184,7 +184,6 @@ def code_label(code: str | None) -> str:
 def load_issues() -> pd.DataFrame:
     """Незакрытые проблемы по всем ASIN×MP."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT sku, asin, marketplace, is_buyable, is_discoverable,
@@ -194,9 +193,8 @@ def load_issues() -> pd.DataFrame:
             FROM listing_issues
             WHERE resolved_at IS NULL
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()
@@ -330,13 +328,11 @@ def load_family() -> pd.DataFrame:
     с незакрытыми проблемами, чистые варианты семейства там отсутствуют —
     знаменатель «заблокирован 1 из 4» из неё не получить."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             "SELECT sku_group, asin, marketplace FROM product_matrix "
             "WHERE is_competitor = FALSE",
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()

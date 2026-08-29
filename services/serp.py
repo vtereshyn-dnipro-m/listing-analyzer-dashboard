@@ -18,7 +18,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t
-from services.db import get_conn
+from services.db import get_conn, get_engine
 
 # сколько символов реально видно в выдаче
 VISIBLE_MOBILE = 60
@@ -157,7 +157,6 @@ def render_ai_view(f: dict) -> str:
 def load_competitors(asin: str, marketplace: str, limit: int = 3) -> pd.DataFrame:
     """Конкуренты из матрицы того же маркетплейса — для сравнения в выдаче."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (m.asin)
@@ -174,9 +173,8 @@ def load_competitors(asin: str, marketplace: str, limit: int = 3) -> pd.DataFram
             WHERE m.marketplace = %(mp)s AND m.is_competitor = TRUE
             LIMIT %(lim)s
             """,
-            conn, params={"mp": marketplace, "lim": limit},
+            get_engine(), params={"mp": marketplace, "lim": limit},
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()
