@@ -274,7 +274,7 @@ def collect_rows(rows: pd.DataFrame) -> None:
                 image_count = len(images) if isinstance(images, list) else 0
                 has_video = bool(data.get("videos") or data.get("video")
                                  or data.get("has_video"))
-                has_aplus = bool(data.get("aplus"))
+                raw_aplus = bool(data.get("aplus"))
 
                 cur.execute(
                     """
@@ -286,6 +286,20 @@ def collect_rows(rows: pd.DataFrame) -> None:
                     (asin, mp, ok, title, in_stock, review_count,
                      bullets, json.dumps(data)),
                 )
+                # Признак A+ для правила берём СТАБИЛИЗИРОВАННЫЙ по трём
+                # последним снимкам, и только после записи свежего снапшота —
+                # вью считает по ним. Сырое поле врёт примерно на 15%
+                # запросов ScrapingDog (на .it по отдельным товарам чаще),
+                # и боль «нет A+» заводилась на товарах, где A+ есть.
+                # Если строки во вью ещё нет (первый сбор) — сырое поле.
+                cur.execute(
+                    "SELECT has_aplus FROM listing_latest "
+                    "WHERE asin = %s AND marketplace = %s", (asin, mp))
+                _st_aplus = cur.fetchone()
+                has_aplus = (bool(_st_aplus[0])
+                             if _st_aplus and _st_aplus[0] is not None
+                             else raw_aplus)
+
                 title_len = len(title)
                 cur.execute(
                     """

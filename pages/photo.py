@@ -128,10 +128,12 @@ def load_candidates() -> pd.DataFrame:
             """
             SELECT DISTINCT ON (s.asin, s.marketplace)
                    s.asin, s.marketplace, s.title, s.raw, s.fetched_at,
-                   m.sku_group, m.is_competitor
+                   m.sku_group, m.is_competitor, ll.has_aplus
             FROM listing_snapshots s
             LEFT JOIN product_matrix m
                 ON m.asin = s.asin AND m.marketplace = s.marketplace
+            LEFT JOIN listing_latest ll
+                ON ll.asin = s.asin AND ll.marketplace = s.marketplace
             WHERE s.ok = TRUE AND s.title <> ''
             ORDER BY s.asin, s.marketplace, s.fetched_at DESC
             """,
@@ -654,7 +656,14 @@ for x in rows:
                 for i, url in enumerate(apl, 1):
                     st.image(url, use_container_width=True, caption=f"A+ {i}")
             else:
-                if _raw_dict(r.get("raw")).get("aplus"):
+                # Модулей в снапшоте нет — но значит ли это, что A+ нет?
+                # Стабилизированный признак отвечает точнее сырого: именно
+                # здесь глюк ScrapingDog и виден — A+ есть, а модули
+                # не пришли, и человеку надо пересобрать, а не рисовать A+.
+                _sa = r.get("has_aplus")
+                _has = (bool(_raw_dict(r.get("raw")).get("aplus"))
+                        if pd.isna(_sa) else bool(_sa))
+                if _has:
                     st.warning(t("photo.no_aplus_modules"))
                 else:
                     st.info(t("photo.no_aplus"))

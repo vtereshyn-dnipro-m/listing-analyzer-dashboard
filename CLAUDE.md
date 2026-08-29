@@ -336,7 +336,7 @@ en → сам ключ (забытый перевод виден в UI, без �
 |---|---|---|---|
 | `product_matrix` | ASIN × marketplace, `sku_group`, `is_competitor` | `db.py`, `matrix_setup` | dashboard, catalog, synthesis, photo, serp, analyze |
 | `listing_snapshots` | append-only снапшоты ScrapingDog, `raw` jsonb | `matrix_setup`, `batch_fetch` | dashboard, catalog, synthesis, photo, guide, serp |
-| `listing_latest` | последний снапшот по ASIN (вью) | — | `analyze.py` |
+| `listing_latest` | последний снапшот по паре + `has_aplus` — признак A+ по трём снимкам (вью) | — | catalog, matrix_setup, photo, `analyze.py` |
 | `listing_analysis` | `title_len`, `title_over`, `highlights_len`, `ai_grade` | `matrix_setup`, `analyze` | `analyze` |
 | `diagnosis` | боли: `rule_id`, `severity`, `pain`, `cause`, `action`, `money_impact` | `matrix_setup` | dashboard, synthesis, guide, matrix_setup |
 | `asin_economics` | выручка/сессии/конверсия за 30 дней, шаблон доставки | ноутбук Sync Economics | `economics.py` |
@@ -376,6 +376,7 @@ python tests/test_push_amazon.py
 python tests/test_catalog_choice.py
 python tests/test_manual_edit.py
 python tests/test_marketplace_maps.py
+python tests/test_aplus_stable.py
 ```
 
 `test_ai_errors.py` — регрессия на самый дорогой класс поломок:
@@ -436,6 +437,12 @@ Highlights не уходят без укладывающегося тайтла,
 на amazon.com, и снапшот приезжает от чужого листинга. Тест проверяет
 не подписи, а согласованность карт между собой.
 
+`test_aplus_stable.py` — A+ читается из `listing_latest.has_aplus`,
+а не из последнего снапшота. Ошибка тут не выглядит ошибкой: карточка
+показывает «A+ нет», Диагноз заводит боль, человек идёт делать A+,
+который уже есть. Проверяются обе стороны подмены и запасной путь
+для товара первого сбора.
+
 `test_length_guard.py` — гарантия лимита: запас в промпте, автоповтор,
 обрезка по границе слова, отказ резать при потере must_keep.
 
@@ -469,7 +476,7 @@ Reboot app). Streamlit Cloud подтягивает свежие файлы, н�
 
 ## Данные Amazon: известные особенности
 
-Четыре места, где данные Amazon означают не то, что написано. Каждое уже
+Пять мест, где данные Amazon означают не то, что написано. Каждое уже
 стоило ошибочных выводов — учитывать при любой работе с этими полями.
 
 **1. Уровень серьёзности от Amazon недостоверен.** EPR приходит как
@@ -513,6 +520,18 @@ Percutor…`. Бренд Amazon берёт из поля `brand` и показы
 методология — запрещать, и генерация уйдёт в автоповторы. Сейчас
 конфликт не наблюдался, но при росте покупок по брендовым запросам
 он появится.
+
+**5. Признак A+ в одном снапшоте недостоверен.** ScrapingDog врёт про
+`aplus` примерно на 15% запросов, а на .it по отдельным товарам на
+половине. Поэтому источник истины — `listing_latest.has_aplus`
+(стабилизация по трём последним снимкам), а сырое поле остаётся только
+запасным для товара первого сбора. Читают вью: `catalog.metrics()`,
+правило `no_aplus` в `matrix_setup.collect_rows()` (обязательно ПОСЛЕ
+записи снапшота — вью считает по нему) и страница «Фото», где то же
+поле различает «A+ нет» и «A+ есть, но модули не пришли».
+
+Молчание этой ошибки дороже её самой: карточка показывает «A+ нет»,
+Диагноз заводит боль, человек идёт делать A+, который уже есть.
 
 **Строки «нет товара» в реплике не существует.** Проверено запросом:
 у пар с `suppression_cause = out_of_stock` встречаются только коды
