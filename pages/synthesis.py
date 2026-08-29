@@ -569,11 +569,18 @@ def load_accepted() -> dict:
 
 
 def accept_change(asin: str, mp: str, before: str, result: dict,
-                  coverage_score, skill_version: int, model: str) -> bool:
+                  coverage_score, skill_version: int, model: str,
+                  source: str = "ai") -> bool:
     """Фиксирует принятый сплит — цикл замыкается здесь.
 
     Дальше эта запись используется экраном «До / после»: сравнение
     sessions и продаж до правки и после.
+
+    source отделён от model намеренно: model говорит, чем СГЕНЕРИРОВАН
+    черновик, и остаётся верным после ручной правки, а source — принят
+    текст как есть или переписан человеком. Смешав их, мы бы либо врали
+    про модель, либо потеряли долю ручных правок — а это и есть мера
+    того, насколько методология попадает.
     """
     try:
         conn = get_conn()
@@ -583,15 +590,16 @@ def accept_change(asin: str, mp: str, before: str, result: dict,
                 INSERT INTO synthesis_changes
                     (asin, marketplace, change_type, before_text, before_len,
                      after_text, after_len, after_extra, after_extra_len,
-                     dropped, coverage_score, skill_version, model, status)
+                     dropped, coverage_score, skill_version, model, status,
+                     source)
                 VALUES (%s,%s,'title_split',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
-                        'accepted')
+                        'accepted',%s)
                 """,
                 (asin, mp, before, len(before or ""),
                  result.get("title", ""), len(result.get("title", "")),
                  result.get("highlights", ""), len(result.get("highlights", "")),
                  "; ".join(result.get("dropped", []) or []),
-                 coverage_score, skill_version, model))
+                 coverage_score, skill_version, model, source))
         conn.close()
         st.cache_data.clear()
         return True
@@ -1105,6 +1113,18 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
     if not after:
         return
 
+    # ---- режим ручной правки
+    # Человек правит поверх черновика, а не вместо него: исходный текст
+    # модели остаётся в synthesis_drafts, в synthesis_changes уходит
+    # отредактированный с пометкой источника. Иначе «принято» перестало бы
+    # отличаться от «переписано руками», а доля ручных правок — это и есть
+    # мера того, насколько методология попадает.
+    edit_key = f"edit-{asin}-{mp}"
+    editing = bool(st.session_state.get(edit_key))
+    if editing:
+        after = str(st.session_state.get(f"{edit_key}-title", after) or "")
+        hl = str(st.session_state.get(f"{edit_key}-hl", hl) or "")
+
     checks = run_checks(after, hl, [], [])
     failed = [m for ok, m in checks if not ok]
 
@@ -1140,20 +1160,42 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
                                  _prev["accepted_at"]).strftime("%d.%m")))
         # «было» и «стало» — одним блоком, разделены линией; в «стало»
         # подсвечено то, что модель заменила или добавила
-        body = (
-            field_html(t("synth.was"),
-                       f'<span class="ls-mono" style="color:#57534A;">'
-                       f'{len(before)}</span>', esc(before), False)
-            + field_html(t("synth.became"),
-                         counter_html(len(after), TITLE_LIMIT),
-                         diff_html(before, after), True)
-        )
-        if hl:
-            body += field_html("item highlights",
-                               counter_html(len(hl), HIGHLIGHTS_LIMIT),
-                               esc(hl), True)
+        body = field_html(
+            t("synth.was"),
+            f'<span class="ls-mono" style="color:#57534A;">'
+            f'{len(before)}</span>', esc(before), False)
+        if not editing:
+            body += field_html(t("synth.became"),
+                               counter_html(len(after), TITLE_LIMIT),
+                               diff_html(before, after), True)
+            if hl:
+                body += field_html("item highlights",
+                                   counter_html(len(hl), HIGHLIGHTS_LIMIT),
+                                   esc(hl), True)
         st.markdown(body, unsafe_allow_html=True)
-        st.caption(t("synth.diff_hint"))
+
+        if editing:
+            # счётчики и проверки пересчитываются на каждой перерисовке,
+            # то есть при уходе фокуса или Ctrl+Enter: у Streamlit нет
+            # события на каждую букву, и обещать его в подписи нельзя
+            st.markdown(
+                f'<div style="font-size:11.5px;letter-spacing:.06em;'
+                f'color:#57534A;text-transform:uppercase;margin:10px 0 2px;">'
+                f'{t("synth.became")} {counter_html(len(after), TITLE_LIMIT)}'
+                f'</div>', unsafe_allow_html=True)
+            st.text_area(t("synth.became"), value=after, height=80,
+                         key=f"{edit_key}-title", label_visibility="collapsed")
+            st.markdown(
+                f'<div style="font-size:11.5px;letter-spacing:.06em;'
+                f'color:#57534A;text-transform:uppercase;margin:8px 0 2px;">'
+                f'item highlights '
+                f'{counter_html(len(hl), HIGHLIGHTS_LIMIT)}</div>',
+                unsafe_allow_html=True)
+            st.text_area("item highlights", value=hl, height=80,
+                         key=f"{edit_key}-hl", label_visibility="collapsed")
+            st.caption(t("synth.edit_hint"))
+        else:
+            st.caption(t("synth.diff_hint"))
         # обрезанный нами вариант помечаем явно: человек должен видеть,
         # что часть текста убрал код, а не модель
         if trimmed:
@@ -1175,24 +1217,53 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
         st.markdown(" · ".join(("✅ " if ok else "❌ ") + m
                                for ok, m in checks))
 
-        # ширины подобраны так, чтобы «Перегенерировать» не переносилось
-        a1, a2, a3 = st.columns([1.3, 2.1, 3.6])
-        if a1.button(t("synth.accept_short"), type="primary",
-                     disabled=bool(failed),
-                     help=None if not failed else t("synth.fix_first"),
-                     key=f"q-acc-{asin}-{mp}"):
+        def _save(source: str) -> None:
+            """Принять текущий текст. source различает «как сгенерировано»
+            и «переписано руками»."""
             if accept_change(asin, mp, before,
                              {"title": after, "highlights": hl,
                               "dropped": dropped},
-                             cov, skill_v, TITLE_MODEL):
-                st.session_state.pop(f"res-{asin}-{mp}", None)
+                             cov, skill_v, TITLE_MODEL, source):
+                for k in (f"res-{asin}-{mp}", edit_key,
+                          f"{edit_key}-title", f"{edit_key}-hl"):
+                    st.session_state.pop(k, None)
                 st.success(t("synth.accepted_ok"))
                 st.rerun()
-        if a2.button(t("synth.regenerate"), key=f"q-re-{asin}-{mp}"):
-            st.session_state.pop(f"res-{asin}-{mp}", None)
-            st.rerun()
+
+        # ширины подобраны так, чтобы «Перегенерировать» не переносилось
+        a1, a2, a3, a4 = st.columns([1.5, 1.7, 2.1, 2.7])
+        if editing:
+            # источник считаем по факту, а не по тому, что открывали форму:
+            # открыть и ничего не изменить — это всё ещё «как сгенерировано»
+            changed = (after != str(res.get("title") if res else
+                                    draft.get("title_after") or "")
+                       or hl != str(res.get("highlights") if res else
+                                    draft.get("highlights_after") or ""))
+            if a1.button(t("synth.edit_save"), type="primary",
+                         disabled=bool(failed),
+                         help=None if not failed else t("synth.fix_first"),
+                         key=f"q-save-{asin}-{mp}"):
+                _save("manual" if changed else "ai")
+            if a2.button(t("synth.edit_cancel"), key=f"q-ecancel-{asin}-{mp}"):
+                for k in (edit_key, f"{edit_key}-title", f"{edit_key}-hl"):
+                    st.session_state.pop(k, None)
+                st.rerun()
+            if changed:
+                a4.caption(t("synth.edit_changed"))
+        else:
+            if a1.button(t("synth.accept_short"), type="primary",
+                         disabled=bool(failed),
+                         help=None if not failed else t("synth.fix_first"),
+                         key=f"q-acc-{asin}-{mp}"):
+                _save("ai")
+            if a2.button(t("synth.edit"), key=f"q-edit-{asin}-{mp}"):
+                st.session_state[edit_key] = True
+                st.rerun()
+            if a3.button(t("synth.regenerate"), key=f"q-re-{asin}-{mp}"):
+                st.session_state.pop(f"res-{asin}-{mp}", None)
+                st.rerun()
         if cov is not None and not pd.isna(cov):
-            a3.caption(f"Coverage {float(cov):.0f}%")
+            a4.caption(f"Coverage {float(cov):.0f}%")
 
 
 # ================================================================ очередь
