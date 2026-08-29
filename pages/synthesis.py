@@ -48,6 +48,10 @@ from services.spapi import (
     missing_secrets, marketplace_meta, push_title, log_push, load_pushes,
     issues_text,
 )
+from services.history import (
+    load_history, summary as history_summary, stamp as history_stamp,
+    load_error as history_error,
+)
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
@@ -875,6 +879,7 @@ ECON = econ_map()
 DRAFTS = load_draft_stats()
 ACCEPTED = load_accepted()
 SQP_HAVE = load_sqp_coverage()
+HISTORY = load_history()
 
 rows = []
 for _, r in candidates.iterrows():
@@ -1097,6 +1102,75 @@ def single_plan(asin: str, mp: str) -> list[dict]:
     if sub.empty:
         return []
     return plan_export(sub)[0]
+
+
+def event_html(e: dict) -> str:
+    """Одно событие истории. Раскрывается через <details>, а не через
+    st.expander: вложенные expander Streamlit не разрешает, а весь блок
+    истории и так лежит внутри одного."""
+    if e["kind"] == "push":
+        head = t("hist.push")
+        tail = e.get("status") or ""
+        color = OK_GREEN if e.get("ok") else ERR_RED
+        extra = (f'<div style="font-size:11.5px;color:{MUTED};">'
+                 f'submissionId {esc(e["submission_id"])}</div>'
+                 if pd.notna(e.get("submission_id"))
+                 and str(e.get("submission_id") or "").strip() else "")
+        # pd.notna, а не `if`: у успешной отправки issues приходит NaN,
+        # а NaN в Python истинный — в строке появлялось «nan»
+        if pd.notna(e.get("detail")) and str(e.get("detail") or "").strip():
+            extra += (f'<div style="font-size:11.5px;color:{ERR_RED};">'
+                      f'{esc(str(e["detail"])[:300])}</div>')
+    else:
+        head = t("hist.accept")
+        src = e.get("source") or "ai"
+        tail = t("hist.manual") if src == "manual" else t("hist.ai")
+        color = INK
+        bits = []
+        if pd.notna(e.get("skill_version")):
+            bits.append(t("hist.skill", n=int(e["skill_version"])))
+        if e.get("model") and pd.notna(e.get("model")):
+            bits.append(esc(str(e["model"])))
+        if e.get("tries"):
+            bits.append(t("hist.tries", n=int(e["tries"])))
+        extra = (f'<div style="font-size:11.5px;color:{MUTED};">'
+                 f'{" · ".join(bits)}</div>') if bits else ""
+
+    before = "" if pd.isna(e.get("before")) else str(e.get("before") or "")
+    after = "" if pd.isna(e.get("after")) else str(e.get("after") or "")
+    body = (f'<div style="font-size:12px;color:{MUTED};margin-top:4px;">'
+            f'{t("synth.was")}: {esc(before)}</div>'
+            f'<div style="font-size:12.5px;color:{INK};">'
+            f'{t("synth.became")}: <b>{esc(after)}</b></div>{extra}')
+    return (f'<details style="border-bottom:1px solid #E7E4DD;padding:6px 0;">'
+            f'<summary style="cursor:pointer;font-size:12.5px;list-style:none;">'
+            f'<span class="ls-mono" style="color:{MUTED};">'
+            f'{history_stamp(e["at"])}</span>'
+            f'<span style="color:{MUTED};"> · </span>{head}'
+            f'<span style="color:{MUTED};"> · </span>'
+            f'<b style="color:{color};">{esc(tail)}</b></summary>'
+            f'<div style="padding:4px 0 6px 10px;">{body}</div></details>')
+
+
+def render_history(asin: str, mp: str) -> None:
+    """Блок «История» — что генерировали, принимали и отправляли.
+
+    Свёрнутый показывает последнюю отправку: именно за ней сюда и лезут —
+    дошла правка до Amazon или нет.
+    """
+    events = HISTORY.get((str(asin), str(mp).lower())) or []
+    err = history_error()
+    with st.expander(f'{t("hist.title")} · {history_summary(events)}',
+                     expanded=False):
+        if err:
+            # пустая история и недоступная — разные вещи; молчать про вторую
+            # значит показать «ничего не делали» вместо «не смогли прочитать»
+            st.error("⚠ " + t("hist.load_failed", e=err))
+        if not events:
+            st.caption(t("hist.empty"))
+            return
+        st.markdown("".join(event_html(e) for e in events),
+                    unsafe_allow_html=True)
 
 
 def render_card_actions(asin: str, mp: str, is_accepted: bool) -> None:
@@ -1341,6 +1415,7 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
 
         if not editing:
             render_card_actions(asin, mp, accepted is not None)
+            render_history(asin, mp)
 
 
 # ================================================================ очередь
