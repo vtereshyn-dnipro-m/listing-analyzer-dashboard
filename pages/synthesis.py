@@ -1259,46 +1259,86 @@ def render_history(asin: str, mp: str) -> None:
                     unsafe_allow_html=True)
 
 
-def render_card_actions(asin: str, mp: str, is_accepted: bool) -> None:
-    """Действия по ЭТОМУ товару: файл и отправка.
+def last_push(asin: str, mp: str) -> dict | None:
+    """Последняя УДАЧНАЯ отправка пары — состояние карточки, а не история."""
+    for e in HISTORY.get((str(asin), str(mp).lower())) or []:
+        if e["kind"] == "push" and e.get("ok"):
+            return e
+    return None
 
-    Оба действия работают с принятой правкой, поэтому до приёмки кнопки
-    неактивны с подсказкой — иначе они предлагали бы выгрузить то, чего
-    в synthesis_changes ещё нет.
 
-    Наверху страницы стоят такие же по названию кнопки, но с другой
-    областью действия: там всё принятое по фильтру. Чтобы их не путать,
-    у верхних в подписи стоит «для всех принятых · N».
+def render_card_actions(asin: str, mp: str, is_accepted: bool,
+                        pushed: dict | None) -> None:
+    """Группа «выгрузка»: файл и отправка в Amazon.
+
+    Отделена от группы решения по тексту чертой и отступом: там человек
+    решает, каким быть тайтлу, здесь — выносит решение наружу. Смешанные
+    в один ряд, эти действия читались как равные, хотя отправка правит
+    ЖИВОЙ листинг клиента, а всё остальное — нет.
+
+    Основная кнопка всегда одна и всегда показывает СЛЕДУЮЩИЙ шаг:
+    пока не принято — «Принять» в первой группе; принято, но не
+    отправлено — «Отправить в Amazon» здесь; отправлено — основной нет,
+    следующего шага не осталось.
+
+    Наверху страницы есть такие же по названию кнопки с другой областью
+    действия (всё принятое по фильтру), у них в подписи «для всех
+    принятых · N».
     """
-    b1, b2, b3 = st.columns([1.75, 1.75, 4.5], gap="small")
-    plan = single_plan(asin, mp) if is_accepted else []
-    if plan:
-        name, mime, data = build_flat_cached(
-            plan, plan_signature(plan),
-            pd.Timestamp.now().strftime("%Y-%m-%d"))
-        b1.download_button(f'⬇ {t("export.flat")}', data, file_name=name,
-                           mime=mime, key=f"c-flat-{asin}-{mp}")
-    else:
-        b1.button(f'⬇ {t("export.flat")}', disabled=True,
-                  key=f"c-flat-off-{asin}-{mp}",
-                  help=(t("export.accept_this_first") if not is_accepted
-                        else t("export.no_template")))
+    st.markdown(
+        f'<div style="border-top:1px solid #E7E4DD;margin:10px 0 8px;"></div>'
+        f'<div style="font-size:11px;letter-spacing:.06em;color:{MUTED};'
+        f'text-transform:uppercase;margin-bottom:4px;">'
+        f'{t("card.group_export")}</div>', unsafe_allow_html=True)
 
-    state_key = f"push-confirm-{asin}-{mp}"
-    rows = [dict(r, marketplace=i["marketplace"], tpl=i["tpl"])
-            for i in plan for r in i["rows"]]
-    miss = missing_secrets()
-    if not rows or miss:
-        b2.button(t("push.button"), disabled=True,
-                  key=f"c-push-off-{asin}-{mp}",
-                  help=(t("push.no_keys", keys=", ".join(miss)) if miss
-                        else t("export.accept_this_first") if not is_accepted
-                        else t("export.no_template")))
-    elif b2.button(t("push.button"), key=f"c-push-{asin}-{mp}"):
-        st.session_state[state_key] = True
-    if st.session_state.get(state_key) and rows:
-        render_push_confirm(rows, state_key)
-    render_push_result(state_key)
+    st.markdown(
+        f'<style>.st-key-exp-{asin}-{mp}'
+        '{padding-left:14px;border-left:2px solid #F1EFE9;}</style>',
+        unsafe_allow_html=True)
+    box = st.container(key=f"exp-{asin}-{mp}")
+    with box:
+        b1, b2, b3 = st.columns([1.75, 1.75, 4.2], gap="small")
+        plan = single_plan(asin, mp) if is_accepted else []
+        if plan:
+            name, mime, data = build_flat_cached(
+                plan, plan_signature(plan),
+                pd.Timestamp.now().strftime("%Y-%m-%d"))
+            b1.download_button(f'⬇ {t("export.flat")}', data, file_name=name,
+                               mime=mime, key=f"c-flat-{asin}-{mp}")
+        else:
+            b1.button(f'⬇ {t("export.flat")}', disabled=True,
+                      key=f"c-flat-off-{asin}-{mp}",
+                      help=(t("export.accept_this_first") if not is_accepted
+                            else t("export.no_template")))
+
+        state_key = f"push-confirm-{asin}-{mp}"
+        rows = [dict(r, marketplace=i["marketplace"], tpl=i["tpl"])
+                for i in plan for r in i["rows"]]
+        miss = missing_secrets()
+        # основная — только если отправка и есть следующий шаг
+        push_primary = ("primary" if (rows and not miss and pushed is None)
+                        else "secondary")
+        if not rows or miss:
+            b2.button(t("push.button"), disabled=True,
+                      key=f"c-push-off-{asin}-{mp}",
+                      help=(t("push.no_keys", keys=", ".join(miss)) if miss
+                            else t("export.accept_this_first")
+                            if not is_accepted else t("export.no_template")))
+        elif b2.button(t("push.button"), type=push_primary,
+                       key=f"c-push-{asin}-{mp}"):
+            st.session_state[state_key] = True
+
+        if pushed is not None:
+            b3.caption("✓ " + t("card.pushed_at",
+                                day=history_stamp(pushed["at"]),
+                                status=t("hist.accepted_by_amazon")))
+
+        if st.session_state.get(state_key) and rows:
+            render_push_confirm(rows, state_key)
+        render_push_result(state_key)
+        # история — про отправку, поэтому под её кнопками, а не отдельным
+        # блоком в конце карточки
+        render_history(asin, mp)
 
 
 def step_writer(status):
@@ -1418,7 +1458,9 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
         # повторное принятие: правка не ломается, но человек должен знать,
         # что перезаписывает свой же прошлый выбор — в выгрузку пойдёт
         # последняя принятая, предыдущая останется только в истории
-        _prev = accepted
+        # Баннер про замену нужен, только когда на экране НЕ принятый текст:
+        # иначе он сообщает «заменит предыдущий» про сам предыдущий.
+        _prev = accepted if (res or draft is not None) else None
         if _prev is not None:
             st.info("↻ " + t("synth.already_accepted",
                              day=pd.to_datetime(
@@ -1510,6 +1552,11 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
             '{white-space:nowrap !important;padding-left:12px !important;'
             'padding-right:12px !important;width:100%;}'
             '</style>', unsafe_allow_html=True)
+        if not editing:
+            st.markdown(
+                f'<div style="font-size:11px;letter-spacing:.06em;'
+                f'color:{MUTED};text-transform:uppercase;margin:6px 0 4px;">'
+                f'{t("card.group_text")}</div>', unsafe_allow_html=True)
         a1, a2, a3, a4 = st.columns([1.15, 1.45, 1.85, 3.55],
                                     gap="small")
         if editing:
@@ -1531,7 +1578,12 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
             if changed:
                 a4.caption(t("synth.edit_changed"))
         else:
-            if a1.button(t("synth.accept_short"), type="primary",
+            # Основная кнопка всегда одна и всегда показывает СЛЕДУЮЩИЙ шаг.
+            # Пока не принято — это «Принять»; после приёмки следующий шаг
+            # уже в группе выгрузки, и держать «Принять» оранжевой значит
+            # предлагать сделать то, что сделано.
+            if a1.button(t("synth.accept_short"),
+                         type="secondary" if accepted is not None else "primary",
                          disabled=bool(failed),
                          help=None if not failed else t("synth.fix_first"),
                          key=f"q-acc-{asin}-{mp}"):
@@ -1549,12 +1601,18 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
                 st.session_state.pop(f"res-{asin}-{mp}", None)
                 st.session_state[f"regen-{asin}-{mp}"] = True
                 st.rerun()
+        _marks = []
+        if accepted is not None and not editing:
+            _marks.append("✓ " + t("card.accepted_at", day=pd.to_datetime(
+                accepted["accepted_at"]).strftime("%d.%m")))
         if cov is not None and not pd.isna(cov):
-            a4.caption(f"Coverage {float(cov):.0f}%")
+            _marks.append(f"Coverage {float(cov):.0f}%")
+        if _marks:
+            a4.caption(" · ".join(_marks))
 
         if not editing:
-            render_card_actions(asin, mp, accepted is not None)
-            render_history(asin, mp)
+            render_card_actions(asin, mp, accepted is not None,
+                                last_push(asin, mp))
 
 
 # ================================================================ очередь
