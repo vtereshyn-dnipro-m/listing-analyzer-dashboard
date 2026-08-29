@@ -56,6 +56,7 @@ REGION_HOST = {
 MARKETPLACE_REGION = {
     "es": "eu", "de": "eu", "fr": "eu", "it": "eu", "co.uk": "eu",
     "nl": "eu", "se": "eu", "pl": "eu", "com.tr": "eu", "ae": "eu",
+    "ie": "eu", "be": "eu", "com.be": "eu", "sa": "eu", "in": "eu", "eg": "eu",
     "com": "na", "ca": "na", "com.mx": "na", "com.br": "na",
     "co.jp": "fe", "com.au": "fe", "sg": "fe",
 }

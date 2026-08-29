@@ -163,8 +163,9 @@ Coverage Score (доля сохранённого поискового веса)
 URL Amazon), импорт из зеркала каталога, список карточек с кнопкой «Собрать»,
 групповые действия, удаление, расписание автосбора.
 **Здесь живёт рабочий пайплайн сбора** — `collect_rows()`: запрос к ScrapingDog
-(с `language`, иначе amazon.es отдаёт EN-версию и длина тайтла считается по
-чужому языку) → запись снапшота → запись длин → создание болей по правилам
+(с `country` и `language`; без `country` фолбэк «us» уводит сбор
+на amazon.com и снапшот приезжает от чужого листинга, без `language`
+amazon.es отдаёт EN-версию и длина тайтла считается по чужому языку) → запись снапшота → запись длин → создание болей по правилам
 `out_of_stock`, `title_over_limit`, `low_reviews`, `few_images`, `no_video`,
 `no_aplus`.
 Читает: `product_matrix`, `listing_snapshots`, `diagnosis`, `catalog_source`,
@@ -374,6 +375,7 @@ python tests/test_prompt_cache.py
 python tests/test_push_amazon.py
 python tests/test_catalog_choice.py
 python tests/test_manual_edit.py
+python tests/test_marketplace_maps.py
 ```
 
 `test_ai_errors.py` — регрессия на самый дорогой класс поломок:
@@ -426,6 +428,13 @@ Highlights не уходят без укладывающегося тайтла,
 в `synthesis_changes` считается по ФАКТИЧЕСКОМУ тексту, а не по тому,
 что форму открывали: иначе доля ручных правок — мера попадания
 методологии — врёт в обе стороны. Плюс лимит длины руками не обходится.
+
+`test_marketplace_maps.py` — маркетплейс живёт в ЧЕТЫРЁХ независимых
+картах (подписи в `i18n`, `MP_COUNTRY` и `MP_LANGUAGE` в `matrix_setup`,
+`MARKETPLACE_REGION` в `spapi`), и пропуск страны в каждой молчит
+по-своему. Дороже всех `MP_COUNTRY`: фолбэк «us» уводит сбор
+на amazon.com, и снапшот приезжает от чужого листинга. Тест проверяет
+не подписи, а согласованность карт между собой.
 
 `test_length_guard.py` — гарантия лимита: запас в промпте, автоповтор,
 обрезка по границе слова, отказ резать при потере must_keep.
