@@ -449,30 +449,53 @@ def generate_guarded(title: str, marketplace: str, skill_text: str,
                      keep: list[str], forbid: list[str],
                      kw_df: pd.DataFrame | None,
                      must_keep: list[str],
-                     skill_ver: int = 0) -> tuple[dict | None, dict]:
+                     skill_ver: int = 0,
+                     on_step=None) -> tuple[dict | None, dict]:
     """Генерация с гарантией длины: до трёх попыток, затем обрезка.
 
     Модель промахивается по длине (77 при лимите 75), и человеку
     приходилось жать «Перегенерировать» руками. Теперь: просим с запасом,
     при промахе повторяем с точным указанием на сколько сократить,
     и только после трёх неудач режем сами — по границе слова и не теряя
-    must_keep. Возвращает (результат, статистика)."""
+    must_keep. Возвращает (результат, статистика).
+
+    on_step(kind, **kw) — необязательный обратный вызов для показа хода.
+    Автоповторы дольше всего, и раньше они шли молча: человек видел
+    замерший экран и не знал, работа идёт или подвисло.
+    """
     stats = {"attempts": 0, "retried": 0, "trimmed": 0, "over": 0}
     res = None
     note = ""
+
+    def step(kind: str, **kw) -> None:
+        if on_step:
+            try:
+                on_step(kind, **kw)
+            except Exception:
+                pass    # показ хода не имеет права ронять генерацию
+
     for attempt in range(1, MAX_ATTEMPTS + 1):
         stats["attempts"] += 1
+        step("generating", attempt=attempt)
         res = generate_split(title, marketplace, skill_text, keep, forbid,
                              kw_df=kw_df, retry_note=note,
                              skill_ver=skill_ver)
         if res is None:
+            step("failed")
             return None, stats
+        step("checking")
         if not over_limits(res):
+            step("done")
             return res, stats
         if attempt < MAX_ATTEMPTS:
             stats["retried"] += 1
             note = retry_note(res)
+            step("retry", attempt=attempt + 1, total=MAX_ATTEMPTS,
+                 over=max(len(str(res.get("title") or "")) - TITLE_LIMIT,
+                          len(str(res.get("highlights") or ""))
+                          - HIGHLIGHTS_LIMIT))
 
+    step("trimming")
     res, marks = enforce_limits(res, must_keep)
     if marks["trimmed"]:
         stats["trimmed"] = 1
@@ -480,6 +503,7 @@ def generate_guarded(title: str, marketplace: str, skill_text: str,
     if marks["over"]:
         stats["over"] = 1
         res["over_fields"] = marks["over"]
+    step("done")
     return res, stats
 
 
@@ -737,10 +761,20 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
     # расход прошлой и «прочитано из кэша» будет выглядеть лучше, чем есть
     reset_usage()
     bar = st.progress(0.0, text=t("synth.batch_run"))
+    line = st.empty()
+
+    def _tick(i: int, asin: str, mp: str, sku: str) -> None:
+        """Числа и текущий товар. Голое «[7/20]» не отвечало на вопрос,
+        сколько из пройденных реально легло в базу."""
+        bar.progress(i / len(items),
+                     text=t("gen.batch", i=i, n=len(items), done=done,
+                            skipped=failed + unsaved))
+        line.caption(f"{sku + ' · ' if sku else ''}{asin} · {mp}")
+
     for i, x in enumerate(items, 1):
         r = x["r"]
         asin, mp, title = r["asin"], r["marketplace"], r["title"] or ""
-        bar.progress(i / len(items), text=f"[{i}/{len(items)}] {asin} ({mp})")
+        _tick(i, asin, mp, str(r.get("sku_group") or ""))
         kw = build_keyword_table(asin, mp, title)
         # Пустая таблица фраз бывает по двум причинам, и они требуют
         # разного: «SQP по товару нет» — генерируем по методологии,
@@ -792,6 +826,7 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
             if err and (not errors or errors[-1] != f"{asin} ({mp}): {err}"):
                 errors.append(f"{asin} ({mp}): {err}")
     bar.empty()
+    line.empty()
     usage = usage_totals()
     st.cache_data.clear()
     return {"done": done, "failed": failed, "unsaved": unsaved,
@@ -1280,6 +1315,31 @@ def render_card_actions(asin: str, mp: str, is_accepted: bool) -> None:
     render_push_result(state_key)
 
 
+def step_writer(status):
+    """Обработчик шагов для st.status: превращает kind в строку человеку."""
+    def on_step(kind: str, **kw) -> None:
+        if kind == "generating":
+            status.update(label=t("gen.generating"))
+            status.write("· " + t("gen.generating"))
+        elif kind == "checking":
+            status.write("· " + t("gen.checking"))
+        elif kind == "retry":
+            # самый нужный шаг: автоповторы занимают больше всего времени,
+            # и без него человек видит замерший экран без объяснения
+            line = t("gen.retry", attempt=kw.get("attempt", 2),
+                     total=kw.get("total", MAX_ATTEMPTS),
+                     over=max(1, int(kw.get("over") or 1)))
+            status.update(label=line)
+            status.write("↻ " + line)
+        elif kind == "trimming":
+            status.write("✂ " + t("gen.trimming"))
+        elif kind == "failed":
+            status.update(label=t("gen.failed"), state="error")
+        elif kind == "done":
+            status.update(label=t("gen.done"), state="complete")
+    return on_step
+
+
 def render_result(asin: str, mp: str, before: str, draft) -> None:
     """Блок «было / стало» с длинами и кнопкой «Принять».
 
@@ -1287,6 +1347,12 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
     несогласованный черновик из synthesis_drafts: после перезагрузки
     страницы человек должен видеть то же, что видел до неё."""
     accepted = ACCEPTED.get((asin, mp))
+    # Идёт перегенерация — показывать прошлый результат нельзя: он мелькает
+    # перед новым, и выглядит так, будто генерация вернула старое.
+    # Вместо него полоса хода, её рисует блок генерации ниже.
+    if st.session_state.get(f"regen-{asin}-{mp}"):
+        st.info("↻ " + t("gen.regenerating"))
+        return
     res = st.session_state.get(f"res-{asin}-{mp}")
     if res:
         after = str(res.get("title") or "")
@@ -2039,14 +2105,16 @@ with tab_queue:
                 if st.button(t("synth.generate"), type="primary",
                              key=f"gen-{asin}-{mp}",
                              disabled=not skill_version) or _regen:
-                    with st.spinner(f"Режу по методологии v{skill_version}..."):
+                    with st.status(f"{t('gen.title')} · v{skill_version}",
+                                   expanded=True) as _status:
+                        _status.write("· " + t("gen.phrases"))
                         _must = (kw.loc[kw["tier"] == "must_keep",
                                         "search_query"].tolist()
                                  if not kw.empty else [])
                         res, _st = generate_guarded(
                             title, mp, skill_text, keep_list, forbid_list,
                             kw_edit if not kw_edit.empty else kw, _must,
-                            skill_version)
+                            skill_version, on_step=step_writer(_status))
                     if res:
                         save_draft(asin, mp, title, res, skill_version)
                         if not kw.empty:
@@ -2279,14 +2347,16 @@ with tab_any:
                 if st.button(t("synth.generate"), type="primary",
                              key=f"any-gen-{a_asin}-{a_mp}",
                              disabled=not skill_version):
-                    with st.spinner(f"Режу по методологии v{skill_version}..."):
+                    with st.status(f"{t('gen.title')} · v{skill_version}",
+                                   expanded=True) as _astatus:
+                        _astatus.write("· " + t("gen.phrases"))
                         _amust = (a_kw.loc[a_kw["tier"] == "must_keep",
                                           "search_query"].tolist()
                                   if not a_kw.empty else [])
                         ares, _ast = generate_guarded(
                             a_title, a_mp, skill_text, a_keep, a_forbid,
                             a_edit if not a_edit.empty else a_kw, _amust,
-                            skill_version)
+                            skill_version, on_step=step_writer(_astatus))
                     if ares:
                         save_draft(a_asin, a_mp, a_title, ares, skill_version)
                         if not a_kw.empty:
