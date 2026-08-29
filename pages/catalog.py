@@ -68,8 +68,11 @@ def load_catalog() -> pd.DataFrame:
             """
             SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor,
                    s.fetched_at, s.ok, s.title, s.in_stock, s.review_count,
-                   s.is_amazon_choice, s.raw
+                   s.is_amazon_choice, s.raw,
+                   ll.has_aplus
             FROM product_matrix m
+            LEFT JOIN listing_latest ll
+                   ON ll.asin = m.asin AND ll.marketplace = m.marketplace
             LEFT JOIN LATERAL (
                 SELECT fetched_at, ok, title, in_stock, review_count,
                        is_amazon_choice, raw
@@ -156,12 +159,21 @@ def metrics(row: pd.Series) -> dict:
     raw_choice = row.get("is_amazon_choice")
     amazon_choice = False if pd.isna(raw_choice) else bool(raw_choice)
 
+    # A+ берём СТАБИЛИЗИРОВАННЫЙ по трём снимкам (listing_latest.has_aplus),
+    # а не из последнего снапшота: ScrapingDog врёт примерно на 15% запросов,
+    # а на .it по отдельным товарам на половине, и карточка показывала
+    # «A+ нет» там, где A+ есть. Сырое поле остаётся запасным — для товара,
+    # которого во вью ещё нет (первый сбор).
+    stable_aplus = row.get("has_aplus")
+    aplus = (bool(d.get("aplus")) if pd.isna(stable_aplus)
+             else bool(stable_aplus))
+
     return {
         "title": title,
         "title_len": len(title),
         "images": len(ids),
         "video": int(d.get("number_of_videos") or 0),
-        "aplus": bool(d.get("aplus")),
+        "aplus": aplus,
         "reviews": reviews,
         "rating": rating,
         "price": price,
