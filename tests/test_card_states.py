@@ -194,11 +194,19 @@ check("история переехала под кнопки выгрузки",
       SRC.index("def render_card_actions") < SRC.index("render_history(asin, mp)")
       < SRC.index("def step_writer"))
 
-# --- плотность из PR #42 не сломана
-check("перенос подписей по-прежнему запрещён",
-      "white-space:nowrap !important" in SRC)
-check("зазор колонок по-прежнему поджат",
-      "gap:6px !important" in SRC and 'gap="small"' in SRC)
+# --- плотность: кнопки жмутся к содержимому, а не к доле колонки
+css = " ".join(m for m in mds if "stColumn" in m)
+check("колонка сжимается по содержимому, а не делит ширину",
+      "flex:0 0 auto !important" in css)
+check("кнопка не растягивается на всю колонку",
+      "width:auto !important" in css and "width:100%" not in css)
+check("подпись кнопки не переносится", "white-space:nowrap !important" in css)
+check("последняя колонка забирает остаток",
+      "flex:1 1 auto !important" in css)
+check("на узком окне ряд переносится, а не уезжает за край",
+      "flex-wrap:wrap" in css)
+check("верхняя панель собрана тем же приёмом",
+      ".st-key-exp_bar" in css)
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
