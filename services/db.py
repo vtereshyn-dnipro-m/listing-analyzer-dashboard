@@ -170,10 +170,6 @@ def get_conn():
     return _apply_schema(psycopg2.connect(url))
 
 
-# db_conn — старое имя, на него завязаны batch_fetch/analyze/diagnose
-db_conn = get_conn
-
-
 # ---------------------------------------------------------------- матрица
 
 def add_matrix_rows(conn, rows: list[tuple[str, str, str, bool]]) -> int:

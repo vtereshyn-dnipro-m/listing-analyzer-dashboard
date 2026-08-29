@@ -221,7 +221,7 @@ Amazon SP-API, Lakebase — маска ключа + кнопка проверк�
 
 ### `services/db.py`
 Подключение (три режима), `cfg()` для секретов, DDL и CRUD `product_matrix`,
-парсер ввода `parse_asin_lines()`. `db_conn` — старый алиас `get_conn`.
+парсер ввода `parse_asin_lines()`.
 Таблицы: `product_matrix`.
 
 ### `services/settings.py`
@@ -361,8 +361,8 @@ en → сам ключ (забытый перевод виден в UI, без �
 | таблица | что хранит | пишут | читают |
 |---|---|---|---|
 | `product_matrix` | ASIN × marketplace, `sku_group`, `is_competitor` | `db.py`, `matrix_setup` | dashboard, catalog, synthesis, photo, serp, analyze |
-| `listing_snapshots` | append-only снапшоты ScrapingDog, `raw` jsonb | `matrix_setup`, `batch_fetch` | dashboard, catalog, synthesis, photo, guide, serp |
-| `listing_latest` | последний снапшот по паре + `has_aplus` — признак A+ по трём снимкам (вью) | — | catalog, matrix_setup, photo, `analyze.py` |
+| `listing_snapshots` | append-only снапшоты ScrapingDog, `raw` jsonb | `matrix_setup` | dashboard, catalog, synthesis, photo, guide, serp |
+| `listing_latest` | последний снапшот по паре + `has_aplus` — признак A+ по трём снимкам (вью) | — | catalog, matrix_setup, photo |
 | `listing_analysis` | `title_len`, `title_over`, `highlights_len`, `ai_grade` | `matrix_setup`, `analyze` | `analyze` |
 | `diagnosis` | боли: `rule_id`, `severity`, `pain`, `cause`, `action`, `money_impact` | `matrix_setup` | dashboard, synthesis, guide, matrix_setup |
 | `asin_economics` | выручка/сессии/конверсия за 30 дней, шаблон доставки | ноутбук Sync Economics | `economics.py` |
@@ -616,13 +616,12 @@ Percutor…`. Бренд Amazon берёт из поля `brand` и показы
    в `matrix_setup.collect_rows()`. Ссылавшаяся на него
    `ensure_all_schemas()` удалена.
 
-2. **`services/batch_fetch.py` и `services/analyze.py` — легаси-CLI, сейчас
-   нерабочие**: импортируют `ensure_schema`, `fetch_all`, `db_configured`
-   из `services.db` и `SCRAPINGDOG_API_KEY` / `ANTHROPIC_API_KEY` из `config`,
-   которых там нет. После удаления `ensure_all_schemas()` на них не ссылается
-   ничего — кандидаты на снос. В `batch_fetch` живёт пятая карта
-   маркетплейсов (`MARKETPLACE_TO_COUNTRY`, ключи в ВЕРХНЕМ регистре),
-   которую `test_marketplace_maps` не проверяет.
+2. **Легаси-CLI удалены.** `services/batch_fetch.py` и
+   `services/analyze.py` были нерабочими (импортировали несуществующие
+   имена), после сноса `ensure_all_schemas()` на них не ссылалось ничто.
+   Вместе с ними ушли пятая карта маркетплейсов
+   (`MARKETPLACE_TO_COUNTRY` с ключами в ВЕРХНЕМ регистре) и алиас
+   `db_conn`, существовавший только ради них.
    Живой путь сбора — кнопка «Собрать» в Матрице.
 
 3. **Строки мимо `t()`** (правило 5) остались в: `pages/guide.py`
