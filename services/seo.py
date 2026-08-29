@@ -56,9 +56,40 @@ COMPRESSIONS = [
 ]
 
 
+# Сбой чтения SQP нельзя выдавать за «данных нет». Разница
+# принципиальная: при «данных нет» генерация честно идёт по методологии,
+# при сбое — идёт БЕЗ must_keep и без forbid, а проверка keeps_all
+# на пустом списке проходит автоматически. Результат выглядит нормально,
+# потеря поискового веса вскрывается через недели по продажам.
+SQP_ERR_KEY = "seo.sqp_error"
+
+
+def sqp_error() -> str | None:
+    """Текст ошибки последнего чтения SQP, если оно упало."""
+    try:
+        return st.session_state.get(SQP_ERR_KEY)
+    except Exception:
+        return None
+
+
+def _remember_sqp_error(e: Exception | None) -> None:
+    try:
+        if e is None:
+            st.session_state.pop(SQP_ERR_KEY, None)
+        else:
+            st.session_state[SQP_ERR_KEY] = f"{type(e).__name__}: {e}"
+    except Exception:
+        pass
+
+
 @st.cache_data(ttl=300)
 def load_sqp(asin: str, marketplace: str, weeks: int = 4) -> pd.DataFrame:
-    """Агрегат SQP по ASIN за последние N недель."""
+    """Агрегат SQP по ASIN за последние N недель.
+
+    Пустой ответ означает ровно «фраз нет». Если чтение упало, текст
+    ошибки остаётся в sqp_error() — страница обязана его показать
+    и НЕ генерировать вслепую.
+    """
     try:
         conn = get_conn()
         df = pd.read_sql(
@@ -80,8 +111,10 @@ def load_sqp(asin: str, marketplace: str, weeks: int = 4) -> pd.DataFrame:
             conn, params={"asin": asin, "mp": marketplace, "days": weeks * 7},
         )
         conn.close()
+        _remember_sqp_error(None)
         return df
-    except Exception:
+    except Exception as e:
+        _remember_sqp_error(e)
         return pd.DataFrame()
 
 

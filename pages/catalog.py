@@ -20,7 +20,8 @@ from i18n import t
 from services.db import get_conn
 from services.settings import get_int, get_float
 from services.economics import (
-    econ_map, fmt_money, fmt_conversion, money_at_risk, RULE_RISK,
+    econ_map, fmt_money, fmt_conversion, money_at_risk, num, risk_coef,
+    unknown_rules, RULE_RISK,
 )
 from services.worklog import worklog_map, work_badges
 from services.attributes import (
@@ -357,7 +358,10 @@ def group_risk(asin: str, mp: str, group: str) -> float:
     if not hit:
         return 0.0
     try:
-        return float(rev or 0) * max(RULE_RISK.get(r_, 0.03) for r_ in hit)
+        # NaN истинный: float(rev or 0) вернул бы NaN. Правило без
+        # коэффициента денег не приносит, а не «примерно три процента»
+        coefs = [c for c in (risk_coef(r_) for r_ in hit) if c is not None]
+        return num(rev) * max(coefs) if coefs else 0.0
     except (TypeError, ValueError):
         return 0.0
 
@@ -447,14 +451,14 @@ order = {"red": 0, "amber": 1, "yellow": 2, "ok": 3, "gray": 4, "comp": 5}
 def _rev(x) -> float:
     e = ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
     try:
-        return float(e.get("revenue_30d") or 0)
+        return num(e.get("revenue_30d"))
     except (TypeError, ValueError):
         return 0.0
 
 
 if iss_f == "all":
     rows.sort(key=lambda x: (order[x["lvl"]], -_rev(x),
-                             -(x["mx"]["title_len"] or 0)))
+                             -num(x["mx"]["title_len"])))
 else:
     # внутри группы — по деньгам под риском, как в Диагнозе: в «Amazon»
     # это даёт красные блокировки сверху, затем fba_out, затем жёлтые
@@ -766,8 +770,8 @@ for x in chunk:
         chip(t("metric.aplus"), t("metric.yes") if mx["aplus"] else t("metric.no"),
              "ok" if mx["aplus"] else "warn"),
         chip(t("metric.reviews"), str(mx["reviews"] if mx["reviews"] is not None else "—"),
-             "ok" if (mx["reviews"] or 0) >= MIN_REVIEWS
-             else ("err" if (mx["reviews"] or 0) < CRIT_REVIEWS else "warn")),
+             "ok" if num(mx["reviews"]) >= MIN_REVIEWS
+             else ("err" if num(mx["reviews"]) < CRIT_REVIEWS else "warn")),
         chip(t("metric.rating"),
              (f"{mx['rating']:.1f}".replace(".", ",") if mx["rating"] else "—"),
              "neutral" if not mx["rating"]
@@ -781,10 +785,10 @@ for x in chunk:
     ] + choice_chips(mx, asin, mp) + ([
         chip(t("metric.revenue"), fmt_money(_ec.get("revenue_30d"), ""),
              "neutral"),
-        chip(t("metric.sessions"), str(int(_ec.get("sessions_30d") or 0)),
+        chip(t("metric.sessions"), str(int(num(_ec.get("sessions_30d")))),
              "neutral"),
         chip(t("metric.conversion"), fmt_conversion(_ec.get("conversion_rate")),
-             "ok" if float(_ec.get("conversion_rate") or 0) > 0 else "neutral"),
+             "ok" if num(_ec.get("conversion_rate")) > 0 else "neutral"),
         chip(t("metric.shipping"),
              str(_ec.get("shipping_template") or t("metric.no_template"))[:22],
              "ok" if _ec.get("shipping_template") else "warn"),
@@ -792,11 +796,11 @@ for x in chunk:
         chip(t("search.queries"), fmt_int(_sr.get("queries")), "neutral"),
         chip(t("search.demand"), fmt_int(_sr.get("demand")), "neutral"),
         chip(t("search.imp_share"), fmt_pct(_sr.get("imp_share")),
-             "ok" if (_sr.get("imp_share") or 0) >= 1 else "warn"),
+             "ok" if num(_sr.get("imp_share")) >= 1 else "warn"),
         chip("CTR", fmt_pct(_sr.get("ctr")),
              {"ok": "ok", "warn": "err", "none": "neutral"}[ctr_state(_sr)]),
         chip(t("search.purchases"), fmt_int(_sr.get("purchases")),
-             "ok" if (_sr.get("purchases") or 0) > 0 else "warn"),
+             "ok" if num(_sr.get("purchases")) > 0 else "warn"),
     ] if _sr else []) + ([
         chip(t("attr.category"), node_short(_at), "neutral"),
         chip(t("attr.filled"), _fill_label,

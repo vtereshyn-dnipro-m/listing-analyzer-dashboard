@@ -16,9 +16,14 @@ services/db.py — подключение к базе + product_matrix. v2 (Lake
 3. DSN-режим (локальная разработка):
    DATABASE_URL из env / .streamlit/secrets.toml -> psycopg2.connect(url).
 
-ПРАВИЛО DDL (как в Кабинете): миграции делает ТОЛЬКО пайплайн.
-ensure_all_schemas() вызывается из ячейки ноутбука. Страницы Streamlit
-схему НЕ создают и НЕ меняют — только SELECT и разрешённые INSERT/UPDATE.
+ПРАВИЛО DDL: приложение схему НЕ создаёт и НЕ меняет — только SELECT
+и разрешённые INSERT/UPDATE. Миграции идут отдельными .sql файлами
+из migrations/ и применяются через Databricks.
+
+Здесь раньше жила ensure_all_schemas() — «единая точка миграций», которая
+не работала: все три её импорта падали, и четыре миграции за неделю прошли
+мимо неё. Мёртвый механизм хуже отсутствующего — он создаёт ощущение,
+что схема под контролем, и его убрали намеренно.
 """
 
 from __future__ import annotations
@@ -167,36 +172,6 @@ def get_conn():
 
 # db_conn — старое имя, на него завязаны batch_fetch/analyze/diagnose
 db_conn = get_conn
-
-
-# ---------------------------------------------------------------- схема
-
-DDL_MATRIX = """
-CREATE TABLE IF NOT EXISTS product_matrix (
-    id            BIGSERIAL PRIMARY KEY,
-    sku_group     TEXT NOT NULL,
-    asin          TEXT NOT NULL,
-    marketplace   TEXT NOT NULL DEFAULT 'com',
-    is_competitor BOOLEAN NOT NULL DEFAULT FALSE,
-    added_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (asin, marketplace)
-);
-CREATE INDEX IF NOT EXISTS idx_matrix_sku ON product_matrix (sku_group);
-"""
-
-
-def ensure_all_schemas(conn) -> None:
-    """ТОЛЬКО из ячейки ноутбука-пайплайна. Дашборд это не вызывает."""
-    from services.batch_fetch import DDL as DDL_SNAPSHOTS
-    from services.analyze import DDL as DDL_ANALYSIS
-    from services.diagnose import DDL as DDL_DIAGNOSIS
-    with conn, conn.cursor() as cur:
-        cur.execute(f"CREATE SCHEMA IF NOT EXISTS {DB_SCHEMA}")
-        cur.execute(f"SET search_path TO {DB_SCHEMA}, public")
-        cur.execute(DDL_MATRIX)
-        cur.execute(DDL_SNAPSHOTS)
-        cur.execute(DDL_ANALYSIS)
-        cur.execute(DDL_DIAGNOSIS)
 
 
 # ---------------------------------------------------------------- матрица

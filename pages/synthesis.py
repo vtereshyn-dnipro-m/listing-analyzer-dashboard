@@ -38,7 +38,7 @@ from services.serp import (
 )
 from services.seo import (
     build_keyword_table, coverage, compress_phrase, phrase_present,
-    TIER_LABEL, TIER_COLOR, TIERS,
+    sqp_error, TIER_LABEL, TIER_COLOR, TIERS,
 )
 from services.flatfile import (
     load_accepted_titles, plan_export, plan_signature, build_flat_cached,
@@ -697,6 +697,17 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
         asin, mp, title = r["asin"], r["marketplace"], r["title"] or ""
         bar.progress(i / len(items), text=f"[{i}/{len(items)}] {asin} ({mp})")
         kw = build_keyword_table(asin, mp, title)
+        # Пустая таблица фраз бывает по двум причинам, и они требуют
+        # разного: «SQP по товару нет» — генерируем по методологии,
+        # «SQP не прочитался» — не генерируем вовсе. Во втором случае
+        # ушла бы партия без единой must_keep фразы и без forbid,
+        # а проверка keeps_all на пустом списке прошла бы сама собой.
+        _sqp_err = sqp_error()
+        if kw.empty and _sqp_err:
+            failed += 1
+            errors.append(f"{asin} ({mp}): " + t("synth.sqp_failed",
+                                                 e=_sqp_err))
+            continue
         keep, forbid = [], []
         if not kw.empty:
             keep = kw.loc[kw["tier"].isin(["must_keep", "preferred"]),
@@ -1927,7 +1938,11 @@ with tab_queue:
                             unsafe_allow_html=True)
                 kw = build_keyword_table(asin, mp, title)
                 kw_edit = pd.DataFrame()
-                if kw.empty:
+                if kw.empty and sqp_error():
+                    # «данных нет» — утверждение о данных; при сбое чтения
+                    # оно ложное, и генерация пойдёт без защищённых фраз
+                    st.error("⚠ " + t("synth.sqp_failed", e=sqp_error()))
+                elif kw.empty:
                     st.caption(SQP_LABEL[x["sqp_state"]] + " · "
                                + t("synth.no_sqp"))
                 else:
