@@ -27,7 +27,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t
-from services.db import get_conn
+from services.db import get_conn, get_engine
 
 ERR_KEY = "history.load_error"
 
@@ -36,9 +36,7 @@ def _query(sql: str) -> pd.DataFrame:
     """Один запрос. Ошибку не глотаем: пустая история и недоступная
     история — разные вещи, и вторую человек должен видеть."""
     try:
-        conn = get_conn()
-        df = pd.read_sql(sql, conn)
-        conn.close()
+        df = pd.read_sql(sql, get_engine())
         return df
     except Exception as e:
         try:

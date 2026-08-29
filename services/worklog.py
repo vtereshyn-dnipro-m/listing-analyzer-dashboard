@@ -13,14 +13,13 @@ import streamlit as st
 
 from i18n import t
 
-from services.db import get_conn
+from services.db import get_conn, get_engine
 
 
 @st.cache_data(ttl=60)
 def load_worklog() -> pd.DataFrame:
     """По каждому ASIN×MP: черновики, принятая правка, грейды фото и A+."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             WITH d AS (
@@ -61,9 +60,8 @@ def load_worklog() -> pd.DataFrame:
                        AND a.marketplace = COALESCE(d.marketplace, c.marketplace,
                                                     g.marketplace)
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()

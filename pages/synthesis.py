@@ -24,7 +24,7 @@ import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT, HIGHLIGHTS_LIMIT as _HL_DEFAULT
 from i18n import t, mp_label
-from services.db import get_conn, cfg
+from services.db import get_conn, cfg, get_engine
 from services.settings import get_setting, get_int
 from services.ai import (
     generate_json, task_config, no_credit_banner, last_call_error,
@@ -141,7 +141,6 @@ def build_system(skill_text: str, skill_ver: int) -> str:
 @st.cache_data(ttl=300)
 def load_candidates() -> pd.DataFrame:
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (d.asin, d.marketplace)
@@ -160,9 +159,8 @@ def load_candidates() -> pd.DataFrame:
             WHERE d.rule_id = 'title_over_limit'
             ORDER BY d.asin, d.marketplace, d.created_at DESC
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()
@@ -204,7 +202,6 @@ def load_skill() -> tuple[str, int]:
     ответом не запускается — см. generate_split.
     """
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (scope) scope, skill_text, version
@@ -212,9 +209,8 @@ def load_skill() -> tuple[str, int]:
             WHERE is_active = TRUE AND scope IN ('common', 'title_split')
             ORDER BY scope, version DESC
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         if not df.empty:
             parts: list[str] = []
             version = 0
@@ -241,16 +237,14 @@ def load_skill() -> tuple[str, int]:
 
 def load_keywords(asin: str, mp: str) -> pd.DataFrame:
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT id, phrase, phrase_type, source FROM protected_keywords
             WHERE asin = %(asin)s AND marketplace = %(mp)s
             ORDER BY phrase_type, phrase
             """,
-            conn, params={"asin": asin, "mp": mp},
+            get_engine(), params={"asin": asin, "mp": mp},
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()
@@ -587,7 +581,6 @@ def load_draft_stats() -> dict:
     правкой, — это перегенерация или брошенная работа, а не отклонение.
     """
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             WITH acc AS (
@@ -613,8 +606,7 @@ def load_draft_stats() -> dict:
             LEFT JOIN acc a
                    ON a.asin = d.asin AND a.marketplace = d.marketplace
             GROUP BY d.asin, d.marketplace
-            """, conn)
-        conn.close()
+            """, get_engine())
         return {(r["asin"], r["marketplace"]): r.to_dict()
                 for _, r in df.iterrows()}
     except Exception:
@@ -633,7 +625,7 @@ def load_accepted() -> dict:
                    coverage_score, model, after_text, after_extra
             FROM synthesis_changes
             ORDER BY asin, marketplace, accepted_at DESC
-            """, conn)
+            """, get_engine())
         conn.close()
         return {(r["asin"], r["marketplace"]): r.to_dict()
                 for _, r in df.iterrows()}
@@ -685,7 +677,6 @@ def accept_change(asin: str, mp: str, before: str, result: dict,
 def load_drafts_for_review() -> pd.DataFrame:
     """Черновики без принятой правки — очередь на разбор."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (d.asin, d.marketplace)
@@ -707,8 +698,7 @@ def load_drafts_for_review() -> pd.DataFrame:
                   AND sc.change_type = 'title_split'
             )
             ORDER BY d.asin, d.marketplace, d.created_at DESC
-            """, conn)
-        conn.close()
+            """, get_engine())
         return df
     except Exception:
         return pd.DataFrame()
@@ -838,7 +828,6 @@ def load_all_products() -> pd.DataFrame:
     """Все товары матрицы со свежим снапшотом — для работы с любым тайтлом,
     а не только с теми, у кого сработало правило title_over_limit."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT m.asin, m.marketplace, m.sku_group,
@@ -853,8 +842,7 @@ def load_all_products() -> pd.DataFrame:
             ) s ON TRUE
             WHERE m.is_competitor = FALSE
             ORDER BY m.sku_group, m.asin, m.marketplace
-            """, conn)
-        conn.close()
+            """, get_engine())
         return df
     except Exception:
         return pd.DataFrame()
@@ -868,10 +856,8 @@ def load_sqp_coverage() -> set:
     могла утверждать «SQP собран», а таблица фраз оказывалась пустой.
     """
     try:
-        conn = get_conn()
         df = pd.read_sql(
-            "SELECT DISTINCT asin, marketplace FROM sqp_reports", conn)
-        conn.close()
+            "SELECT DISTINCT asin, marketplace FROM sqp_reports", get_engine())
         return set(zip(df["asin"], df["marketplace"]))
     except Exception:
         return set()
@@ -900,7 +886,7 @@ def kw_editor(kw_df: pd.DataFrame, key: str) -> pd.DataFrame:
             "tier": st.column_config.SelectboxColumn(
                 "Tier", options=TIERS, required=True),
         },
-        hide_index=True, use_container_width=True, height=300, key=key)
+        hide_index=True, width="stretch", height=300, key=key)
 
 
 def render_preview(new_title: str, new_hl: str, mp: str) -> None:
@@ -1884,7 +1870,7 @@ with tab_queue:
                                  for k, v in _why.most_common()))
             with e4.expander(t("export.skipped_list"), expanded=False):
                 st.dataframe(pd.DataFrame(_bad), hide_index=True,
-                             use_container_width=True)
+                             width="stretch")
 
         # ---- прямая отправка в Amazon: третья кнопка, место под неё
         # держали с самого начала. Всё, что она делает по нажатию, —
@@ -2048,7 +2034,7 @@ with tab_queue:
                     "link": st.column_config.LinkColumn(
                         t("matrix.collect"), display_text="→"),
                 },
-                hide_index=True, use_container_width=True, height=520)
+                hide_index=True, width="stretch", height=520)
             st.caption(t("list.sort_hint"))
             st.stop()
 
@@ -2280,7 +2266,7 @@ with tab_any:
                         "link": st.column_config.LinkColumn(
                             t("matrix.collect"), display_text="→"),
                     },
-                    hide_index=True, use_container_width=True, height=420)
+                    hide_index=True, width="stretch", height=420)
                 st.caption(t("list.sort_hint"))
 
             opts = {}

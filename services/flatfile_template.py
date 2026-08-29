@@ -37,7 +37,7 @@ import zipfile
 import pandas as pd
 import streamlit as st
 
-from services.db import get_conn
+from services.db import get_conn, get_engine
 
 SHEET = "Plantilla"
 MAP_SHEET = "AttributePTDMAP"
@@ -390,7 +390,6 @@ def load_templates(marketplace: str) -> list[dict]:
     """Шаблоны маркетплейса из Lakebase (без сессионных — они добавляются
     в templates_for(), потому что кэш их бы заморозил)."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT marketplace, slot, file_name, sheet_path, columns,
@@ -399,8 +398,7 @@ def load_templates(marketplace: str) -> list[dict]:
             FROM flatfile_templates
             WHERE marketplace = %(mp)s
             ORDER BY slot
-            """, conn, params={"mp": str(marketplace).lower()})
-        conn.close()
+            """, get_engine(), params={"mp": str(marketplace).lower()})
     except Exception:
         return []
     return [_unpack(r) for r in df.to_dict("records")]

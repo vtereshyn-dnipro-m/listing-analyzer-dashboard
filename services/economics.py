@@ -13,7 +13,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from services.db import get_conn
+from services.db import get_conn, get_engine
 
 # доля выручки, которой рискуем при каждом типе проблемы
 # (консервативные оценки; не выдумка «impact», а прозрачный коэффициент)
@@ -50,7 +50,6 @@ BLOCKED_WITH_ALIVE_RISK = 0.40
 def load_economics() -> pd.DataFrame:
     """Экономика по всем ASIN×MP за последние 30 дней."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT asin, marketplace,
@@ -59,9 +58,8 @@ def load_economics() -> pd.DataFrame:
                    shipping_template, updated_at
             FROM asin_economics
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()

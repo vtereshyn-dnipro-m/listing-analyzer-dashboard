@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t
-from services.db import get_conn, add_matrix_rows, parse_asin_lines, cfg
+from services.db import get_conn, add_matrix_rows, parse_asin_lines, cfg, get_engine
 from services.worklog import worklog_map, work_badges, has_work
 from components.ui import inject_fonts, eyebrow
 
@@ -90,11 +90,9 @@ st.divider()
 def load_catalog_source() -> pd.DataFrame:
     """Зеркало каталога Amazon (синхронизируется ноутбуком)."""
     try:
-        conn = get_conn()
         df_c = pd.read_sql(
             "SELECT asin, marketplace, sku_group, fulfillment, report_date, "
-            "synced_at FROM catalog_source", conn)
-        conn.close()
+            "synced_at FROM catalog_source", get_engine())
         return df_c
     except Exception:
         return pd.DataFrame()
@@ -114,10 +112,8 @@ with st.expander(f"{t('matrix.import_header')} ({len(src)})",
 
         # что уже в матрице
         try:
-            conn = get_conn()
             in_matrix = pd.read_sql(
-                "SELECT asin, marketplace FROM product_matrix", conn)
-            conn.close()
+                "SELECT asin, marketplace FROM product_matrix", get_engine())
         except Exception:
             in_matrix = pd.DataFrame(columns=["asin", "marketplace"])
         have = set(zip(in_matrix["asin"], in_matrix["marketplace"])) \
@@ -140,7 +136,7 @@ with st.expander(f"{t('matrix.import_header')} ({len(src)})",
                 "new": st.column_config.NumberColumn(t("matrix.import_new"),
                                                      width="small"),
             },
-            hide_index=True, use_container_width=True)
+            hide_index=True, width="stretch")
 
         ic1, ic2 = st.columns([3, 2])
         mps_all = sorted(src["marketplace"].unique())
@@ -188,7 +184,6 @@ with st.expander(f"{t('matrix.import_header')} ({len(src)})",
 @st.cache_data(ttl=120)
 def load_matrix() -> pd.DataFrame:
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor, m.added_at,
@@ -216,9 +211,8 @@ def load_matrix() -> pd.DataFrame:
             ) d ON TRUE
             ORDER BY m.sku_group, m.marketplace, m.asin
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()
@@ -434,7 +428,7 @@ def render_collect_skipped() -> None:
     st.warning("⚠ " + t("matrix.skipped_n", n=len(rows)))
     st.dataframe(
         pd.DataFrame(rows, columns=["asin", "mp", "reason"]),
-        hide_index=True, use_container_width=True,
+        hide_index=True, width="stretch",
         column_config={
             "asin": st.column_config.TextColumn("ASIN"),
             "mp": st.column_config.TextColumn(t("matrix.c_mp")),
@@ -584,7 +578,7 @@ else:
                 "link": st.column_config.LinkColumn(t("matrix.collect"),
                                                     display_text="→"),
             },
-            hide_index=True, use_container_width=True, height=460,
+            hide_index=True, width="stretch", height=460,
             key=f"matrix-table-{page}",
         )
         sel = edited[edited["pick"]]
@@ -736,9 +730,7 @@ st.divider()
 @st.cache_data(ttl=60)
 def load_schedule() -> dict:
     try:
-        conn = get_conn()
-        df_s = pd.read_sql("SELECT * FROM collection_schedule WHERE id = 1", conn)
-        conn.close()
+        df_s = pd.read_sql("SELECT * FROM collection_schedule WHERE id = 1", get_engine())
         if not df_s.empty:
             return dict(df_s.iloc[0])
     except Exception:

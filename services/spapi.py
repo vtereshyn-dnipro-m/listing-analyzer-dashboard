@@ -41,7 +41,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
-from services.db import cfg, get_conn
+from services.db import cfg, get_conn, get_engine
 
 LWA_URL = "https://api.amazon.com/auth/o2/token"
 LISTINGS_PATH = "/listings/2021-08-01/items/{seller}/{sku}"
@@ -319,7 +319,6 @@ def load_pushes() -> dict:
     """(asin, marketplace) -> последняя УСПЕШНАЯ отправка. Нужна защите
     от повтора: человек должен видеть, что уже отправлял и когда."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (asin, marketplace)
@@ -328,8 +327,7 @@ def load_pushes() -> dict:
             FROM listing_push_log
             WHERE ok IS TRUE
             ORDER BY asin, marketplace, pushed_at DESC
-            """, conn)
-        conn.close()
+            """, get_engine())
     except Exception:
         return {}
     return {(r["asin"], r["marketplace"]): r.to_dict()

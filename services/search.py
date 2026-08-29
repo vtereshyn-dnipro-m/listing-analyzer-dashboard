@@ -19,7 +19,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from services.db import get_conn
+from services.db import get_conn, get_engine
 from services.settings import get_float
 
 WEEKS = 4                     # окно сводки
@@ -36,7 +36,6 @@ def load_search(weeks: int = WEEKS) -> pd.DataFrame:
     потом по товару.
     """
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             WITH q AS (
@@ -64,9 +63,8 @@ def load_search(weeks: int = WEEKS) -> pd.DataFrame:
             FROM q
             GROUP BY asin, marketplace
             """,
-            conn, params={"days": weeks * 7},
+            get_engine(), params={"days": weeks * 7},
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()

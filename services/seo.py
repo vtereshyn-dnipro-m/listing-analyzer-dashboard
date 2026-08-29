@@ -19,7 +19,7 @@ import re
 import pandas as pd
 import streamlit as st
 
-from services.db import get_conn
+from services.db import get_conn, get_engine
 
 TIERS = ["must_keep", "preferred", "compress", "forbid"]
 TIER_LABEL = {
@@ -91,7 +91,6 @@ def load_sqp(asin: str, marketplace: str, weeks: int = 4) -> pd.DataFrame:
     и НЕ генерировать вслепую.
     """
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT search_query,
@@ -108,9 +107,8 @@ def load_sqp(asin: str, marketplace: str, weeks: int = 4) -> pd.DataFrame:
                      sum(clicks_asin) DESC NULLS LAST,
                      max(search_query_volume) DESC NULLS LAST
             """,
-            conn, params={"asin": asin, "mp": marketplace, "days": weeks * 7},
+            get_engine(), params={"asin": asin, "mp": marketplace, "days": weeks * 7},
         )
-        conn.close()
         _remember_sqp_error(None)
         return df
     except Exception as e:

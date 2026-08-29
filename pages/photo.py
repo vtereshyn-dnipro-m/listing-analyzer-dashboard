@@ -17,7 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t, current_lang
-from services.db import get_conn, cfg
+from services.db import get_conn, cfg, get_engine
 from services.settings import get_setting
 from services.ai import generate_json, task_config, no_credit_banner
 from components.ui import inject_fonts, eyebrow
@@ -123,7 +123,6 @@ PROMPT_TPL = """{skill}
 @st.cache_data(ttl=300)
 def load_candidates() -> pd.DataFrame:
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (s.asin, s.marketplace)
@@ -137,9 +136,8 @@ def load_candidates() -> pd.DataFrame:
             WHERE s.ok = TRUE AND s.title <> ''
             ORDER BY s.asin, s.marketplace, s.fetched_at DESC
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df
     except Exception:
         return pd.DataFrame()
@@ -149,7 +147,6 @@ def load_candidates() -> pd.DataFrame:
 def load_skill(scope: str) -> tuple[str, int]:
     """common + указанная область, склеенные."""
     try:
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (scope) scope, skill_text, version
@@ -157,9 +154,8 @@ def load_skill(scope: str) -> tuple[str, int]:
             WHERE is_active = TRUE AND scope IN ('common', %(scope)s)
             ORDER BY scope, version DESC
             """,
-            conn, params={"scope": scope},
+            get_engine(), params={"scope": scope},
         )
-        conn.close()
         parts, ver = [], 0
         for sc in ("common", scope):
             row = df[df["scope"] == sc]
@@ -272,7 +268,7 @@ def render_per_photo(res: dict, images: list[str]) -> None:
 
         c1, c2 = st.columns([1, 4])
         if url:
-            c1.image(url, use_container_width=True)
+            c1.image(url, width="stretch")
         with c2:
             st.markdown(
                 f"<div style='font-size:15px;font-weight:700;'>Фото #{idx} — "
@@ -359,7 +355,6 @@ def load_audits() -> pd.DataFrame:
     из-за чего анализ приходилось гонять заново. Теперь читаем сохранённый.
     """
     try:
-        conn = get_conn()
         df_a = pd.read_sql(
             """
             SELECT DISTINCT ON (asin, marketplace, analysis_type)
@@ -369,9 +364,8 @@ def load_audits() -> pd.DataFrame:
             FROM photo_analysis
             ORDER BY asin, marketplace, analysis_type, created_at DESC
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         return df_a
     except Exception:
         return pd.DataFrame()
@@ -524,7 +518,7 @@ if mode == "table":
             "фото": st.column_config.ImageColumn("Фото", width="small"),
             "ссылка": st.column_config.LinkColumn("Листинг", display_text="открыть"),
         },
-        hide_index=True, use_container_width=True, height=520)
+        hide_index=True, width="stretch", height=520)
     st.caption(t("list.sort_hint"))
     st.stop()
 
@@ -577,7 +571,7 @@ for x in rows:
                 for start in range(0, len(imgs), per_row):
                     cols = st.columns(per_row)
                     for i, url in enumerate(imgs[start:start + per_row]):
-                        cols[i].image(url, use_container_width=True,
+                        cols[i].image(url, width="stretch",
                                       caption=f"{start + i + 1}")
             else:
                 st.warning(t("photo.no_images"))
@@ -654,7 +648,7 @@ for x in rows:
         with tab_a:
             if apl:
                 for i, url in enumerate(apl, 1):
-                    st.image(url, use_container_width=True, caption=f"A+ {i}")
+                    st.image(url, width="stretch", caption=f"A+ {i}")
             else:
                 # Модулей в снапшоте нет — но значит ли это, что A+ нет?
                 # Стабилизированный признак отвечает точнее сырого: именно

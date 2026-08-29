@@ -64,10 +64,9 @@ def load_flow_status() -> dict:
     """Живой статус для схемы: свежесть сбора и число активных болей."""
     out = {"fresh_collect": False, "pains": 0, "last_fetch": None}
     try:
-        from services.db import get_conn
+        from services.db import get_conn, get_engine
         from services.economics import num
         import pandas as pd
-        conn = get_conn()
         df = pd.read_sql(
             """
             SELECT
@@ -78,9 +77,8 @@ def load_flow_status() -> dict:
                     ORDER BY asin, marketplace, rule_id, created_at DESC
                 ) x) AS pains
             """,
-            conn,
+            get_engine(),
         )
-        conn.close()
         if not df.empty:
             lf = df.iloc[0]["last_fetch"]
             if lf is not None and not pd.isna(lf):
