@@ -84,11 +84,10 @@ def money_at_risk(rule_id: str, revenue_30d, had_sales: bool = True,
     снижает 1.00 -> BLOCKED_WITH_ALIVE_RISK. had_sales=False (товар
     никогда не продавался) занижает до NEVER_SOLD_RISK независимо
     от правила."""
-    try:
-        rev = float(revenue_30d or 0)
-    except (TypeError, ValueError):
-        return 0.0
-    coef = RULE_RISK.get(rule_id, 0.03)
+    rev = num(revenue_30d)
+    coef = risk_coef(rule_id)
+    if coef is None:
+        return 0.0          # правило без коэффициента денег не приносит
     if rule_id == "amazon_blocked" and family_alive is True:
         coef = BLOCKED_WITH_ALIVE_RISK
     if had_sales is False:
@@ -96,11 +95,41 @@ def money_at_risk(rule_id: str, revenue_30d, had_sales: bool = True,
     return rev * coef
 
 
-def fmt_money(v, suffix: str = "") -> str:
+def num(v, default: float = 0.0) -> float:
+    """Число из значения БД. `float(x or 0)` здесь не годится: NaN в Python
+    ИСТИНЕН, поэтому `or` его пропускает и наружу выходит NaN, а не ноль.
+    Дальше NaN тихо расползается — в сортировку, в суммы, в деньги."""
     try:
-        val = float(v or 0)
+        if v is None or pd.isna(v):
+            return default
+        return float(v)
     except (TypeError, ValueError):
-        return "—"
+        return default
+
+
+# Правила без коэффициента. Молчаливый дефолт 0.03 назначал деньги под
+# риском правилу, для которого коэффициент никто не выбирал, — а цифра
+# в деньгах выглядит одинаково убедительно, назначена она или выдумана.
+# Теперь незнакомое правило денег не приносит, а его имя копится здесь,
+# чтобы страница сказала об этом вслух.
+_UNKNOWN_RULES: set[str] = set()
+
+
+def unknown_rules() -> set[str]:
+    """Правила, встреченные без коэффициента риска."""
+    return set(_UNKNOWN_RULES)
+
+
+def risk_coef(rule_id: str) -> float | None:
+    """Коэффициент правила или None, если он не задан."""
+    coef = RULE_RISK.get(rule_id)
+    if coef is None:
+        _UNKNOWN_RULES.add(str(rule_id))
+    return coef
+
+
+def fmt_money(v, suffix: str = "") -> str:
+    val = num(v)
     if val <= 0:
         return "—"
     if val >= 1000:
@@ -109,10 +138,7 @@ def fmt_money(v, suffix: str = "") -> str:
 
 
 def fmt_conversion(v) -> str:
-    try:
-        val = float(v or 0)
-    except (TypeError, ValueError):
-        return "—"
+    val = num(v)
     if val <= 0:
         return "—"
     # значение может прийти как доля (0.16) или как проценты (16.7)

@@ -81,9 +81,15 @@ HTML-атрибута рвут тег. Внутри атрибутов кавы�
 `search_path` всегда выставляется в `listing_data, public`, поэтому в SQL имена
 таблиц пишутся без префикса схемы.
 
-**Правило DDL: миграции делает ТОЛЬКО пайплайн.** `ensure_all_schemas()`
-вызывается из ячейки ноутбука. Страницы Streamlit схему не создают и не меняют —
-только `SELECT` и разрешённые `INSERT`/`UPDATE`.
+**Правило DDL: миграции идут через Databricks, вручную.** Каждая — отдельный
+`.sql` в [migrations/](migrations/), см. [migrations/README.md](migrations/README.md).
+Приложение схему не создаёт и не меняет — только `SELECT` и разрешённые
+`INSERT`/`UPDATE`.
+
+Раньше здесь значилась «единая точка миграций» `ensure_all_schemas()` из
+ячейки ноутбука. Она не работала: все три её импорта падали, и четыре
+миграции подряд прошли мимо неё. Функция удалена — механизм, который
+не работает, но выглядит работающим, хуже отсутствующего.
 
 Секреты читаются через `services.db.cfg(name)`: env → `.streamlit/secrets.toml`
 на диске → `st.secrets` → default. Ключи: `SCRAPINGDOG_API_KEY`,
@@ -399,6 +405,7 @@ python tests/test_marketplace_maps.py
 python tests/test_aplus_stable.py
 python tests/test_card_actions.py
 python tests/test_history.py
+python tests/test_silent_failures.py
 ```
 
 `tests/fixture_template.py` — не тест, а общая миниатюра шаблона Amazon
@@ -482,6 +489,13 @@ Highlights не уходят без укладывающегося тайтла,
 правка или предыдущая. Плюс заходы считаются ПО ИНТЕРВАЛАМ между
 приёмками (общий счётчик завысил бы вторую), отказ Amazon не выглядит
 успехом, а недоступная история отличима от пустой.
+
+`test_silent_failures.py` — сбой не должен выглядеть как «данных нет».
+Самая дорогая из запертых здесь ошибок: сбой чтения SQP превращал
+генерацию в работу вслепую — `keep=[]`, `forbid=[]`, `keeps_all` на пустом
+списке проходит сам собой, тайтлы получаются в лимите и с зелёными
+галочками, а поискового веса в них нет. Плюс `float(x or 0)` на NaN даёт
+NaN, а не ноль, и правило без коэффициента больше не получает 3% выручки.
 
 `test_length_guard.py` — гарантия лимита: запас в промпте, автоповтор,
 обрезка по границе слова, отказ резать при потере must_keep.
@@ -598,14 +612,17 @@ Percutor…`. Бренд Amazon берёт из поля `brand` и показы
 
 Проверено на текущем коммите — учитывать при работе.
 
-1. **Нет `services/diagnose.py`**, который импортирует
-   `db.ensure_all_schemas()` ([services/db.py:184](services/db.py:184)).
-   Правила диагностики фактически живут в `matrix_setup.collect_rows()`.
+1. **Нет `services/diagnose.py`.** Правила диагностики фактически живут
+   в `matrix_setup.collect_rows()`. Ссылавшаяся на него
+   `ensure_all_schemas()` удалена.
 
 2. **`services/batch_fetch.py` и `services/analyze.py` — легаси-CLI, сейчас
    нерабочие**: импортируют `ensure_schema`, `fetch_all`, `db_configured`
    из `services.db` и `SCRAPINGDOG_API_KEY` / `ANTHROPIC_API_KEY` из `config`,
-   которых там нет; `ensure_all_schemas` ждёт от них константу `DDL`.
+   которых там нет. После удаления `ensure_all_schemas()` на них не ссылается
+   ничего — кандидаты на снос. В `batch_fetch` живёт пятая карта
+   маркетплейсов (`MARKETPLACE_TO_COUNTRY`, ключи в ВЕРХНЕМ регистре),
+   которую `test_marketplace_maps` не проверяет.
    Живой путь сбора — кнопка «Собрать» в Матрице.
 
 3. **Строки мимо `t()`** (правило 5) остались в: `pages/guide.py`

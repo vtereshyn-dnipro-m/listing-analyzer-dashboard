@@ -65,6 +65,7 @@ def load_flow_status() -> dict:
     out = {"fresh_collect": False, "pains": 0, "last_fetch": None}
     try:
         from services.db import get_conn
+        from services.economics import num
         import pandas as pd
         conn = get_conn()
         df = pd.read_sql(
@@ -87,7 +88,8 @@ def load_flow_status() -> dict:
                          ).total_seconds() / 3600
                 out["fresh_collect"] = age_h <= 24
                 out["last_fetch"] = pd.to_datetime(lf).strftime("%d.%m %H:%M")
-            out["pains"] = int(df.iloc[0]["pains"] or 0)
+            # int(NaN or 0) — это ValueError, а не ноль
+            out["pains"] = int(num(df.iloc[0]["pains"]))
     except Exception:
         pass
     return out

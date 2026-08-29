@@ -17,6 +17,7 @@ from i18n import t
 from services.db import get_conn
 from services.settings import get_int
 from services.economics import (
+    num,
     econ_map, money_at_risk, fmt_money, fmt_conversion,
 )
 from services.issues import build_pains as issue_pains
@@ -143,7 +144,7 @@ def load_delta() -> tuple[int, int]:
             conn,
         )
         conn.close()
-        return int(df.iloc[0]["added"] or 0), int(df.iloc[0]["closed"] or 0)
+        return int(num(df.iloc[0]["added"])), int(num(df.iloc[0]["closed"]))
     except Exception:
         return 0, 0
 

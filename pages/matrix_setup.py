@@ -233,6 +233,7 @@ def collect_rows(rows: pd.DataFrame) -> None:
         st.error("SCRAPINGDOG_API_KEY не найден в секретах.")
         return
 
+    skipped: list[tuple] = []
     try:
         conn = get_conn()
         cur = conn.cursor()
@@ -242,14 +243,33 @@ def collect_rows(rows: pd.DataFrame) -> None:
                 sku = row["sku_group"]
                 is_comp = bool(row["is_competitor"])
 
+                # Фолбэка на "us" здесь больше нет: он уводил сбор
+                # на amazon.com, и снапшот приезжал от ЧУЖОГО листинга —
+                # молча, так собирались ie, be и pl. Но и падать нельзя:
+                # один непокрытый рынок положил бы всю партию, а собирают
+                # сотнями. Поэтому строка пропускается с причиной, а список
+                # пропущенных показывается в конце.
+                if mp not in MP_COUNTRY or mp not in MP_LANGUAGE:
+                    skipped.append((asin, mp, t("matrix.skip_unknown_mp")))
+                    st.write(f"   ⚠ {asin} ({mp}): "
+                             + t("matrix.skip_unknown_mp"))
+                    continue
+
                 st.write(f"Fetch {asin} ({mp})...")
-                resp = requests.get(
-                    "https://api.scrapingdog.com/amazon/product",
-                    params={"api_key": key, "domain": mp, "asin": asin,
-                            "country": MP_COUNTRY.get(mp, "us"),
-                            "language": MP_LANGUAGE.get(mp, "en")},
-                    timeout=60,
-                )
+                try:
+                    resp = requests.get(
+                        "https://api.scrapingdog.com/amazon/product",
+                        params={"api_key": key, "domain": mp, "asin": asin,
+                                "country": MP_COUNTRY[mp],
+                                "language": MP_LANGUAGE[mp]},
+                        timeout=60,
+                    )
+                except Exception as e:
+                    # сеть отвалилась на одном товаре — остальные всё равно
+                    # собираем, иначе партия из четырёхсот гибнет на седьмом
+                    skipped.append((asin, mp, f"{type(e).__name__}: {e}"))
+                    st.write(f"   ⚠ {asin} ({mp}): {type(e).__name__}: {e}")
+                    continue
                 ok = resp.status_code == 200
                 data = resp.json() if ok else {
                     "_error_status": resp.status_code,
@@ -393,13 +413,38 @@ def collect_rows(rows: pd.DataFrame) -> None:
         cur.close()
         conn.close()
         st.cache_data.clear()
+        # список пропущенных переживает st.rerun(): без этого он исчезал бы
+        # ровно в тот момент, когда нужен
+        if skipped:
+            st.session_state["collect-skipped"] = skipped
         st.success(t("matrix.collected"))
         st.rerun()
     except Exception as e:
         st.error(f"Ошибка сбора: {e}")
+        if skipped:
+            st.session_state["collect-skipped"] = skipped
+
+
+def render_collect_skipped() -> None:
+    """Что не собралось и почему. Молча потерянная строка выглядит как
+    собранная — до следующего взгляда на дату снапшота."""
+    rows = st.session_state.pop("collect-skipped", None)
+    if not rows:
+        return
+    st.warning("⚠ " + t("matrix.skipped_n", n=len(rows)))
+    st.dataframe(
+        pd.DataFrame(rows, columns=["asin", "mp", "reason"]),
+        hide_index=True, use_container_width=True,
+        column_config={
+            "asin": st.column_config.TextColumn("ASIN"),
+            "mp": st.column_config.TextColumn(t("matrix.c_mp")),
+            "reason": st.column_config.TextColumn(t("matrix.c_reason")),
+        })
 
 
 # ================================================================ список
+render_collect_skipped()
+
 WORK = worklog_map()
 df = load_matrix()
 
