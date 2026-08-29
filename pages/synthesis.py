@@ -557,7 +557,7 @@ def load_accepted() -> dict:
             """
             SELECT DISTINCT ON (asin, marketplace)
                    asin, marketplace, accepted_at, status, after_len,
-                   coverage_score, model
+                   coverage_score, model, after_text, after_extra
             FROM synthesis_changes
             ORDER BY asin, marketplace, accepted_at DESC
             """, conn)
@@ -1081,12 +1081,73 @@ def field_html(label: str, counter: str, body: str, top_line: bool) -> str:
     )
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def single_plan(asin: str, mp: str) -> list[dict]:
+    """План выгрузки по ОДНОМУ товару — та же раскладка, что у партии.
+
+    Через plan_export, а не отдельной веткой: SKU, product_type и выбор
+    шаблона обязаны совпадать с файлом на всю партию. Разойдутся —
+    и человек получит два разных файла на один и тот же товар.
+    """
+    acc = load_accepted_titles((mp,))
+    if acc.empty:
+        return []
+    sub = acc[(acc["asin"].astype(str) == str(asin))
+              & (acc["marketplace"].astype(str) == str(mp))]
+    if sub.empty:
+        return []
+    return plan_export(sub)[0]
+
+
+def render_card_actions(asin: str, mp: str, is_accepted: bool) -> None:
+    """Действия по ЭТОМУ товару: файл и отправка.
+
+    Оба действия работают с принятой правкой, поэтому до приёмки кнопки
+    неактивны с подсказкой — иначе они предлагали бы выгрузить то, чего
+    в synthesis_changes ещё нет.
+
+    Наверху страницы стоят такие же по названию кнопки, но с другой
+    областью действия: там всё принятое по фильтру. Чтобы их не путать,
+    у верхних в подписи стоит «для всех принятых · N».
+    """
+    b1, b2, b3 = st.columns([2.0, 2.0, 4.0])
+    plan = single_plan(asin, mp) if is_accepted else []
+    if plan:
+        name, mime, data = build_flat_cached(
+            plan, plan_signature(plan),
+            pd.Timestamp.now().strftime("%Y-%m-%d"))
+        b1.download_button(f'⬇ {t("export.flat")}', data, file_name=name,
+                           mime=mime, key=f"c-flat-{asin}-{mp}")
+    else:
+        b1.button(f'⬇ {t("export.flat")}', disabled=True,
+                  key=f"c-flat-off-{asin}-{mp}",
+                  help=(t("export.accept_this_first") if not is_accepted
+                        else t("export.no_template")))
+
+    state_key = f"push-confirm-{asin}-{mp}"
+    rows = [dict(r, marketplace=i["marketplace"], tpl=i["tpl"])
+            for i in plan for r in i["rows"]]
+    miss = missing_secrets()
+    if not rows or miss:
+        b2.button(t("push.button"), disabled=True,
+                  key=f"c-push-off-{asin}-{mp}",
+                  help=(t("push.no_keys", keys=", ".join(miss)) if miss
+                        else t("export.accept_this_first") if not is_accepted
+                        else t("export.no_template")))
+    elif b2.button(t("push.button"), key=f"c-push-{asin}-{mp}"):
+        st.session_state[state_key] = True
+    if st.session_state.get(state_key) and rows:
+        render_push_confirm(rows, state_key)
+    render_push_result(state_key)
+
+
 def render_result(asin: str, mp: str, before: str, draft) -> None:
     """Блок «было / стало» с длинами и кнопкой «Принять».
 
     Источник — свежий результат из session_state, иначе последний
     несогласованный черновик из synthesis_drafts: после перезагрузки
     страницы человек должен видеть то же, что видел до неё."""
+    accepted = ACCEPTED.get((asin, mp))
     res = st.session_state.get(f"res-{asin}-{mp}")
     if res:
         after = str(res.get("title") or "")
@@ -1108,6 +1169,19 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
         # у сохранённого черновика — та модель, которой его сделали, а не
         # та, что стоит в настройках сейчас: настройку могли поменять
         model_id, model_prov = draft.get("model"), None
+    elif accepted is not None:
+        # Третий источник — уже ПРИНЯТАЯ правка. Без него карточка исчезала
+        # сразу после приёмки (принятый черновик выпадает из очереди
+        # разбора), и кнопки «после приёмки» оказывались недостижимы:
+        # скачать файл по этому товару было неоткуда.
+        after = str(accepted.get("after_text") or "")
+        hl = "" if pd.isna(accepted.get("after_extra")) \
+            else str(accepted.get("after_extra") or "")
+        dropped, trimmed, over = [], [], []
+        cov = accepted.get("coverage_score")
+        skill_v = int(accepted.get("skill_version") or 0
+                      if not pd.isna(accepted.get("skill_version", 0)) else 0)
+        model_id, model_prov = accepted.get("model"), None
     else:
         return
     if not after:
@@ -1153,7 +1227,7 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
         # повторное принятие: правка не ломается, но человек должен знать,
         # что перезаписывает свой же прошлый выбор — в выгрузку пойдёт
         # последняя принятая, предыдущая останется только в истории
-        _prev = ACCEPTED.get((asin, mp))
+        _prev = accepted
         if _prev is not None:
             st.info("↻ " + t("synth.already_accepted",
                              day=pd.to_datetime(
@@ -1265,9 +1339,13 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
         if cov is not None and not pd.isna(cov):
             a4.caption(f"Coverage {float(cov):.0f}%")
 
+        if not editing:
+            render_card_actions(asin, mp, accepted is not None)
+
 
 # ================================================================ очередь
-def render_push_confirm(pushable: list[dict]) -> None:
+def render_push_confirm(pushable: list[dict],
+                        state_key: str = "push-confirm") -> None:
     """Подтверждение отправки в Amazon.
 
     Правил здесь три, и все три — про то, что это чужие живые листинги.
@@ -1280,16 +1358,23 @@ def render_push_confirm(pushable: list[dict]) -> None:
        галочки: «уже отправляли» — частая и дорогая ошибка.
     """
     st.markdown(
-        '<style>.st-key-push_box{background:#FFF9F4;border:1px solid #E7E4DD;'
+        f'<style>.st-key-push_box-{state_key}'
+        '{background:#FFF9F4;border:1px solid #E7E4DD;'
         'border-left:3px solid #E8590C;border-radius:0 12px 12px 0;'
         'padding:14px 16px;margin:6px 0 12px;}</style>',
         unsafe_allow_html=True)
-    with st.container(key="push_box"):
+    with st.container(key=f"push_box-{state_key}"):
         st.markdown(eyebrow(t("push.confirm_title")), unsafe_allow_html=True)
         labels = {f'{r["sku"]} · {r["marketplace"]} · {r["asin"]}': r
                   for r in pushable}
-        pick = st.selectbox(t("push.pick"), sorted(labels),
-                            key="push-pick")
+        if len(labels) == 1:
+            # из карточки товар уже выбран — выпадающий список из одного
+            # пункта только притворялся бы выбором
+            pick = next(iter(labels))
+            st.markdown(f"**{esc(pick)}**")
+        else:
+            pick = st.selectbox(t("push.pick"), sorted(labels),
+                                key=f"push-pick-{state_key}")
         row = labels[pick]
         meta = marketplace_meta([row["tpl"]])
         prev = load_pushes().get((row["asin"], row["marketplace"]))
@@ -1319,11 +1404,12 @@ def render_push_confirm(pushable: list[dict]) -> None:
             when = pd.to_datetime(prev["pushed_at"]).strftime("%d.%m %H:%M")
             st.warning("↻ " + t("push.already", day=when,
                                 title=str(prev["after_text"])[:80]))
-            again = st.checkbox(t("push.again_ok"), key="push-again")
+            again = st.checkbox(t("push.again_ok"),
+                                key=f"push-again-{state_key}")
 
         c1, c2, c3 = st.columns([1.6, 1.2, 4])
         if c1.button(t("push.send", n=1), type="primary", disabled=not again,
-                     key="push-send"):
+                     key=f"push-send-{state_key}"):
             res = push_title(row["sku"], row["marketplace"],
                              row["product_type"], row["title"],
                              row.get("highlights", ""), mp_id, lang,
@@ -1331,21 +1417,25 @@ def render_push_confirm(pushable: list[dict]) -> None:
             log_err = log_push(row["asin"], row["sku"], row["marketplace"],
                                row["before"], row["title"],
                                row.get("highlights", ""), res)
-            st.session_state["push-result"] = dict(
+            st.session_state[f"push-result-{state_key}"] = dict(
                 res, sku=row["sku"], marketplace=row["marketplace"],
                 log_err=log_err)
-            st.session_state.pop("push-confirm", None)
+            st.session_state.pop(state_key, None)
             st.cache_data.clear()
             st.rerun()
-        if c2.button(t("push.cancel"), key="push-cancel"):
-            st.session_state.pop("push-confirm", None)
+        if c2.button(t("push.cancel"), key=f"push-cancel-{state_key}"):
+            st.session_state.pop(state_key, None)
             st.rerun()
 
 
-def render_push_result() -> None:
+def render_push_result(state_key: str = "push-confirm") -> None:
     """Итог отправки. Переживает rerun: иначе причина отказа пропадёт
-    ровно тогда, когда она нужнее всего."""
-    res = st.session_state.pop("push-result", None)
+    ровно тогда, когда она нужнее всего.
+
+    Итог привязан к тому же ключу, что и подтверждение: иначе отправка
+    из карточки показывала бы результат наверху страницы, где человек
+    его не ищет."""
+    res = st.session_state.pop(f"push-result-{state_key}", None)
     if not res:
         return
     accepted = 1 if res.get("ok") else 0
@@ -1547,7 +1637,8 @@ with tab_queue:
         if _plan:
             _fname, _fmime, _fdata = build_flat_cached(
                 _plan, plan_signature(_plan), _day)
-            e1.download_button(f'⬇ {t("export.flat")} · {_in}', _fdata,
+            e1.download_button(
+                f'⬇ {t("export.flat")} · {t("export.for_all", n=_in)}', _fdata,
                                file_name=_fname, mime=_fmime, key="exp-flat",
                                type="primary")
         else:
@@ -1575,10 +1666,14 @@ with tab_queue:
                      for i in _plan for r in i["rows"]]
         _miss = missing_secrets()
         if not _pushable or _miss:
-            e3.button(t("push.button"), disabled=True, key="push-open-off",
+            e3.button(
+                f'{t("push.button")} · {t("export.for_all", n=len(_pushable))}',
+                disabled=True, key="push-open-off",
                       help=(t("push.no_keys", keys=", ".join(_miss)) if _miss
                             else t("export.accept_first")))
-        elif e3.button(t("push.button"), key="push-open"):
+        elif e3.button(
+                f'{t("push.button")} · {t("export.for_all", n=len(_pushable))}',
+                key="push-open"):
             st.session_state["push-confirm"] = True
         if st.session_state.get("push-confirm") and _pushable:
             render_push_confirm(_pushable)
