@@ -168,10 +168,41 @@ def load_candidates() -> pd.DataFrame:
         return pd.DataFrame()
 
 
+SKILL_ERR_KEY = "synth.skill_error"
+
+
+def skill_error() -> str | None:
+    """Почему методология не прочиталась, если не прочиталась."""
+    try:
+        return st.session_state.get(SKILL_ERR_KEY)
+    except Exception:
+        return None
+
+
+def _remember_skill_error(text: str | None) -> None:
+    try:
+        if text is None:
+            st.session_state.pop(SKILL_ERR_KEY, None)
+        else:
+            st.session_state[SKILL_ERR_KEY] = text
+    except Exception:
+        pass
+
+
 @st.cache_data(ttl=120)
 def load_skill() -> tuple[str, int]:
     """Общая методология (common) + title_split, склеенные.
-    Версия в подписи — от title_split."""
+    Версия в подписи — от title_split.
+
+    ЗАПАСНОЙ МЕТОДОЛОГИИ ЗДЕСЬ НЕТ И БЫТЬ НЕ ДОЛЖНО. Раньше при любом сбое
+    возвращался зашитый текст «Бренд Dnipro-M первым» — то есть правило,
+    ПРОТИВОПОЛОЖНОЕ действующей v8, где бренд в тайтле запрещён. Подмена шла
+    молча, генерация выглядела нормальной, и в тайтлы возвращался бренд,
+    который Amazon всё равно вырезает.
+
+    Пустой текст и версия 0 означают «методологии нет». Генерация с таким
+    ответом не запускается — см. generate_split.
+    """
     try:
         conn = get_conn()
         df = pd.read_sql(
@@ -194,12 +225,18 @@ def load_skill() -> tuple[str, int]:
             if not spec.empty:
                 parts.append(str(spec.iloc[0]["skill_text"]))
                 version = int(spec.iloc[0]["version"])
-            if parts:
+            if parts and version > 0:
+                _remember_skill_error(None)
                 return "\n\n".join(parts), version
-    except Exception:
-        pass
-    return ("Бренд Dnipro-M первым. Язык маркетплейса. "
-            "Уложись в лимиты символов.", 0)
+            # строка есть, а активной версии title_split нет — это тоже
+            # «методологии нет», а не «версия ноль»
+            _remember_skill_error(t("synth.skill_missing"))
+            return "", 0
+    except Exception as e:
+        _remember_skill_error(f"{type(e).__name__}: {e}")
+        return "", 0
+    _remember_skill_error(t("synth.skill_missing"))
+    return "", 0
 
 
 def load_keywords(asin: str, mp: str) -> pd.DataFrame:
@@ -313,6 +350,14 @@ def generate_split(title: str, marketplace: str,
     if forbid:
         kw_lines.append("ЗАПРЕЩЕНО использовать: " + "; ".join(forbid))
     keywords_block = ("\n".join(kw_lines) + "\n\n") if kw_lines else ""
+
+    # Версия 0 или пустой текст — это «методологию не прочитали», а не
+    # «методология такая». Генерировать в этом случае нельзя: раньше здесь
+    # подставлялся зашитый текст с прямо противоположным правилом.
+    if not str(skill_text or "").strip() or int(skill_ver or 0) <= 0:
+        st.error("⚠ " + t("synth.skill_failed",
+                          e=skill_error() or t("synth.skill_missing")))
+        return None
 
     prompt = USER_PROMPT.format(keywords_block=keywords_block,
                                 marketplace=marketplace, title=title)
@@ -953,6 +998,15 @@ st.markdown(
         head_metric(t("synth.sqp_have"), str(head_ready), "", str(n_ready)),
     ]), unsafe_allow_html=True)
 
+# Методология не прочиталась — генерация выключена целиком. Раньше в этом
+# месте молча подставлялся зашитый текст с противоположным правилом
+# («бренд первым» при v8, где бренд запрещён), и подмену было не увидеть.
+if not skill_version:
+    st.error("⚠ " + t("synth.skill_failed",
+                      e=skill_error() or t("synth.skill_missing")))
+    st.page_link("pages/methodology.py", label=t("nav.methodology"),
+                 icon=":material/menu_book:")
+
 pending = load_drafts_for_review()
 # черновики по паре — чтобы в очереди показать «было/стало» без перехода
 # на вкладку разбора; после перезагрузки страницы результат не теряется
@@ -1195,7 +1249,7 @@ def render_card_actions(asin: str, mp: str, is_accepted: bool) -> None:
     областью действия: там всё принятое по фильтру. Чтобы их не путать,
     у верхних в подписи стоит «для всех принятых · N».
     """
-    b1, b2, b3 = st.columns([2.0, 2.0, 4.0])
+    b1, b2, b3 = st.columns([1.75, 1.75, 4.5], gap="small")
     plan = single_plan(asin, mp) if is_accepted else []
     if plan:
         name, mime, data = build_flat_cached(
@@ -1389,8 +1443,23 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
                 st.success(t("synth.accepted_ok"))
                 st.rerun()
 
-        # ширины подобраны так, чтобы «Перегенерировать» не переносилось
-        a1, a2, a3, a4 = st.columns([1.5, 1.7, 2.1, 2.7])
+        # Кнопки жмём в один плотный ряд. Колонки Streamlit тянут ширину
+        # по своим долям и расставляют их с большим зазором, поэтому:
+        # доли по фактической длине подписи, последняя колонка — распорка,
+        # а перенос внутри подписи запрещён css. Природа та же, что
+        # разбирали в PR #14 у segmented_control.
+        st.markdown(
+            f'<style>.st-key-{card_key} div[data-testid="stHorizontalBlock"]'
+            '{gap:6px !important;}'
+            f'.st-key-{card_key} div[data-testid="stColumn"]'
+            '{min-width:auto !important;}'
+            f'.st-key-{card_key} .stButton button,'
+            f'.st-key-{card_key} .stDownloadButton button'
+            '{white-space:nowrap !important;padding-left:12px !important;'
+            'padding-right:12px !important;width:100%;}'
+            '</style>', unsafe_allow_html=True)
+        a1, a2, a3, a4 = st.columns([1.15, 1.45, 1.85, 3.55],
+                                    gap="small")
         if editing:
             # источник считаем по факту, а не по тому, что открывали форму:
             # открыть и ничего не изменить — это всё ещё «как сгенерировано»
@@ -1419,7 +1488,14 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
                 st.session_state[edit_key] = True
                 st.rerun()
             if a3.button(t("synth.regenerate"), key=f"q-re-{asin}-{mp}"):
+                # Кнопка только просит перегенерировать. Саму генерацию
+                # делает блок ниже — тот же, что и у «Сгенерировать»:
+                # вторая копия кода разошлась бы с первой. Раньше здесь
+                # был только pop(res), то есть кнопка ничего не запускала,
+                # а после появления третьего источника карточки (принятая
+                # правка) выглядела вообще бездействующей.
                 st.session_state.pop(f"res-{asin}-{mp}", None)
+                st.session_state[f"regen-{asin}-{mp}"] = True
                 st.rerun()
         if cov is not None and not pd.isna(cov):
             a4.caption(f"Coverage {float(cov):.0f}%")
@@ -1789,8 +1865,9 @@ with tab_queue:
         label_visibility="collapsed", key="batch-n")
     _top = _pending if batch_n == 0 else _pending[:batch_n]
     if b2.button(f"{t('synth.batch_run')} ({len(_top)})", type="primary",
-                 disabled=not _top,
-                 help=None if _top else t("synth.batch_none")):
+                 disabled=not _top or not skill_version,
+                 help=(t("synth.skill_missing") if not skill_version
+                       else None if _top else t("synth.batch_none"))):
         res = batch_generate(_top, skill_text, skill_version)
         # st.rerun() стирает всё, что нарисовал этот прогон, включая
         # st.error слоя ИИ — поэтому итог кладём в session_state
@@ -1958,8 +2035,10 @@ with tab_queue:
                                       "phrase"].tolist()
                     forbid_list = o.loc[o["tier"] == "forbid", "phrase"].tolist()
 
+                _regen = st.session_state.pop(f"regen-{asin}-{mp}", False)
                 if st.button(t("synth.generate"), type="primary",
-                             key=f"gen-{asin}-{mp}"):
+                             key=f"gen-{asin}-{mp}",
+                             disabled=not skill_version) or _regen:
                     with st.spinner(f"Режу по методологии v{skill_version}..."):
                         _must = (kw.loc[kw["tier"] == "must_keep",
                                         "search_query"].tolist()
@@ -2198,7 +2277,8 @@ with tab_any:
                     a_forbid = o.loc[o["tier"] == "forbid", "phrase"].tolist()
 
                 if st.button(t("synth.generate"), type="primary",
-                             key=f"any-gen-{a_asin}-{a_mp}"):
+                             key=f"any-gen-{a_asin}-{a_mp}",
+                             disabled=not skill_version):
                     with st.spinner(f"Режу по методологии v{skill_version}..."):
                         _amust = (a_kw.loc[a_kw["tier"] == "must_keep",
                                           "search_query"].tolist()

@@ -27,6 +27,9 @@ def check(n, c):
     print(("  OK   " if c else "  FAIL ") + n)
     if not c: fails.append(n)
 
+# версия методологии обязательна: 0 теперь означает «методология
+# не прочиталась», и генерация с ней не запускается
+SKILL_V = 8
 L = mod.TITLE_LIMIT
 check(f"лимит title = {L}", L == 75)
 
@@ -37,7 +40,8 @@ PROMPTS, SYSTEMS = [], []
 mod.generate_json = lambda task, prompt, system=None, **kw: (
     PROMPTS.append(prompt), SYSTEMS.append(system or ""), RESP.pop(0))[2]
 RESP = [{"title": "x" * 40, "highlights": "y" * 40, "dropped": []}]
-mod.generate_split("исходный тайтл", "es", "методика", [], [])
+mod.generate_split("исходный тайтл", "es", "методика", [], [],
+                   skill_ver=SKILL_V)
 s0 = SYSTEMS[0]
 check("в промпте цель = лимит минус запас", f"целься в {L - 2} символов" in s0)
 check("в промпте правило самопроверки длины", "посчитай длину" in s0)
@@ -49,7 +53,7 @@ PROMPTS.clear(); SYSTEMS.clear()
 RESP[:] = [{"title": "z" * 80, "highlights": "h", "dropped": []},
            {"title": "z" * 77, "highlights": "h", "dropped": []},
            {"title": "z" * 70, "highlights": "h", "dropped": []}]
-res, stats = mod.generate_guarded("t", "es", "s", [], [], None, [])
+res, stats = mod.generate_guarded("t", "es", "s", [], [], None, [], SKILL_V)
 check("уложились с третьей попытки", len(res["title"]) == 70)
 check("попыток 3, автоповторов 2",
       stats["attempts"] == 3 and stats["retried"] == 2)
@@ -64,7 +68,7 @@ check("в повторе запрет добавлять слова", "Не до
 PROMPTS.clear(); SYSTEMS.clear()
 LONG = "Dnipro-M Martillo Perforador SDS Plus 1650W 5,5J Taladro Percutor Profesional Maletin"
 RESP[:] = [{"title": LONG, "highlights": "h", "dropped": []}] * 3
-res, stats = mod.generate_guarded("t", "es", "s", [], [], None, ["Dnipro-M"])
+res, stats = mod.generate_guarded("t", "es", "s", [], [], None, ["Dnipro-M"], SKILL_V)
 check("после трёх неудач обрезали", stats["trimmed"] == 1)
 check("уложились в лимит", len(res["title"]) <= L)
 check("обрезано по границе слова, не посреди",
@@ -77,7 +81,7 @@ check("must_keep на месте", "Dnipro-M" in res["title"])
 # --- обрезка убила бы must_keep -> не режем
 PROMPTS.clear(); SYSTEMS.clear()
 RESP[:] = [{"title": LONG, "highlights": "h", "dropped": []}] * 3
-res, stats = mod.generate_guarded("t", "es", "s", [], [], None, ["Maletin"])
+res, stats = mod.generate_guarded("t", "es", "s", [], [], None, ["Maletin"], SKILL_V)
 check("не режем, если теряется must_keep",
       stats["trimmed"] == 0 and stats["over"] == 1)
 check("длина осталась превышенной — честнее, чем потерять фразу",
@@ -97,7 +101,7 @@ else:
 PROMPTS.clear(); SYSTEMS.clear()
 HL = "y" * 200
 RESP[:] = [{"title": "ok", "highlights": HL, "dropped": []}] * 3
-res, stats = mod.generate_guarded("t", "es", "s", [], [], None, [])
+res, stats = mod.generate_guarded("t", "es", "s", [], [], None, [], SKILL_V)
 check("highlights обрезаны до 125", len(res["highlights"]) <= 125)
 
 print()
