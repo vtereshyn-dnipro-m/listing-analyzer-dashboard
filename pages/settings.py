@@ -201,7 +201,8 @@ def anthropic_models() -> list[str]:
 
 
 if st.button(t("set.refresh_models")):
-    st.cache_data.clear()
+    gemini_models.clear()
+    anthropic_models.clear()
     st.rerun()
 
 gem_list = gemini_models()

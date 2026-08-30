@@ -19,6 +19,7 @@ import re
 import pandas as pd
 import streamlit as st
 
+from services import cache
 from services.db import get_conn, get_engine
 
 TIERS = ["must_keep", "preferred", "compress", "forbid"]
@@ -252,4 +253,4 @@ def save_overrides(asin: str, marketplace: str, rows: list[dict]) -> None:
                  "forbid" if r["tier"] == "forbid" else "keep",
                  r["tier"], r.get("weight")))
     conn.close()
-    st.cache_data.clear() 
+    cache.after_keywords_change(asin, marketplace)

@@ -109,6 +109,10 @@ if save:
                 (current_version + 1, scope, edited.strip()),
             )
         conn.close()
+        # Глобальный сброс здесь ОСОЗНАННО: методологию читают Синтез
+        # и Фото своими кэшами внутри страниц, дотянуться до них
+        # отсюда нельзя, а работать по старой методологии после
+        # сохранение — ровно тот инцидент, который мы уже разбирали.
         st.cache_data.clear()
         st.success(t("meth.saved"))
         st.rerun()
@@ -145,6 +149,10 @@ if not versions.empty:
                                 (int(v["id"]),),
                             )
                         conn.close()
+                        # Глобальный сброс здесь ОСОЗНАННО: методологию читают Синтез
+                        # и Фото своими кэшами внутри страниц, дотянуться до них
+                        # отсюда нельзя, а работать по старой методологии после
+                        # откат — ровно тот инцидент, который мы уже разбирали.
                         st.cache_data.clear()
                         st.rerun()
                     except Exception as e:
@@ -269,7 +277,7 @@ else:
                         (int(src["id"]),),
                     )
                 conn.close()
-                st.cache_data.clear()
+                load_sources.clear()
                 st.rerun()
             except Exception as e:
                 st.error(t("common.save_failed", e=e))
@@ -346,7 +354,7 @@ else:
                         "UPDATE policy_alerts SET status = 'applied' WHERE id = %s",
                         (int(a["id"]),))
                 conn.close()
-                st.cache_data.clear()
+                load_alerts.clear()
                 st.rerun()
             except Exception as e:
                 st.error(f"{e}")
@@ -358,7 +366,7 @@ else:
                         "UPDATE policy_alerts SET status = 'dismissed' WHERE id = %s",
                         (int(a["id"]),))
                 conn.close()
-                st.cache_data.clear()
+                load_alerts.clear()
                 st.rerun()
             except Exception as e:
                 st.error(f"{e}")
