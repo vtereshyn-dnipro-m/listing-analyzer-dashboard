@@ -83,7 +83,7 @@ def load_page(fail_on: str | None):
     mod = types.ModuleType("syn")
     mod.__dict__["__name__"] = "syn"
     # берём только функции страницы, до кода вкладок
-    head = src[:src.index("with tab_queue:")]
+    head = src[:src.index("with feed:")]
     exec(compile(head, "syn", "exec"), mod.__dict__)
     mod.generate_json = lambda task, prompt, **kw: {
         "title": "Dnipro-M короткий тайтл", "highlights": "хайлайты",

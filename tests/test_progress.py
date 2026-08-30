@@ -47,7 +47,7 @@ def check(name: str, cond: bool) -> None:
 SRC = (ROOT / "pages/synthesis.py").read_text(encoding="utf-8")
 syn = types.ModuleType("syn")
 syn.__dict__["__name__"] = "syn"
-exec(compile(SRC[:SRC.index("with tab_queue:")], "syn", "exec"), syn.__dict__)
+exec(compile(SRC[:SRC.index("with feed:")], "syn", "exec"), syn.__dict__)
 
 SKILL_V = 8
 STEPS: list[tuple] = []

@@ -160,7 +160,7 @@ def page_module():
     src = (ROOT / "pages/synthesis.py").read_text(encoding="utf-8")
     mod = types.ModuleType("syn")
     mod.__dict__["__name__"] = "syn"
-    exec(compile(src[:src.index("with tab_queue:")], "syn", "exec"),
+    exec(compile(src[:src.index("with feed:")], "syn", "exec"),
          mod.__dict__)
     return mod
 
