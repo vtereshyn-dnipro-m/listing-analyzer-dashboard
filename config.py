@@ -19,7 +19,6 @@ LOW_REVIEWS_RATIO = 0.25  # < 25% медианы конкурентов = бол
 MIN_IMAGES = 5            # меньше — боль NO_IMAGES
 
 APP_NAME = "Listing Suite"
-APP_TAGLINE = "диагностика листингов"
 
 
 def days_to_deadline() -> int:
