@@ -1448,6 +1448,12 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
     # мера того, насколько методология попадает.
     edit_key = f"edit-{asin}-{mp}"
     editing = bool(st.session_state.get(edit_key))
+    # Текст ДО правки запоминаем здесь, пока он ещё от своего источника.
+    # Раньше «изменилось ли» считалось из res/draft прямо у кнопки — и это
+    # падало на товаре, принятом и отправленном: у него нет ни свежего
+    # результата, ни черновика, карточка рисуется из ПРИНЯТОЙ правки,
+    # и draft.get() уходил в None. Источников три, а знали про два.
+    base_after, base_hl = after, hl
     if editing:
         after = str(st.session_state.get(f"{edit_key}-title", after) or "")
         hl = str(st.session_state.get(f"{edit_key}-hl", hl) or "")
@@ -1594,11 +1600,9 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
                                     gap="small")
         if editing:
             # источник считаем по факту, а не по тому, что открывали форму:
-            # открыть и ничего не изменить — это всё ещё «как сгенерировано»
-            changed = (after != str(res.get("title") if res else
-                                    draft.get("title_after") or "")
-                       or hl != str(res.get("highlights") if res else
-                                    draft.get("highlights_after") or ""))
+            # открыть и ничего не изменить — это всё ещё «как сгенерировано».
+            # Сравниваем с текстом ДО правки, каким бы ни был его источник
+            changed = (after != base_after or hl != base_hl)
             if a1.button(t("synth.edit_save"), type="primary",
                          disabled=bool(failed),
                          help=None if not failed else t("synth.fix_first"),
