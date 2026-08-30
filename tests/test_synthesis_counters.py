@@ -10,8 +10,11 @@ tests/test_synthesis_counters.py — числа в шапке Синтеза п�
   · без фильтра «всего» не показывается — оба числа совпали бы и мешали;
   · с фильтром показаны оба, и отфильтрованное меньше общего;
   · фильтр читается из состояния виджета, хотя шапка рисуется ВЫШЕ него;
-  · деньги, число тайтлов и SQP режутся тем же фильтром, а не только
+  · и деньги, и число тайтлов режутся тем же фильтром, а не только
     счётчик товаров.
+
+Счётчика «SQP есть у N» в шапке больше нет: на решение он не влиял, а
+причина отсутствия данных поиска теперь видна меткой в строке товара.
 
 Запуск (pytest не нужен):  python tests/test_synthesis_counters.py
 """
@@ -94,7 +97,7 @@ PAIR_RE = r"<b[^>]*>([^<]+)</b>[^<]*<span[^>]*>\s*·\s*всего ([^<]+)</span>
 
 
 def numbers(html: str) -> list[str]:
-    """Жирные числа шапки по порядку: деньги, тайтлы, SQP."""
+    """Жирные числа шапки по порядку: деньги, тайтлы."""
     return re.findall(r"<b[^>]*>([^<]+)</b>", html)
 
 
@@ -113,16 +116,16 @@ head = header_of(at)
 nums = numbers(head)
 check("страна названа человеческим именем", "Испания" in head)
 check("показаны оба числа: разрез и общее", "всего" in head)
-check("три жирных числа: деньги, тайтлы, SQP", len(nums) >= 4)
+check("два жирных числа: деньги и тайтлы", len(nums) >= 2)
+check("счётчика SQP в шапке нет", "SQP" not in head)
 
 pairs = re.findall(PAIR_RE,
                    head)
-check("у каждого числа своя пара «разрез · всего»", len(pairs) == 3)
-if len(pairs) == 3:
-    money, titles, sqp = pairs
+check("у каждого числа своя пара «разрез · всего»", len(pairs) == 2)
+if len(pairs) == 2:
+    money, titles = pairs
     check("тайтлов по Испании 3 из 5",
           titles[0].strip() == "3" and titles[1].strip() == "5")
-    check("SQP по Испании 2 из 2", sqp[0].strip() == "2" and sqp[1].strip() == "2")
     check("деньги тоже разрезаны, а не общие",
           money[0].strip() != money[1].strip())
 
@@ -133,19 +136,16 @@ pairs_de = re.findall(
     PAIR_RE,
     header_of(at))
 check("страна переключилась", "Германия" in header_of(at))
-if len(pairs_de) == 3:
+if len(pairs_de) == 2:
     check("тайтлов по Германии 2 из 5",
           pairs_de[1][0].strip() == "2" and pairs_de[1][1].strip() == "5")
-    check("SQP по Германии 0 из 2",
-          pairs_de[2][0].strip() == "0" and pairs_de[2][1].strip() == "2")
 else:
     check("тайтлов по Германии 2 из 5", False)
-    check("SQP по Германии 0 из 2", False)
 
 # --- разрез не должен трогать общее
 check("общее число не поехало от фильтра",
       all(p[1].strip() == q[1].strip()
-          for p, q in zip(pairs, pairs_de)) if len(pairs_de) == 3 else False)
+          for p, q in zip(pairs, pairs_de)) if len(pairs_de) == 2 else False)
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS

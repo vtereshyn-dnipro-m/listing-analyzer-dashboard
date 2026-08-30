@@ -726,23 +726,6 @@ def load_drafts_for_review() -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def draft_quality(cov, checks_failed: int) -> tuple[str, str]:
-    """Зелёный — принимать бегло, красный — смотреть глазами."""
-    try:
-        v = float(cov) if cov is not None and not pd.isna(cov) else None
-    except (TypeError, ValueError):
-        v = None
-    if checks_failed:
-        return "red", t("draft.checks_failed")
-    if v is None:
-        return "amber", t("draft.no_coverage")
-    if v < 70:
-        return "red", t("draft.low_coverage", n=int(v))
-    if v >= 85:
-        return "green", f"Coverage {v:.0f}%"
-    return "amber", f"Coverage {v:.0f}%"
-
-
 def save_coverage(asin: str, mp: str, cov: dict) -> None:
     if cov.get("score") is None:
         return
@@ -980,21 +963,77 @@ ACCEPTED = load_accepted()
 SQP_HAVE = load_sqp_coverage()
 HISTORY = load_history()
 
-rows = []
-for _, r in candidates.iterrows():
+# Черновики на разборе и весь каталог читаем ЗДЕСЬ, а не ниже: из них
+# собирается единый список товаров, и он нужен уже в шапке.
+pending = load_drafts_for_review()
+# черновик по паре — чтобы состояние было видно в строке, без раскрытия
+# карточки; после перезагрузки страницы результат не теряется
+PENDING_MAP = ({(r["asin"], r["marketplace"]): r for _, r in pending.iterrows()}
+               if not pending.empty else {})
+all_products = load_all_products()
+
+
+def last_push(asin: str, mp: str) -> dict | None:
+    """Последняя УДАЧНАЯ отправка пары — состояние строки, а не история."""
+    for e in HISTORY.get((str(asin), str(mp).lower())) or []:
+        if e["kind"] == "push" and e.get("ok"):
+            return e
+    return None
+
+
+def int0(v) -> int:
+    """Целое из значения базы. pd.isna, а не `if v`: NaN в Python истинный,
+    и int(NaN) роняет страницу."""
+    try:
+        return 0 if v is None or pd.isna(v) else int(v)
+    except (TypeError, ValueError):
+        return 0
+
+
+def text_of(v) -> str:
+    """Строка из значения базы, NaN — пустая строка."""
+    return "" if v is None or pd.isna(v) else str(v)
+
+
+def make_row(r, needs: bool) -> dict:
+    """Строка ленты. `needs` — по товару сработало правило превышения
+    лимита, то есть тайтл требует замены."""
     key = (r["asin"], r["marketplace"])
     e = ECON.get(key) or {}
-    rows.append({
+    title = text_of(r.get("title"))
+    return {
         "r": r,
         "risk": money_at_risk("title_over_limit", e.get("revenue_30d")),
-        "over": max(0, len(r["title"] or "") - TITLE_LIMIT),
+        "over": max(0, len(title) - TITLE_LIMIT),
         "econ": e,
         "draft": DRAFTS.get(key) or {},
         "accepted": ACCEPTED.get(key),
-        "sqp_state": ("ready" if (r["asin"], r["marketplace"]) in SQP_HAVE
+        "pending": PENDING_MAP.get(key),
+        "pushed": last_push(r["asin"], r["marketplace"]),
+        "needs": needs,
+        "sqp_state": ("ready" if key in SQP_HAVE
                       else "queued" if r["marketplace"] in SQP_MARKETPLACES
                       else "off"),
-    })
+    }
+
+
+# ЕДИНЫЙ список товаров вместо трёх вкладок.
+#
+# Вкладки раскладывали один и тот же товар по трём спискам и передавали
+# его из одного в другой после каждого действия: сгенерировал — уехал
+# в «Сгенерированные», принял — исчез и оттуда. Первый вопрос человека
+# после приёмки был «а куда он делся». Теперь список один, товар из него
+# никуда не уходит, меняется только метка состояния в строке.
+FEED: dict = {}
+for _, r in candidates.iterrows():
+    FEED[(r["asin"], r["marketplace"])] = make_row(r, True)
+for _, r in all_products.iterrows():
+    key = (r["asin"], r["marketplace"])
+    if key not in FEED:
+        FEED[key] = make_row(r, False)
+
+rows = [x for x in FEED.values() if x["needs"]]      # требуют замены
+ALL_ROWS = list(FEED.values())
 
 # ---- шапка: разрез по стране рядом с общим числом
 # Разрез читаем из состояния фильтра, а не из переменной: сам фильтр живёт
@@ -1008,17 +1047,15 @@ head_rows = ([x for x in rows if x["r"]["marketplace"] in mp_head]
              if mp_head else rows)
 
 total_risk = sum(x["risk"] for x in rows)
-n_ready = sum(1 for x in rows if x["sqp_state"] == "ready")
 head_risk = sum(x["risk"] for x in head_rows)
-head_ready = sum(1 for x in head_rows if x["sqp_state"] == "ready")
 
 
 def head_metric(before: str, value: str, after: str, total: str,
                 color: str = INK) -> str:
-    """«3 тайтлов сверх лимита · всего 5».
+    """«3 тайтла требуют замены · всего 5».
 
     «всего» стоит в КОНЦЕ своей метрики, а не сразу за числом: иначе
-    «3 · всего 5 тайтлов сверх лимита» читается так, будто пять — это
+    «3 · всего 5 требуют замены» читается так, будто пять — это
     что-то другое. И показывается только при включённом фильтре: без него
     оба числа совпадают, и вторая половина строки была бы шумом.
     """
@@ -1036,10 +1073,12 @@ st.markdown(
     _where + _sep.join([
         head_metric(t("synth.at_risk_line"), fmt_money(head_risk, ""), "",
                     fmt_money(total_risk, ""), ACCENT),
-        head_metric("", str(len(head_rows)), t("synth.over_limit_n"),
+        head_metric("", str(len(head_rows)), t("synth.needs_replace_n"),
                     str(len(rows))),
-        head_metric(t("synth.sqp_have"), str(head_ready), "", str(n_ready)),
     ]), unsafe_allow_html=True)
+# Счётчика «SQP есть у N» здесь больше нет: на решение он не влиял, а
+# место занимал. Причина отсутствия данных поиска видна там, где она
+# что-то меняет, — меткой в самой строке товара.
 
 # Методология не прочиталась — генерация выключена целиком. Раньше в этом
 # месте молча подставлялся зашитый текст с противоположным правилом
@@ -1049,57 +1088,6 @@ if not skill_version:
                       e=skill_error() or t("synth.skill_missing")))
     st.page_link("pages/methodology.py", label=t("nav.methodology"),
                  icon=":material/menu_book:")
-
-pending = load_drafts_for_review()
-# черновики по паре — чтобы в очереди показать «было/стало» без перехода
-# на вкладку разбора; после перезагрузки страницы результат не теряется
-PENDING_MAP = ({(r["asin"], r["marketplace"]): r for _, r in pending.iterrows()}
-               if not pending.empty else {})
-all_products = load_all_products()
-tab_queue, tab_review, tab_any = st.tabs([
-    f"{t('synth.tab_queue')} · {len(rows)}",
-    f"{t('synth.tab_review')} · {len(pending)}",
-    f"{t('synth.tab_any')} · {len(all_products)}",
-])
-
-
-def render_card_head(x: dict) -> None:
-    """Строка товара: фото, ASIN, превышение, деньги, состояние работы."""
-    r = x["r"]
-    asin, mp = r["asin"], r["marketplace"]
-    title = r["title"] or ""
-    sku = r["sku_group"] if r["sku_group"] and r["sku_group"] != asin else ""
-    img = None if pd.isna(r.get("main_image")) else r.get("main_image")
-    thumb = (f'<div style="flex:0 0 42px;"><img src="{img}" '
-             f'style="width:42px;height:42px;object-fit:contain;background:#fff;'
-             f'border:1px solid #E7E4DD;border-radius:7px;"></div>') if img else ""
-    sub = [SQP_LABEL[x["sqp_state"]]]
-    hist = history_line(x["draft"], x["accepted"])
-    if hist:
-        sub.append(("✓ " if x["accepted"] else "") + hist)
-    cov = x["draft"].get("coverage")
-    if cov is not None and pd.notna(cov):
-        sub.append(f"Coverage {int(cov)}%")
-    edge = ACCENT if x["risk"] else "#E7E4DD"
-    st.markdown(
-        f'<div class="ls-card" style="background:#fff;border:1px solid #E7E4DD;'
-        f'border-left:3px solid {edge};border-radius:0 10px 10px 0;'
-        f'padding:11px 14px;margin-bottom:4px;display:flex;gap:12px;'
-        f'align-items:center;">{thumb}'
-        f'<div style="flex:1;min-width:0;">'
-        f'<div style="font-size:13.5px;font-weight:700;">'
-        f'{sku + " · " if sku else ""}'
-        f'<a href="https://www.amazon.{mp}/dp/{asin}" target="_blank" '
-        f'style="color:#1A1815;text-decoration:none;'
-        f'border-bottom:1px dotted #57534A;">{asin}</a> '
-        f'<span style="font-weight:400;color:#57534A;">· {mp} · '
-        f'{len(title)}/{TITLE_LIMIT} · +{x["over"]} · {title[:58]}…</span></div>'
-        f'<div style="font-size:11.5px;color:#57534A;">{" · ".join(sub)}</div>'
-        f'</div><span class="ls-mono" style="font-size:13px;font-weight:700;'
-        f'color:{ACCENT if x["risk"] else "#57534A"};">'
-        f'{fmt_money(x["risk"]) if x["risk"] else "нет данных"}</span></div>',
-        unsafe_allow_html=True)
-
 
 DIFF_BG = "#DCEEE0"       # подсветка того, что модель изменила
 OK_GREEN = "#2F6B3A"
@@ -1194,6 +1182,138 @@ def field_html(label: str, counter: str, body: str, top_line: bool) -> str:
     )
 
 
+# ---------------------------------------------------------------- строка
+# Состояние — не «где лежит товар», а метка на нём. Вкладки отвечали
+# на этот вопрос местом: сгенерированное лежало в одном списке, принятое
+# исчезало в другой. Теперь товар остаётся на месте, а меняется метка.
+STATE_BG = {"none": "#F1EFE9", "draft": "#FBF0E3",
+            "accepted": "#E4EFE6", "pushed": "#DCEEE0"}
+STATE_FG = {"none": MUTED, "draft": "#854F0B",
+            "accepted": OK_GREEN, "pushed": OK_GREEN}
+
+
+def row_state(x: dict) -> tuple[str, str]:
+    """Состояние товара и его подпись: без результата / сгенерировано /
+    принят / отправлено с датой."""
+    if x["pushed"] is not None:
+        return "pushed", t("synth.st_pushed",
+                           day=history_stamp(x["pushed"]["at"]))
+    if x["accepted"] is not None:
+        day = pd.to_datetime(x["accepted"]["accepted_at"]).strftime("%d.%m")
+        return "accepted", t("synth.st_accepted", day=day)
+    if x["pending"] is not None:
+        return "draft", t("synth.st_draft")
+    return "none", t("synth.st_none")
+
+
+def row_result(x: dict) -> dict | None:
+    """Текст результата и чем он сделан — из принятой правки, иначе
+    из черновика на разборе. Порядок тот же, что в карточке."""
+    a, d = x["accepted"], x["pending"]
+    if a is not None:
+        return {"text": text_of(a.get("after_text")),
+                "skill": int0(a.get("skill_version")),
+                "cov": a.get("coverage_score")}
+    if d is not None:
+        return {"text": text_of(d.get("title_after")),
+                "skill": int0(d.get("skill_version")),
+                "cov": d.get("coverage_score")}
+    return None
+
+
+def cov_badge(cov) -> str:
+    """Coverage строкой. Цвета те же, что у карточки (draft_quality):
+    зелёный — принимать бегло, красный — открыть и посмотреть."""
+    try:
+        v = None if cov is None or pd.isna(cov) else float(cov)
+    except (TypeError, ValueError):
+        v = None
+    if v is None:
+        return ""
+    color = (Q_COLOR["green"] if v >= 85
+             else Q_COLOR["amber"] if v >= 70 else Q_COLOR["red"])
+    return (f'<span class="ls-mono" style="font-size:11.5px;font-weight:700;'
+            f'color:{color};white-space:nowrap;">Coverage {v:.0f}%</span>')
+
+
+def state_badge(state: str, label: str) -> str:
+    return (f'<span style="background:{STATE_BG[state]};color:{STATE_FG[state]};'
+            f'font-size:11px;border-radius:5px;padding:2px 8px;'
+            f'white-space:nowrap;">{esc(label)}</span>')
+
+
+def row_html(x: dict) -> str:
+    """Компактная строка списка: решение принимается по ней, раскрывать
+    карточку для этого не нужно.
+
+    HTML одной строкой — правило 1 проекта: подстановка, оказавшаяся одна
+    на строке, схлопывает разметку.
+    """
+    r = x["r"]
+    asin, mp = r["asin"], r["marketplace"]
+    title = text_of(r.get("title"))
+    sku = text_of(r.get("sku_group"))
+    sku = sku if sku and sku != asin else ""
+    state, state_label = row_state(x)
+    res = row_result(x)
+    # на строке показываем ТО, О ЧЁМ РЕШЕНИЕ: есть результат — его текст,
+    # нет — нынешний тайтл. Длина исходного при этом остаётся в подписи
+    head = (res["text"] if res and res["text"]
+            else title or t("matrix.not_collected"))
+    sub = []
+    if sku:
+        sub.append(esc(sku))
+    sub.append(f'<a href="https://www.amazon.{mp}/dp/{asin}" target="_blank" '
+               f'style="color:{MUTED};text-decoration:none;'
+               f'border-bottom:1px dotted #C9C4B8;">{esc(asin)}</a>')
+    sub.append(esc(mp_label(mp)))
+    if title:
+        sub.append(t("synth.was_n", n=len(title)))
+    # методология правится без коммитов, поэтому результат легко оказывается
+    # сделанным по прошлой версии — а выглядит он точно так же, как свежий
+    if res and res["skill"] and skill_version and res["skill"] < skill_version:
+        sub.append(f'<span style="color:{ACCENT};">'
+                   f'{t("synth.old_skill", n=res["skill"])}</span>')
+    if x["sqp_state"] != "ready":
+        sub.append(t("synth.no_sqp_mark"))
+    # сколько заходов уже сделано — этого не видно ни по метке, ни по
+    # тексту: три перегенерации и одна выглядят одинаково
+    if int0(x["draft"].get("after_accept")):
+        # принято, а потом сгенерировали ещё — единственный случай, где
+        # метки состояния мало: человек пересматривает уже принятое
+        sub.append(esc(history_line(x["draft"], x["accepted"])))
+    elif x["accepted"] is None and int0(x["draft"].get("drafts")) > 1:
+        sub.append(t("synth.tries_n", n=int0(x["draft"].get("drafts"))))
+    marks = [cov_badge(res["cov"] if res else x["draft"].get("coverage")),
+             state_badge(state, state_label),
+             (counter_html(len(res["text"]), TITLE_LIMIT)
+              if res and res["text"] else "")]
+    edge = ACCENT if x["needs"] else "#E7E4DD"
+    return (
+        f'<div class="ls-card" style="background:#fff;border:1px solid #E7E4DD;'
+        f'border-left:3px solid {edge};border-radius:0 10px 10px 0;'
+        f'padding:8px 12px;display:flex;gap:12px;align-items:center;">'
+        f'<div style="flex:1;min-width:0;">'
+        f'<div style="font-size:13px;font-weight:600;color:{INK};'
+        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+        f'{esc(head)}</div>'
+        f'<div style="font-size:11.5px;color:{MUTED};white-space:nowrap;'
+        f'overflow:hidden;text-overflow:ellipsis;">{" · ".join(sub)}</div>'
+        f'</div>'
+        f'<div style="display:flex;gap:10px;align-items:center;'
+        f'flex:0 0 auto;">{"".join(m for m in marks if m)}</div></div>')
+
+
+def group_line(label: str, n: int) -> str:
+    """Разделитель между блоками списка."""
+    return (f'<div style="display:flex;align-items:center;gap:10px;'
+            f'margin:16px 0 6px;">'
+            f'<span style="font-size:11px;letter-spacing:.08em;'
+            f'text-transform:uppercase;color:{MUTED};white-space:nowrap;">'
+            f'{esc(label)} · {n}</span>'
+            f'<div style="flex:1;height:1px;background:#E7E4DD;"></div></div>')
+
+
 @st.cache_data(ttl=60, show_spinner=False)
 def single_plan(asin: str, mp: str) -> list[dict]:
     """План выгрузки по ОДНОМУ товару — та же раскладка, что у партии.
@@ -1279,14 +1399,6 @@ def render_history(asin: str, mp: str) -> None:
             return
         st.markdown("".join(event_html(e) for e in events),
                     unsafe_allow_html=True)
-
-
-def last_push(asin: str, mp: str) -> dict | None:
-    """Последняя УДАЧНАЯ отправка пары — состояние карточки, а не история."""
-    for e in HISTORY.get((str(asin), str(mp).lower())) or []:
-        if e["kind"] == "push" and e.get("ok"):
-            return e
-    return None
 
 
 def render_card_actions(asin: str, mp: str, is_accepted: bool,
@@ -1388,19 +1500,25 @@ def step_writer(status):
     return on_step
 
 
-def render_result(asin: str, mp: str, before: str, draft) -> None:
+def render_result(asin: str, mp: str, before: str, draft) -> tuple[str, str]:
     """Блок «было / стало» с длинами и кнопкой «Принять».
 
     Источник — свежий результат из session_state, иначе последний
-    несогласованный черновик из synthesis_drafts: после перезагрузки
-    страницы человек должен видеть то же, что видел до неё."""
+    несогласованный черновик из synthesis_drafts, иначе принятая правка:
+    после перезагрузки страницы человек должен видеть то же, что видел
+    до неё.
+
+    Возвращает показанную пару (title, highlights) — по ней карточка
+    рисует превью выдачи. Возвращает, а не считает второй раз: приоритет
+    источников живёт в одном месте, и разойтись двум копиям негде.
+    """
     accepted = ACCEPTED.get((asin, mp))
     # Идёт перегенерация — показывать прошлый результат нельзя: он мелькает
     # перед новым, и выглядит так, будто генерация вернула старое.
     # Вместо него полоса хода, её рисует блок генерации ниже.
     if st.session_state.get(f"regen-{asin}-{mp}"):
         st.info("↻ " + t("gen.regenerating"))
-        return
+        return "", ""
     res = st.session_state.get(f"res-{asin}-{mp}")
     if res:
         after = str(res.get("title") or "")
@@ -1436,9 +1554,9 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
                       if not pd.isna(accepted.get("skill_version", 0)) else 0)
         model_id, model_prov = accepted.get("model"), None
     else:
-        return
+        return "", ""
     if not after:
-        return
+        return "", ""
 
     # ---- режим ручной правки
     # Человек правит поверх черновика, а не вместо него: исходный текст
@@ -1650,9 +1768,10 @@ def render_result(asin: str, mp: str, before: str, draft) -> None:
         if not editing:
             render_card_actions(asin, mp, accepted is not None,
                                 last_push(asin, mp))
+    return after, hl
 
 
-# ================================================================ очередь
+# ================================================================ отправка
 def render_push_confirm(pushable: list[dict],
                         state_key: str = "push-confirm") -> None:
     """Подтверждение отправки в Amazon.
@@ -1867,7 +1986,36 @@ def market_breakdown(queue: list, products: pd.DataFrame,
             f'</thead><tbody>{body}</tbody></table>')
 
 
-with tab_queue:
+# ================================================================== лента
+# Один список вместо трёх вкладок. Всё, что ниже, рисует экран; выше —
+# только загрузка и функции. Тесты исполняют модуль ДО строки `with feed:`,
+# чтобы получить функции без побочных эффектов.
+SCOPES = ("replace", "all", "pushed")
+PAGE = 30                      # строк на экран
+
+
+def pick_key(x: dict) -> str:
+    return f'pick-{x["r"]["asin"]}-{x["r"]["marketplace"]}'
+
+
+def row_group(x: dict) -> int:
+    """Блок внутри «Требуют замены»: 0 — результат ждёт решения,
+    1 — решение принято, 2 — результата нет.
+
+    Принятое вынесено в свой блок намеренно. Держать его в блоке «ждут
+    решения» значит писать про товар неправду ровно того сорта, ради
+    которой всё это и переделывалось.
+    """
+    if x["accepted"] is not None or x["pushed"] is not None:
+        return 1
+    return 0 if x["pending"] is not None else 2
+
+
+GROUP_LABEL = {0: "synth.grp_waiting", 1: "synth.grp_decided",
+               2: "synth.grp_none"}
+
+feed = st.container(key="syn_feed")
+with feed:
     st.markdown(market_breakdown(rows, all_products, mp_head),
                 unsafe_allow_html=True)
 
@@ -1881,27 +2029,28 @@ with tab_queue:
         '{flex-wrap:nowrap;gap:8px;align-items:center;}'
         # у группы кнопок display:block, поэтому одного flex-wrap мало —
         # переводим её во flex; сами кнопки лежат во ВЛОЖЕННОМ div, перенос
-        # запрещаем и ему, иначе «принято» и «Таблица» уезжают на вторую строку
-        '.st-key-syn_filters div[data-testid="stButtonGroup"]'
+        # запрещаем и ему, иначе подписи уезжают на вторую строку
+        '.st-key-syn_filters div[data-testid="stButtonGroup"],'
+        '.st-key-syn_scope div[data-testid="stButtonGroup"]'
         '{display:flex !important;flex-wrap:nowrap !important;gap:2px;}'
-        '.st-key-syn_filters div[data-testid="stButtonGroup"] > div'
+        '.st-key-syn_filters div[data-testid="stButtonGroup"] > div,'
+        '.st-key-syn_scope div[data-testid="stButtonGroup"] > div'
         '{display:flex !important;flex-wrap:nowrap !important;}'
-        '.st-key-syn_filters div[data-testid="stButtonGroup"] button'
+        '.st-key-syn_filters div[data-testid="stButtonGroup"] button,'
+        '.st-key-syn_scope div[data-testid="stButtonGroup"] button'
         '{padding-left:10px !important;padding-right:10px !important;'
         'white-space:nowrap !important;}'
-        '.st-key-syn_filters div[data-testid="stButtonGroup"] p'
+        '.st-key-syn_filters div[data-testid="stButtonGroup"] p,'
+        '.st-key-syn_scope div[data-testid="stButtonGroup"] p'
         '{font-size:13px !important;white-space:nowrap !important;}'
         '</style>',
         unsafe_allow_html=True)
 
-    # Фильтр «все / с SQP / без черновика / принято» убран: человек открывает
-    # страницу работать, а его заставляли сначала выбрать режим. Путь теперь
-    # один: открыл -> сгенерировал -> посмотрел было/стало -> принял -> выгрузил.
     with st.container(key="syn_filters"):
         f1, f2, f3 = st.columns([4.0, 1.8, 1.7])
         query = f1.text_input("q", label_visibility="collapsed",
                               placeholder=t("synth.search"))
-        mps = sorted({x["r"]["marketplace"] for x in rows})
+        mps = sorted({x["r"]["marketplace"] for x in ALL_ROWS})
         # ключ обязателен: шапка страницы читает выбор из session_state,
         # она рисуется выше этого виджета
         mp_sel = f2.multiselect("MP", mps, default=[],
@@ -1920,24 +2069,67 @@ with tab_queue:
                               label_visibility="collapsed", key="syn-mode")
         q_mode = q_mode or "cards"
 
+    # ---- выборка: сначала страна и поиск, они работают ПОВЕРХ состояния
+    base = ALL_ROWS
+    if mp_sel:
+        base = [x for x in base if x["r"]["marketplace"] in mp_sel]
+    if query.strip():
+        q = query.strip().lower()
+        base = [x for x in base
+                if q in str(x["r"]["asin"]).lower()
+                or q in text_of(x["r"].get("sku_group")).lower()
+                or q in text_of(x["r"].get("title")).lower()]
+
+    # ---- фильтр состояния: кнопки над списком с живыми счётчиками.
+    # Счётчик у каждой кнопки считается по ТЕКУЩЕЙ выборке — то есть
+    # показывает, сколько строк она откроет, а не сколько их в базе.
+    SCOPE_ROWS = {
+        "replace": [x for x in base if x["needs"]],
+        "all": list(base),
+        "pushed": [x for x in base if x["pushed"] is not None],
+    }
+    SCOPE_LABEL = {"replace": t("synth.f_replace"), "all": t("synth.f_all"),
+                   "pushed": t("synth.f_pushed")}
+
+    def scope_text(k: str) -> str:
+        return f"{SCOPE_LABEL[k]} · {len(SCOPE_ROWS[k])}"
+
+    with st.container(key="syn_scope"):
+        try:
+            scope = st.segmented_control(
+                "состояние", list(SCOPES), default="replace",
+                format_func=scope_text, selection_mode="single",
+                label_visibility="collapsed", key="syn-scope")
+        except AttributeError:
+            scope = st.radio("состояние", list(SCOPES), horizontal=True,
+                             format_func=scope_text,
+                             label_visibility="collapsed", key="syn-scope")
+    scope = scope if scope in SCOPES else "replace"
+    view = list(SCOPE_ROWS[scope])
+
     # ---- выгрузка принятых тайтлов для загрузки в Amazon
-    # Берём из synthesis_changes, а не из очереди: правку могли принять на
-    # вкладке «любой товар», и в очередь title_over_limit такой товар
-    # не попадает — иначе выгрузка молча теряла бы строки.
+    # Берём из synthesis_changes, а не из списка: правку могли принять по
+    # товару, которого сейчас нет под фильтром, — иначе выгрузка молча
+    # теряла бы строки.
     _day = pd.Timestamp.now().strftime("%Y-%m-%d")
     _acc = load_accepted_titles(tuple(mp_sel) if mp_sel else None)
     # Та же природа, что в карточке: без флекса кнопки растягиваются
     # на всю долю колонки, и длинная подпись «для всех принятых · N»
     # переносится внутри кнопки на две строки.
     st.markdown(
-        '<style>.st-key-exp_bar div[data-testid="stHorizontalBlock"]'
+        '<style>.st-key-exp_bar div[data-testid="stHorizontalBlock"],'
+        '.st-key-mass_bar div[data-testid="stHorizontalBlock"]'
         '{gap:8px !important;align-items:center;flex-wrap:wrap;}'
-        '.st-key-exp_bar div[data-testid="stColumn"]'
+        '.st-key-exp_bar div[data-testid="stColumn"],'
+        '.st-key-mass_bar div[data-testid="stColumn"]'
         '{flex:0 0 auto !important;width:auto !important;min-width:0 !important;}'
-        '.st-key-exp_bar div[data-testid="stColumn"]:last-child'
+        '.st-key-exp_bar div[data-testid="stColumn"]:last-child,'
+        '.st-key-mass_bar div[data-testid="stColumn"]:last-child'
         '{flex:1 1 auto !important;}'
         '.st-key-exp_bar .stButton button,'
-        '.st-key-exp_bar .stDownloadButton button'
+        '.st-key-exp_bar .stDownloadButton button,'
+        '.st-key-mass_bar .stButton button,'
+        '.st-key-mass_bar .stDownloadButton button'
         '{white-space:nowrap !important;width:auto !important;'
         'padding-left:14px !important;padding-right:14px !important;}'
         '</style>', unsafe_allow_html=True)
@@ -2006,38 +2198,101 @@ with tab_queue:
 
     render_push_result()
 
-    view = rows
-    if mp_sel:
-        view = [x for x in view if x["r"]["marketplace"] in mp_sel]
-    if query.strip():
-        q = query.strip().lower()
-        view = [x for x in view
-                if q in str(x["r"]["asin"]).lower()
-                or q in str(x["r"].get("sku_group") or "").lower()
-                or q in str(x["r"]["title"] or "").lower()]
+    # ---- порядок строк.
+    # Внутри «Требуют замены» сгенерированное всегда сверху: решение —
+    # самая дорогая работа человека, и искать её глазами по списку из
+    # девятисот строк он не должен. В остальных выборках порядок один —
+    # по деньгам под риском.
+    if scope == "replace":
+        view.sort(key=lambda z: (row_group(z), -z["risk"], -z["over"]))
+    else:
+        view.sort(key=lambda z: (-z["risk"], -z["over"]))
+    shown = view[:PAGE]
+    GROUP_N = Counter(row_group(z) for z in view)
 
-    # ---- пакетная генерация: партия берётся из ТЕКУЩЕЙ выборки, поэтому
-    # блок стоит после фильтров. Раньше он был выше и молча работал по всей
-    # очереди — «top-20» на отфильтрованном экране означал другие товары.
-    # Товары с черновиком пропускаем: перегенерировать их незачем.
-    _pending = [x for x in sorted(view, key=lambda z: -z["risk"])
-                if not x["draft"].get("drafts")]
-    b1, b2, b3 = st.columns([1.4, 2.2, 4])
-    batch_n = b1.selectbox(
+    # ---- массовые действия: одна панель над списком.
+    # Область действия у всех кнопок здесь одна — ВЫБРАННЫЕ строки текущей
+    # выборки, и «Выбрать все» ставит галочки только им, а не всему
+    # каталогу. У кнопок выгрузки выше область другая (всё принятое под
+    # фильтром), поэтому там в подписи стоит «для всех принятых · N».
+    selected = [x for x in shown if st.session_state.get(pick_key(x))]
+    _all_on = bool(shown) and len(selected) == len(shown)
+    _mass = st.container(key="mass_bar")
+    with _mass:
+        m1, m2, m3, m4, m5, m6 = st.columns(
+            [1.6, 1.2, 2.0, 1.5, 1.9, 3.0], gap="small")
+
+    if m1.button(t("synth.select_none") if _all_on else t("synth.select_all"),
+                 disabled=not shown, key="mass-all"):
+        for _x in shown:
+            st.session_state[pick_key(_x)] = not _all_on
+        st.rerun()
+
+    # партия берётся из ТЕКУЩЕЙ выборки, поэтому панель стоит после
+    # фильтров: «top-20» на отфильтрованном экране означает другие товары.
+    # Товары с результатом пропускаем — перегенерировать их незачем,
+    # для этого рядом есть «Перегенерировать» по выбранным.
+    _pending_gen = [x for x in sorted(view, key=lambda z: -z["risk"])
+                    if row_result(x) is None and text_of(x["r"].get("title"))]
+    batch_n = m2.selectbox(
         "партия", [5, 10, 20, 50, 100, 0], index=2,
         format_func=lambda n: t("synth.batch_all") if n == 0 else f"top-{n}",
         label_visibility="collapsed", key="batch-n")
-    _top = _pending if batch_n == 0 else _pending[:batch_n]
-    if b2.button(f"{t('synth.batch_run')} ({len(_top)})", type="primary",
+    _top = _pending_gen if batch_n == 0 else _pending_gen[:batch_n]
+    if m3.button(f"{t('synth.batch_run')} · {len(_top)}", type="primary",
                  disabled=not _top or not skill_version,
                  help=(t("synth.skill_missing") if not skill_version
                        else None if _top else t("synth.batch_none"))):
-        res = batch_generate(_top, skill_text, skill_version)
-        # st.rerun() стирает всё, что нарисовал этот прогон, включая
-        # st.error слоя ИИ — поэтому итог кладём в session_state
-        # и показываем уже ПОСЛЕ перерисовки
-        st.session_state["batch_outcome"] = res
+        st.session_state["batch_outcome"] = batch_generate(
+            _top, skill_text, skill_version)
         st.rerun()
+
+    # «Принять» массово — только по тем, у кого результат ещё не принят:
+    # повторная приёмка принятого записала бы вторую строку в
+    # synthesis_changes и сдвинула бы дату, ничего не изменив по существу.
+    _to_accept = [x for x in selected if x["pending"] is not None]
+    _no_result = [x for x in selected if row_result(x) is None]
+    if m4.button(f'{t("synth.accept_short")} · {len(_to_accept)}',
+                 disabled=not _to_accept or bool(_no_result),
+                 help=(t("synth.mass_need_result", n=len(_no_result))
+                       if _no_result else
+                       t("synth.mass_nothing_to_accept") if selected
+                       and not _to_accept else None),
+                 key="mass-accept"):
+        _n = 0
+        for _x in _to_accept:
+            _d = _x["pending"]
+            if accept_change(
+                    _x["r"]["asin"], _x["r"]["marketplace"],
+                    text_of(_d.get("title_before")),
+                    {"title": text_of(_d.get("title_after")),
+                     "highlights": text_of(_d.get("highlights_after")),
+                     "dropped": [w for w in text_of(_d.get("dropped")).split("; ")
+                                 if w]},
+                    _d.get("coverage_score"), int0(_d.get("skill_version")),
+                    TITLE_MODEL):
+                _n += 1
+        st.session_state["mass_outcome"] = t("synth.mass_accepted", n=_n)
+        st.rerun()
+
+    if m5.button(f'{t("synth.regenerate")} · {len(selected)}',
+                 disabled=not selected or not skill_version,
+                 help=(t("synth.skill_missing") if not skill_version
+                       else None if selected else t("synth.mass_pick_first")),
+                 key="mass-regen"):
+        # тот же путь, что у партии: ход показывается полосой и строкой
+        # с текущим товаром, ошибки собираются и переживают перерисовку
+        st.session_state["batch_outcome"] = batch_generate(
+            selected, skill_text, skill_version)
+        st.rerun()
+
+    m6.caption(t("synth.selected_n", n=len(selected)) + " · "
+               + t("synth.batch_pending", n=len(_pending_gen)))
+
+    _mass_out = st.session_state.pop("mass_outcome", None)
+    if _mass_out:
+        st.success(_mass_out)
+
     # итог прошлой партии — переживает st.rerun(), поэтому ошибки видны
     _out = st.session_state.pop("batch_outcome", None)
     if _out:
@@ -2075,445 +2330,169 @@ with tab_queue:
         for _line in _out.get("errors", [])[:5]:
             st.code(_line, language=None)
         if len(_out.get("errors", [])) > 5:
-            st.caption(f"… ещё {len(_out['errors']) - 5}")
+            st.caption(t("synth.errors_more", n=len(_out["errors"]) - 5))
 
-    b3.caption(t("synth.batch_hint") + " · "
-               + t("synth.batch_pending", n=len(_pending)))
-
+    # ---- сам список
     if not view:
         st.caption(t("catalog.nothing"))
-    else:
-        view.sort(key=lambda z: (-z["risk"], -z["over"]))
+        st.stop()
 
-        if q_mode == "table":
-            _c = {
-                "img": t("metric.photos"), "sku": "SKU", "asin": "ASIN",
-                "mp": "MP", "len": t("metric.title"),
-                "over": t("ruler.excess"), "risk": t("synth.at_risk_line"),
-                "sqp": "SQP", "drafts": t("synth.drafts_n"),
-                "cov": "Coverage", "acc": t("work.accepted"),
-                "title": t("card.title"), "link": t("matrix.collect"),
-            }
-            _sqp_txt = {"ready": t("metric.yes"), "queued": t("work.no_draft"),
-                        "off": t("metric.no")}
-            # имена колонок технические, подписи — в column_config
-            _sqp_txt = {"ready": t("metric.yes"), "queued": t("work.no_draft"),
-                        "off": t("metric.no")}
-            tv = pd.DataFrame([{
-                "img": (None if pd.isna(z["r"].get("main_image"))
-                        else z["r"].get("main_image")),
-                "sku": z["r"]["sku_group"],
-                "asin": z["r"]["asin"],
-                "mp": z["r"]["marketplace"],
-                "len": len(z["r"]["title"] or ""),
-                "over": z["over"],
-                "risk": round(z["risk"]) if z["risk"] else None,
-                "sqp": _sqp_txt[z["sqp_state"]],
-                "drafts": (int(z["draft"]["drafts"])
-                           if z["draft"].get("drafts") else 0),
-                "cov": (int(z["draft"]["coverage"])
-                        if z["draft"].get("coverage") is not None
-                        and not pd.isna(z["draft"].get("coverage")) else None),
-                "acc": ("✓" if z["accepted"] else ""),
-                "title": (z["r"]["title"] or "")[:70],
-                "link": f"https://www.amazon.{z['r']['marketplace']}"
-                        f"/dp/{z['r']['asin']}",
-            } for z in view])
-            st.dataframe(
-                tv,
-                column_config={
-                    "img": st.column_config.ImageColumn(
-                        t("metric.photos"), width="small"),
-                    "sku": st.column_config.TextColumn("SKU", width="small"),
-                    "asin": st.column_config.TextColumn("ASIN", width="small"),
-                    "mp": st.column_config.TextColumn("MP", width="small"),
-                    "len": st.column_config.NumberColumn(
-                        t("metric.title"), width="small"),
-                    "over": st.column_config.NumberColumn(
-                        t("ruler.excess"), width="small"),
-                    "risk": st.column_config.NumberColumn(
-                        f"{t('synth.at_risk_line')}, EUR", format="%.0f",
-                        width="small"),
-                    "sqp": st.column_config.TextColumn("SQP", width="small"),
-                    "drafts": st.column_config.NumberColumn(
-                        t("synth.drafts_n"), width="small"),
-                    "cov": st.column_config.NumberColumn(
-                        "Coverage, %", format="%.0f", width="small"),
-                    "acc": st.column_config.TextColumn(
-                        t("work.accepted"), width="small"),
-                    "title": st.column_config.TextColumn(
-                        t("card.title"), width="large"),
-                    "link": st.column_config.LinkColumn(
-                        t("matrix.collect"), display_text="→"),
-                },
-                hide_index=True, width="stretch", height=520)
-            st.caption(t("list.sort_hint"))
-            st.stop()
+    if q_mode == "table":
+        _sqp_txt = {"ready": t("metric.yes"), "queued": t("work.no_draft"),
+                    "off": t("metric.no")}
+        # имена колонок технические, подписи — в column_config: иначе при
+        # переводе возникают дубли имён и pyarrow роняет страницу
+        tv = pd.DataFrame([{
+            "img": (None if pd.isna(z["r"].get("main_image"))
+                    else z["r"].get("main_image")),
+            "sku": z["r"]["sku_group"],
+            "asin": z["r"]["asin"],
+            "mp": z["r"]["marketplace"],
+            "len": len(text_of(z["r"].get("title"))),
+            "over": z["over"],
+            "risk": round(z["risk"]) if z["risk"] else None,
+            "sqp": _sqp_txt[z["sqp_state"]],
+            "state": row_state(z)[1],
+            "cov": (int(z["draft"]["coverage"])
+                    if z["draft"].get("coverage") is not None
+                    and not pd.isna(z["draft"].get("coverage")) else None),
+            "title": text_of(z["r"].get("title"))[:70],
+            "link": f"https://www.amazon.{z['r']['marketplace']}"
+                    f"/dp/{z['r']['asin']}",
+        } for z in view])
+        st.dataframe(
+            tv,
+            column_config={
+                "img": st.column_config.ImageColumn(
+                    t("metric.photos"), width="small"),
+                "sku": st.column_config.TextColumn("SKU", width="small"),
+                "asin": st.column_config.TextColumn("ASIN", width="small"),
+                "mp": st.column_config.TextColumn("MP", width="small"),
+                "len": st.column_config.NumberColumn(
+                    t("metric.title"), width="small"),
+                "over": st.column_config.NumberColumn(
+                    t("ruler.excess"), width="small"),
+                "risk": st.column_config.NumberColumn(
+                    f"{t('synth.at_risk_line')}, EUR", format="%.0f",
+                    width="small"),
+                "sqp": st.column_config.TextColumn("SQP", width="small"),
+                "state": st.column_config.TextColumn(
+                    t("synth.col_state"), width="small"),
+                "cov": st.column_config.NumberColumn(
+                    "Coverage, %", format="%.0f", width="small"),
+                "title": st.column_config.TextColumn(
+                    t("card.title"), width="large"),
+                "link": st.column_config.LinkColumn(
+                    t("matrix.collect"), display_text="→"),
+            },
+            hide_index=True, width="stretch", height=520)
+        st.caption(t("list.sort_hint"))
+        st.stop()
 
-        for x in view[:30]:
-            r = x["r"]
-            asin, mp = r["asin"], r["marketplace"]
-            title = r["title"] or ""
-            render_card_head(x)
+    # строка списка: галочка и компактная сводка в одной линии, карточка —
+    # раскрывашкой под ней. Решение принимается по строке, карточка нужна
+    # только чтобы посмотреть подробности или сгенерировать
+    st.markdown(
+        '<style>.st-key-syn_feed div[data-testid="stExpander"] summary'
+        '{padding-top:2px !important;padding-bottom:2px !important;}'
+        '.st-key-syn_feed div[data-testid="stExpander"]'
+        '{border:none !important;box-shadow:none !important;'
+        'margin-top:-2px !important;margin-bottom:6px !important;}'
+        '</style>', unsafe_allow_html=True)
 
-            with st.expander(f"{t('synth.work_with')} · {asin} · {mp}"):
-                fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
-                           if pd.notna(r["fetched_at"]) else "—")
-                st.markdown(
-                    eyebrow(f"{t('synth.original')} · {len(title)} симв. · "
-                            f"{t('matrix.collected_at')} {fetched} · "
-                            f"{t('synth.methodology')} v{skill_version}"),
-                    unsafe_allow_html=True)
-                st.code(title, language=None)
-                st.markdown(
-                    limit_ruler_html(len(title), TITLE_LIMIT,
-                                     left_label=f"{TITLE_LIMIT} {t('ruler.limit')}",
-                                     right_label=f"+{x['over']} {t('ruler.cut')}"),
-                    unsafe_allow_html=True)
-
-                # Результат — СРАЗУ под оригиналом, до таблицы фраз: раньше
-                # черновик уезжал на другую вкладку, за 25 строк SQP.
-                render_result(asin, mp, title, PENDING_MAP.get((asin, mp)))
-
-                st.markdown(eyebrow(t("synth.keywords")),
+    _last_group = None
+    for x in shown:
+        r = x["r"]
+        asin, mp = r["asin"], r["marketplace"]
+        title = text_of(r.get("title"))
+        if scope == "replace":
+            g = row_group(x)
+            if g != _last_group:
+                st.markdown(group_line(t(GROUP_LABEL[g]), GROUP_N[g]),
                             unsafe_allow_html=True)
-                kw = build_keyword_table(asin, mp, title)
-                kw_edit = pd.DataFrame()
-                if kw.empty and sqp_error():
-                    # «данных нет» — утверждение о данных; при сбое чтения
-                    # оно ложное, и генерация пойдёт без защищённых фраз
-                    st.error("⚠ " + t("synth.sqp_failed", e=sqp_error()))
-                elif kw.empty:
-                    st.caption(SQP_LABEL[x["sqp_state"]] + " · "
-                               + t("synth.no_sqp"))
-                else:
-                    kw_edit = kw_editor(kw, f"kw-{asin}-{mp}")
-                    cnt = kw_edit["tier"].value_counts().to_dict()
-                    st.markdown(" · ".join(f"{TIER_LABEL[k]} {cnt.get(k, 0)}"
-                                           for k in TIERS))
+                _last_group = g
 
-                keep_list, forbid_list = [], []
-                if not kw_edit.empty:
-                    o = kw_edit.sort_values("w", ascending=False)
-                    keep_list = o.loc[o["tier"].isin(["must_keep", "preferred"]),
-                                      "phrase"].tolist()
-                    forbid_list = o.loc[o["tier"] == "forbid", "phrase"].tolist()
+        c1, c2 = st.columns([0.6, 13], gap="small",
+                            vertical_alignment="center")
+        c1.checkbox("pick", key=pick_key(x), label_visibility="collapsed")
+        c2.markdown(row_html(x), unsafe_allow_html=True)
 
-                _regen = st.session_state.pop(f"regen-{asin}-{mp}", False)
-                if st.button(t("synth.generate"), type="primary",
-                             key=f"gen-{asin}-{mp}",
-                             disabled=not skill_version) or _regen:
-                    with st.status(f"{t('gen.title')} · v{skill_version}",
-                                   expanded=True) as _status:
-                        _status.write("· " + t("gen.phrases"))
-                        _must = (kw.loc[kw["tier"] == "must_keep",
-                                        "search_query"].tolist()
-                                 if not kw.empty else [])
-                        res, _st = generate_guarded(
-                            title, mp, skill_text, keep_list, forbid_list,
-                            kw_edit if not kw_edit.empty else kw, _must,
-                            skill_version, on_step=step_writer(_status))
-                    if res:
-                        save_draft(asin, mp, title, res, skill_version)
-                        if not kw.empty:
-                            save_coverage(asin, mp, coverage(
-                                kw, res.get("title", ""),
-                                res.get("highlights", "")))
-                        st.session_state[f"res-{asin}-{mp}"] = res
-                        invalidate_change(asin, mp)
-                        st.rerun()
-
-    if len(view) > 30:
-        st.caption(f"показано 30 из {len(view)} — уточни фильтры")
-
-
-# ================================================================ разбор
-with tab_review:
-    if pending.empty:
-        st.info(t("synth.no_drafts"))
-    else:
-        st.caption(t("synth.review_hint"))
-        econ_sorted = []
-        for _, d in pending.iterrows():
-            e = ECON.get((d["asin"], d["marketplace"])) or {}
-            econ_sorted.append((money_at_risk("title_over_limit",
-                                              e.get("revenue_30d")), d))
-        econ_sorted.sort(key=lambda z: -z[0])
-
-        for risk, d in econ_sorted:
-            asin, mp = d["asin"], d["marketplace"]
-            before = d["title_before"] or ""
-            after = d["title_after"] or ""
-            hl = d["highlights_after"] or ""
-            checks = run_checks(after, hl, [], [])
-            n_failed = sum(1 for ok, _ in checks if not ok)
-            qual, qtext = draft_quality(d.get("coverage_score"), n_failed)
-            color = Q_COLOR[qual]
-
+        with st.expander(f"{t('synth.work_with')} · {asin} · {mp}"):
+            if not title:
+                st.warning(t("synth.no_snapshot"))
+                continue
+            fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
+                       if pd.notna(r["fetched_at"]) else "—")
             st.markdown(
-                f'<div class="ls-card" style="background:#fff;'
-                f'border:1px solid #E7E4DD;border-left:3px solid {color};'
-                f'border-radius:0 10px 10px 0;padding:10px 14px;'
-                f'margin-bottom:4px;">'
-                f'<div style="display:flex;justify-content:space-between;">'
-                f'<span style="font-size:13px;font-weight:700;">{asin} · {mp}'
-                f'<span style="font-weight:400;color:#57534A;"> · '
-                f'{len(before)} → {len(after)} симв.</span></span>'
-                f'<span class="ls-mono" style="font-size:12.5px;color:{color};">'
-                f'{qtext}{" · " + fmt_money(risk) if risk else ""}</span></div>'
-                f'<div style="font-size:12.5px;color:#1A1815;margin-top:4px;'
-                f'font-family:var(--ls-mono);">{after}</div></div>',
+                eyebrow(f"{t('synth.original')} · {len(title)} симв. · "
+                        f"{t('matrix.collected_at')} {fetched} · "
+                        f"{t('synth.methodology')} v{skill_version}"),
                 unsafe_allow_html=True)
+            st.code(title, language=None)
+            st.markdown(
+                limit_ruler_html(
+                    len(title), TITLE_LIMIT,
+                    left_label=f"{TITLE_LIMIT} {t('ruler.limit')}",
+                    right_label=(f"+{x['over']} {t('ruler.cut')}" if x["over"]
+                                 else f"{t('ruler.free')} "
+                                      f"{TITLE_LIMIT - len(title)}")),
+                unsafe_allow_html=True)
+            if not x["over"]:
+                st.caption(t("synth.in_limit"))
 
-            with st.expander(f"{t('synth.details')} · {asin} · {mp}"):
-                st.markdown(f"**{t('synth.was')}**")
-                st.code(before, language=None)
-                st.markdown(f"**title** · {len(after)}/{TITLE_LIMIT}")
-                st.code(after, language=None)
-                st.markdown(f"**item highlights** · {len(hl)}/{HIGHLIGHTS_LIMIT}")
-                st.code(hl, language=None)
-                render_preview(after, hl, mp)
-                if d.get("dropped"):
-                    st.markdown(f"**{t('synth.dropped')}:** {d['dropped']}")
-                st.markdown(" · ".join(("✅ " if ok else "❌ ") + m
-                                       for ok, m in checks))
+            # Результат — СРАЗУ под оригиналом, до таблицы фраз: раньше он
+            # уезжал на другую вкладку, за 25 строк SQP.
+            _shown_title, _shown_hl = render_result(
+                asin, mp, title, x["pending"]) or ("", "")
+            if _shown_title:
+                render_preview(_shown_title, _shown_hl, mp)
 
-            c1, c2, c3 = st.columns([1.3, 1.2, 4])
-            if c1.button(t("synth.accept_short"), type="primary",
-                         disabled=bool(n_failed),
-                         key=f"acc-{asin}-{mp}-{d['id']}"):
-                if accept_change(asin, mp, before,
-                                 {"title": after, "highlights": hl,
-                                  "dropped": (d.get("dropped") or "").split("; ")},
-                                 d.get("coverage_score"),
-                                 int(d.get("skill_version") or 0),
-                                 TITLE_MODEL):
-                    st.success(t("synth.accepted_ok"))
-                    st.rerun()
-            if c2.button(t("synth.regenerate"), key=f"re-{asin}-{mp}-{d['id']}"):
-                kw = build_keyword_table(asin, mp, before)
-                keep = forbid = []
-                if not kw.empty:
-                    keep = kw.loc[kw["tier"].isin(["must_keep", "preferred"]),
-                                  "search_query"].tolist()
-                    forbid = kw.loc[kw["tier"] == "forbid",
+            st.markdown(eyebrow(t("synth.keywords")), unsafe_allow_html=True)
+            kw = build_keyword_table(asin, mp, title)
+            kw_edit = pd.DataFrame()
+            if kw.empty and sqp_error():
+                # «данных нет» — утверждение о данных; при сбое чтения
+                # оно ложное, и генерация пойдёт без защищённых фраз
+                st.error("⚠ " + t("synth.sqp_failed", e=sqp_error()))
+            elif kw.empty:
+                st.caption(SQP_LABEL[x["sqp_state"]] + " · "
+                           + t("synth.no_sqp"))
+            else:
+                kw_edit = kw_editor(kw, f"kw-{asin}-{mp}")
+                cnt = kw_edit["tier"].value_counts().to_dict()
+                st.markdown(" · ".join(f"{TIER_LABEL[k]} {cnt.get(k, 0)}"
+                                       for k in TIERS))
+
+            keep_list, forbid_list = [], []
+            if not kw_edit.empty:
+                o = kw_edit.sort_values("w", ascending=False)
+                keep_list = o.loc[o["tier"].isin(["must_keep", "preferred"]),
+                                  "phrase"].tolist()
+                forbid_list = o.loc[o["tier"] == "forbid", "phrase"].tolist()
+
+            _regen = st.session_state.pop(f"regen-{asin}-{mp}", False)
+            if st.button(t("synth.generate"), type="primary",
+                         key=f"gen-{asin}-{mp}",
+                         disabled=not skill_version) or _regen:
+                with st.status(f"{t('gen.title')} · v{skill_version}",
+                               expanded=True) as _status:
+                    _status.write("· " + t("gen.phrases"))
+                    _must = (kw.loc[kw["tier"] == "must_keep",
                                     "search_query"].tolist()
-                with st.spinner(t("synth.regenerate")):
-                    _rmust = (kw.loc[kw["tier"] == "must_keep",
-                                     "search_query"].tolist()
-                              if not kw.empty else [])
-                    res, _rst = generate_guarded(before, mp, skill_text, keep,
-                                                 forbid, kw, _rmust,
-                                                 skill_version)
+                             if not kw.empty else [])
+                    res, _st = generate_guarded(
+                        title, mp, skill_text, keep_list, forbid_list,
+                        kw_edit if not kw_edit.empty else kw, _must,
+                        skill_version, on_step=step_writer(_status))
                 if res:
-                    save_draft(asin, mp, before, res, skill_version)
+                    save_draft(asin, mp, title, res, skill_version)
                     if not kw.empty:
                         save_coverage(asin, mp, coverage(
-                            kw, res.get("title", ""), res.get("highlights", "")))
+                            kw, res.get("title", ""),
+                            res.get("highlights", "")))
+                    st.session_state[f"res-{asin}-{mp}"] = res
                     invalidate_change(asin, mp)
                     st.rerun()
 
-
-# ================================================================ любой товар
-with tab_any:
-    st.caption(t("synth.any_hint"))
-    if all_products.empty:
-        st.info(t("common.no_data"))
-    else:
-        aq1, aq2 = st.columns([3, 2])
-        any_query = aq1.text_input(
-            "q", label_visibility="collapsed", key="any-q",
-            placeholder=t("catalog.search"))
-        any_mps = sorted(all_products["marketplace"].dropna().unique())
-        any_mp = aq2.multiselect("MP", any_mps, default=[],
-                                 label_visibility="collapsed",
-                                 placeholder=t("list.all_mp"), key="any-mp")
-
-        av = all_products
-        if any_mp:
-            av = av[av["marketplace"].isin(any_mp)]
-        if any_query.strip():
-            q = any_query.strip().lower()
-            av = av[
-                av["asin"].astype(str).str.lower().str.contains(q, na=False)
-                | av["sku_group"].astype(str).str.lower().str.contains(q, na=False)
-                | av["title"].astype(str).str.lower().str.contains(q, na=False)
-            ]
-
-        st.caption(f"{t('matrix.found')} {len(av)}")
-        if av.empty:
-            st.caption(t("catalog.nothing"))
-        else:
-            with st.expander(f"{t('list.table')} ({len(av)})"):
-                # имена колонок технические, подписи — в column_config,
-                # иначе на разных языках возникают дубли и pyarrow падает
-                atv = av.copy()
-                atv["len"] = atv["title"].astype(str).str.len().where(
-                    atv["title"].notna(), None)
-                atv["over"] = (atv["len"] - TITLE_LIMIT).clip(lower=0)
-                atv["got"] = pd.to_datetime(
-                    atv["fetched_at"], errors="coerce").dt.strftime("%d.%m %H:%M")
-                atv["link"] = atv.apply(
-                    lambda z: f"https://www.amazon.{z['marketplace']}"
-                              f"/dp/{z['asin']}", axis=1)
-                st.dataframe(
-                    atv[["main_image", "sku_group", "asin", "marketplace",
-                         "len", "over", "got", "title", "link"]],
-                    column_config={
-                        "main_image": st.column_config.ImageColumn(
-                            t("metric.photos"), width="small"),
-                        "sku_group": st.column_config.TextColumn(
-                            "SKU", width="small"),
-                        "asin": st.column_config.TextColumn("ASIN", width="small"),
-                        "marketplace": st.column_config.TextColumn(
-                            "MP", width="small"),
-                        "len": st.column_config.NumberColumn(
-                            t("metric.title"), width="small"),
-                        "over": st.column_config.NumberColumn(
-                            t("ruler.excess"), width="small"),
-                        "got": st.column_config.TextColumn(
-                            t("matrix.collected_at"), width="small"),
-                        "title": st.column_config.TextColumn(
-                            t("card.title"), width="large"),
-                        "link": st.column_config.LinkColumn(
-                            t("matrix.collect"), display_text="→"),
-                    },
-                    hide_index=True, width="stretch", height=420)
-                st.caption(t("list.sort_hint"))
-
-            opts = {}
-            for _, r in av.head(300).iterrows():
-                # NaN истинный в Python: без pd.isna() len(NaN) уронит страницу
-                raw_title = r.get("title")
-                title_s = "" if raw_title is None or pd.isna(raw_title) else str(raw_title)
-                raw_sku = r.get("sku_group")
-                sku_s = "" if raw_sku is None or pd.isna(raw_sku) else str(raw_sku)
-                sku = f"{sku_s} · " if sku_s and sku_s != r["asin"] else ""
-                ln = f" · {len(title_s)}" if title_s else ""
-                ttl = title_s[:60] if title_s else t("matrix.not_collected")
-                opts[f"{sku}{r['asin']} · {r['marketplace']}{ln} · {ttl}"] = (
-                    r["asin"], r["marketplace"])
-
-            pick = st.selectbox(t("photo.product"), list(opts.keys()), key="any-pick")
-            a_asin, a_mp = opts[pick]
-            arow = av[(av["asin"] == a_asin)
-                      & (av["marketplace"] == a_mp)].iloc[0]
-            a_title = arow["title"] or ""
-
-            if not a_title:
-                st.warning(t("synth.no_snapshot"))
-            else:
-                over = max(0, len(a_title) - TITLE_LIMIT)
-                fetched = (pd.to_datetime(arow["fetched_at"]).strftime("%d.%m %H:%M")
-                           if pd.notna(arow["fetched_at"]) else "—")
-                st.markdown(
-                    eyebrow(f"{t('synth.original')} · {len(a_title)} симв. · "
-                            f"{t('matrix.collected_at')} {fetched} · "
-                            f"{t('synth.methodology')} v{skill_version}"),
-                    unsafe_allow_html=True)
-                st.code(a_title, language=None)
-                st.markdown(
-                    limit_ruler_html(
-                        len(a_title), TITLE_LIMIT,
-                        left_label=f"{TITLE_LIMIT} {t('ruler.limit')}",
-                        right_label=(f"+{over} {t('ruler.cut')}" if over
-                                     else f"{t('ruler.free')} "
-                                          f"{TITLE_LIMIT - len(a_title)}")),
-                    unsafe_allow_html=True)
-                if not over:
-                    st.caption(t("synth.in_limit"))
-
-                st.markdown(eyebrow(t("synth.keywords")),
-                            unsafe_allow_html=True)
-                a_kw = build_keyword_table(a_asin, a_mp, a_title)
-                a_edit = pd.DataFrame()
-                if a_kw.empty:
-                    st.caption(t("synth.no_sqp"))
-                else:
-                    a_edit = kw_editor(a_kw, f"any-kw-{a_asin}-{a_mp}")
-                    cnt = a_edit["tier"].value_counts().to_dict()
-                    st.markdown(" · ".join(f"{TIER_LABEL[k]} {cnt.get(k, 0)}"
-                                           for k in TIERS))
-
-                a_keep, a_forbid = [], []
-                if not a_edit.empty:
-                    o = a_edit.sort_values("w", ascending=False)
-                    a_keep = o.loc[o["tier"].isin(["must_keep", "preferred"]),
-                                   "phrase"].tolist()
-                    a_forbid = o.loc[o["tier"] == "forbid", "phrase"].tolist()
-
-                if st.button(t("synth.generate"), type="primary",
-                             key=f"any-gen-{a_asin}-{a_mp}",
-                             disabled=not skill_version):
-                    with st.status(f"{t('gen.title')} · v{skill_version}",
-                                   expanded=True) as _astatus:
-                        _astatus.write("· " + t("gen.phrases"))
-                        _amust = (a_kw.loc[a_kw["tier"] == "must_keep",
-                                          "search_query"].tolist()
-                                  if not a_kw.empty else [])
-                        ares, _ast = generate_guarded(
-                            a_title, a_mp, skill_text, a_keep, a_forbid,
-                            a_edit if not a_edit.empty else a_kw, _amust,
-                            skill_version, on_step=step_writer(_astatus))
-                    if ares:
-                        save_draft(a_asin, a_mp, a_title, ares, skill_version)
-                        if not a_kw.empty:
-                            save_coverage(a_asin, a_mp, coverage(
-                                a_kw, ares.get("title", ""),
-                                ares.get("highlights", "")))
-                        st.session_state[f"any-res-{a_asin}-{a_mp}"] = ares
-                        invalidate_change(a_asin, a_mp)
-                        st.rerun()
-
-                ares = st.session_state.get(f"any-res-{a_asin}-{a_mp}")
-                if ares:
-                    a_new = ares.get("title", "")
-                    a_hl = ares.get("highlights", "")
-                    st.divider()
-                    a_cov = None
-                    if not a_edit.empty:
-                        cdf = a_kw.copy()
-                        tmap = dict(zip(a_edit["phrase"], a_edit["tier"]))
-                        cdf["tier"] = cdf["search_query"].map(tmap).fillna("compress")
-                        cv = coverage(cdf, a_new, a_hl)
-                        a_cov = cv["score"]
-                        if a_cov is not None:
-                            col = ("#2F6B3A" if a_cov >= 85
-                                   else "#854F0B" if a_cov >= 65 else "#A32D2D")
-                            st.markdown(
-                                f'<div style="font-size:19px;font-weight:700;">'
-                                f'SEO Coverage <span style="color:{col};'
-                                f'font-family:var(--ls-mono);">{a_cov}%</span>'
-                                f'</div>', unsafe_allow_html=True)
-                            if cv["lost"]:
-                                st.markdown(f"**{t('synth.lost')}:** "
-                                            + " · ".join(
-                                    f"`{p}`" for p, _, _ in cv["lost"][:6]))
-
-                    st.markdown(f"**title** · {len(a_new)}/{TITLE_LIMIT}")
-                    st.code(a_new, language=None)
-                    st.markdown(f"**item highlights** · {len(a_hl)}/{HIGHLIGHTS_LIMIT}")
-                    st.code(a_hl, language=None)
-                    render_preview(a_new, a_hl, a_mp)
-                    if ares.get("dropped"):
-                        st.markdown(f"**{t('synth.dropped')}:** "
-                                    + " · ".join(f"`{w}`"
-                                                 for w in ares["dropped"]))
-
-                    a_checks = run_checks(a_new, a_hl, a_keep, a_forbid)
-                    a_failed = [m for ok, m in a_checks if not ok]
-                    st.markdown(" · ".join(("✅ " if ok else "❌ ") + m
-                                           for ok, m in a_checks))
-
-                    ac1, ac2 = st.columns([1.4, 1])
-                    if ac1.button(t("synth.accept"), type="primary",
-                                  disabled=bool(a_failed),
-                                  key=f"any-acc-{a_asin}-{a_mp}"):
-                        if accept_change(a_asin, a_mp, a_title, ares, a_cov,
-                                         skill_version, TITLE_MODEL):
-                            st.success(t("synth.accepted_ok"))
-                            st.rerun()
-                    if ac2.button(t("synth.regenerate"),
-                                  key=f"any-re-{a_asin}-{a_mp}"):
-                        st.session_state.pop(f"any-res-{a_asin}-{a_mp}", None)
-                        st.rerun()
+    if len(view) > PAGE:
+        st.caption(t("synth.shown_of", n=PAGE, total=len(view)))

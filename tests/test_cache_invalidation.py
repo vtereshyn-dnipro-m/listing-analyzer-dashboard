@@ -105,7 +105,7 @@ check(f"глобальный сброс стоит дорого ({global_cost} �
 SRC = (ROOT / "pages/synthesis.py").read_text(encoding="utf-8")
 syn = types.ModuleType("syn")
 syn.__dict__["__name__"] = "syn"
-exec(compile(SRC[:SRC.index("with tab_queue:")], "syn", "exec"), syn.__dict__)
+exec(compile(SRC[:SRC.index("with feed:")], "syn", "exec"), syn.__dict__)
 
 accept_cost, accept_tables = cost(
     lambda: syn.invalidate_change("B0AAA", "es"))

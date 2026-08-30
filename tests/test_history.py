@@ -151,7 +151,7 @@ pd.read_sql = lambda *a, **k: pd.DataFrame()
 _src = (ROOT / "pages/synthesis.py").read_text(encoding="utf-8")
 _syn = types.ModuleType("syn")
 _syn.__dict__["__name__"] = "syn"
-exec(compile(_src[:_src.index("with tab_queue:")], "syn", "exec"),
+exec(compile(_src[:_src.index("with feed:")], "syn", "exec"),
      _syn.__dict__)
 ok_push = {"kind": "push", "at": T("2026-08-29 15:41"),
            "before": "было", "after": "стало", "status": "ACCEPTED",

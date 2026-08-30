@@ -55,7 +55,7 @@ def page(sql):
     pd.read_sql = sql
     mod = types.ModuleType("syn")
     mod.__dict__["__name__"] = "syn"
-    exec(compile(SRC[:SRC.index("with tab_queue:")], "syn", "exec"),
+    exec(compile(SRC[:SRC.index("with feed:")], "syn", "exec"),
          mod.__dict__)
     mod.load_skill.clear()
     return mod

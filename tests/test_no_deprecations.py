@@ -57,8 +57,11 @@ check(f"use_container_width нигде нет ({hits or '—'})", not hits)
 
 width_uses = sum(p.read_text(encoding="utf-8").count('width="stretch"')
                  for p in CODE)
+# Порог сторожит замену, а не число таблиц: он опускается, когда таблицу
+# осознанно удаляют (так ушла таблица вкладки «Любой товар» вместе с самой
+# вкладкой), и не даёт вернуть старый параметр под видом правки вёрстки.
 check(f"на замену пришло width=\"stretch\" ({width_uses} мест)",
-      width_uses >= 14)
+      width_uses >= 13)
 
 # --- 2. чтения через движок, а не через голое соединение
 raw_reads = []

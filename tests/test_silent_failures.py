@@ -110,7 +110,7 @@ pd.read_sql = lambda *a, **k: pd.DataFrame()
 src = (ROOT / "pages/synthesis.py").read_text(encoding="utf-8")
 syn = types.ModuleType("syn")
 syn.__dict__["__name__"] = "syn"
-exec(compile(src[:src.index("with tab_queue:")], "syn", "exec"), syn.__dict__)
+exec(compile(src[:src.index("with feed:")], "syn", "exec"), syn.__dict__)
 
 GENERATED: list = []
 syn.generate_guarded = lambda *a, **k: (
