@@ -16,7 +16,7 @@ DEFAULT_LANG = "ru"
 
 LANGS: dict[str, dict[str, str]] = {
     "en": {
-        "app.tagline": "listing diagnostics",
+        "app.tagline": "work with Amazon listings",
         "nav.section.work": "Work",
         "nav.section.control": "Control",
         "nav.section.settings": "Management",
@@ -721,7 +721,7 @@ LANGS: dict[str, dict[str, str]] = {
         "meth.checked_at": "checked",
     },
     "ru": {
-        "app.tagline": "диагностика листингов",
+        "app.tagline": "работа с листингами Amazon",
         "nav.section.work": "Работа",
         "nav.section.control": "Контроль",
         "nav.section.settings": "Управление",
@@ -1426,7 +1426,7 @@ LANGS: dict[str, dict[str, str]] = {
         "meth.checked_at": "проверено",
     },
     "uk": {
-        "app.tagline": "діагностика лістингів",
+        "app.tagline": "робота з лістингами Amazon",
         "nav.section.work": "Робота",
         "nav.section.control": "Контроль",
         "nav.section.settings": "Керування",
