@@ -173,6 +173,26 @@ check("отправлен: правка и перегенерация досту
       pushed["edit"] is not None and pushed["regen"] is not None
       and not pushed["edit"].disabled and not pushed["regen"].disabled)
 
+# --- правка у принятого и отправленного: ни свежего результата,
+# ни черновика. Именно здесь страница падала: «изменилось ли» считалось
+# из res/draft, а источников три — карточка рисуется из ПРИНЯТОЙ правки
+edit_btn = widget(f"q-edit-B0PUSH-{MP}")
+check("у отправленного есть «Редактировать»", edit_btn is not None)
+if edit_btn is not None:
+    edit_btn.click().run()
+    check("правка отправленного не роняет страницу", not at.exception)
+    check("поля правки открылись", len(at.text_area) == 2)
+    at.run()
+    check("и повторная перерисовка тоже не падает", not at.exception)
+    save = widget(f"q-save-B0PUSH-{MP}")
+    check("кнопка сохранения на месте", save is not None)
+    cancel = next((b for b in at.button
+                   if str(getattr(b, "key", "")) == f"q-ecancel-B0PUSH-{MP}"),
+                  None)
+    if cancel is not None:
+        cancel.click().run()
+    check("после отмены страница жива", not at.exception)
+
 # --- отметки состояния
 caps = [str(c.value) for c in at.caption]
 check("у принятого есть отметка с датой",
