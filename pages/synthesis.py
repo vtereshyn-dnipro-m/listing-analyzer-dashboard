@@ -48,6 +48,7 @@ from services.spapi import (
     missing_secrets, marketplace_meta, push_title, log_push, load_pushes,
     issues_text,
 )
+from services import cache
 from services.history import (
     load_history, summary as history_summary, stamp as history_stamp,
     load_error as history_error,
@@ -633,6 +634,27 @@ def load_accepted() -> dict:
         return {}
 
 
+def invalidate_change(asin: str | None = None,
+                      mp: str | None = None) -> None:
+    """Что перечитать после приёмки, генерации или Coverage.
+
+    Раньше здесь стоял st.cache_data.clear(), сносивший ВСЕ кэши
+    приложения: после одного принятого тайтла заново читались каталог,
+    диагнозы, экономика, SQP и трёхмегабайтные шаблоны flat file.
+    Теперь перечитывается только изменившееся.
+
+    План выгрузки чистится ПО ТОВАРУ — у остальных он остался верным,
+    а собрать его заново значит перепаковать архив шаблона.
+    """
+    for fn in (load_accepted, load_draft_stats, load_drafts_for_review):
+        cache.drop(fn)
+    if asin and mp:
+        cache.drop(single_plan, asin, mp)
+    else:
+        cache.drop(single_plan)
+    cache.after_synthesis_change(asin, mp)
+
+
 def accept_change(asin: str, mp: str, before: str, result: dict,
                   coverage_score, skill_version: int, model: str,
                   source: str = "ai") -> bool:
@@ -666,7 +688,7 @@ def accept_change(asin: str, mp: str, before: str, result: dict,
                  "; ".join(result.get("dropped", []) or []),
                  coverage_score, skill_version, model, source))
         conn.close()
-        st.cache_data.clear()
+        invalidate_change(asin, mp)
         return True
     except Exception as e:
         st.error(t("common.save_failed", e=e))
@@ -818,7 +840,7 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
     bar.empty()
     line.empty()
     usage = usage_totals()
-    st.cache_data.clear()
+    invalidate_change()
     return {"done": done, "failed": failed, "unsaved": unsaved,
             "errors": errors, "stats": stats, "usage": usage}
 
@@ -1704,7 +1726,7 @@ def render_push_confirm(pushable: list[dict],
                 res, sku=row["sku"], marketplace=row["marketplace"],
                 log_err=log_err)
             st.session_state.pop(state_key, None)
-            st.cache_data.clear()
+            cache.after_push()
             st.rerun()
         if c2.button(t("push.cancel"), key=f"push-cancel-{state_key}"):
             st.session_state.pop(state_key, None)
@@ -2194,7 +2216,7 @@ with tab_queue:
                                 kw, res.get("title", ""),
                                 res.get("highlights", "")))
                         st.session_state[f"res-{asin}-{mp}"] = res
-                        st.cache_data.clear()
+                        invalidate_change(asin, mp)
                         st.rerun()
 
     if len(view) > 30:
@@ -2284,7 +2306,7 @@ with tab_review:
                     if not kw.empty:
                         save_coverage(asin, mp, coverage(
                             kw, res.get("title", ""), res.get("highlights", "")))
-                    st.cache_data.clear()
+                    invalidate_change(asin, mp)
                     st.rerun()
 
 
@@ -2436,7 +2458,7 @@ with tab_any:
                                 a_kw, ares.get("title", ""),
                                 ares.get("highlights", "")))
                         st.session_state[f"any-res-{a_asin}-{a_mp}"] = ares
-                        st.cache_data.clear()
+                        invalidate_change(a_asin, a_mp)
                         st.rerun()
 
                 ares = st.session_state.get(f"any-res-{a_asin}-{a_mp}")

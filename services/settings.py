@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+from services import cache
 from services.db import get_conn
 
 DEFAULTS = {
@@ -84,4 +85,4 @@ def save_setting(key: str, value: str) -> None:
             "updated_at = now()",
             (key, str(value)))
     conn.close()
-    st.cache_data.clear()
+    cache.after_settings_change()

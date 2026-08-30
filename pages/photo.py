@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t, current_lang
+from services import cache
 from services.db import get_conn, cfg, get_engine
 from services.settings import get_setting
 from services.ai import generate_json, task_config, no_credit_banner
@@ -610,7 +611,8 @@ for x in rows:
                     save(asin, mp, res, grade, m, g, len(imgs), ver_g, "gallery")
                     st.session_state[f"res-g-{asin}-{mp}"] = (
                         res, grade, m, g, run_meta("photo_audit", time.time() - _t0))
-                    st.cache_data.clear()
+                    cache.after_photo_audit()
+                    load_audits.clear()
 
             saved = st.session_state.get(f"res-g-{asin}-{mp}")
             if not saved and has_saved_g:
@@ -691,7 +693,8 @@ for x in rows:
                     save(asin, mp, res_a, grade_a, a, 0, len(apl), ver_a, "aplus")
                     st.session_state[f"res-a-{asin}-{mp}"] = (
                         res_a, grade_a, a, run_meta("photo_audit", time.time() - _ta))
-                    st.cache_data.clear()
+                    cache.after_photo_audit()
+                    load_audits.clear()
 
             saved_a = st.session_state.get(f"res-a-{asin}-{mp}")
             if not saved_a and has_saved_a:

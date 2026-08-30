@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t
+from services import cache
 from services.db import get_conn, add_matrix_rows, parse_asin_lines, cfg, get_engine
 from services.worklog import worklog_map, work_badges, has_work
 from components.ui import inject_fonts, eyebrow
@@ -52,6 +53,44 @@ MP_LANGUAGE = {
 
 st.caption(t("matrix.caption"))
 
+
+@st.cache_data(ttl=120)
+def load_matrix() -> pd.DataFrame:
+    try:
+        df = pd.read_sql(
+            """
+            SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor, m.added_at,
+                   s.fetched_at AS last_fetch, s.ok AS last_ok, s.title,
+                   s.main_image,
+                   d.red, d.amber, d.yellow
+            FROM product_matrix m
+            LEFT JOIN LATERAL (
+                SELECT fetched_at, ok, title, raw->>'main_image' AS main_image
+                FROM listing_snapshots s
+                WHERE s.asin = m.asin AND s.marketplace = m.marketplace
+                ORDER BY s.fetched_at DESC LIMIT 1
+            ) s ON TRUE
+            LEFT JOIN LATERAL (
+                SELECT
+                    COUNT(*) FILTER (WHERE severity = 'red')    AS red,
+                    COUNT(*) FILTER (WHERE severity = 'amber')  AS amber,
+                    COUNT(*) FILTER (WHERE severity = 'yellow') AS yellow
+                FROM (
+                    SELECT DISTINCT ON (rule_id) severity
+                    FROM diagnosis dd
+                    WHERE dd.asin = m.asin AND dd.marketplace = m.marketplace
+                    ORDER BY rule_id, created_at DESC
+                ) latest
+            ) d ON TRUE
+            ORDER BY m.sku_group, m.marketplace, m.asin
+            """,
+            get_engine(),
+        )
+        return df
+    except Exception:
+        return pd.DataFrame()
+
+
 # ================================================================ ввод пачкой
 st.markdown(
     t("matrix.format_hint") + "  \n" + t("matrix.format_example")
@@ -79,7 +118,8 @@ if st.button(t("matrix.add"), type="primary", disabled=not text.strip()):
             n = add_matrix_rows(conn, rows)
             conn.close()
             st.success(f"{t('matrix.added')} {n}")
-            st.cache_data.clear()
+            cache.after_matrix_change()
+            load_matrix.clear()
         except Exception as e:
             st.error(f"БД недоступна: {e}")
 
@@ -172,7 +212,8 @@ with st.expander(f"{t('matrix.import_header')} ({len(src)})",
                              r["marketplace"]))
                         added += cur.rowcount
                 conn.close()
-                st.cache_data.clear()
+                cache.after_matrix_change()
+                load_matrix.clear()
                 st.success(f"{t('matrix.import_button')}: {added}")
                 st.rerun()
             except Exception as e:
@@ -181,41 +222,6 @@ with st.expander(f"{t('matrix.import_header')} ({len(src)})",
         st.caption(t("matrix.import_note"))
 
 # ================================================================ данные
-@st.cache_data(ttl=120)
-def load_matrix() -> pd.DataFrame:
-    try:
-        df = pd.read_sql(
-            """
-            SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor, m.added_at,
-                   s.fetched_at AS last_fetch, s.ok AS last_ok, s.title,
-                   s.main_image,
-                   d.red, d.amber, d.yellow
-            FROM product_matrix m
-            LEFT JOIN LATERAL (
-                SELECT fetched_at, ok, title, raw->>'main_image' AS main_image
-                FROM listing_snapshots s
-                WHERE s.asin = m.asin AND s.marketplace = m.marketplace
-                ORDER BY s.fetched_at DESC LIMIT 1
-            ) s ON TRUE
-            LEFT JOIN LATERAL (
-                SELECT
-                    COUNT(*) FILTER (WHERE severity = 'red')    AS red,
-                    COUNT(*) FILTER (WHERE severity = 'amber')  AS amber,
-                    COUNT(*) FILTER (WHERE severity = 'yellow') AS yellow
-                FROM (
-                    SELECT DISTINCT ON (rule_id) severity
-                    FROM diagnosis dd
-                    WHERE dd.asin = m.asin AND dd.marketplace = m.marketplace
-                    ORDER BY rule_id, created_at DESC
-                ) latest
-            ) d ON TRUE
-            ORDER BY m.sku_group, m.marketplace, m.asin
-            """,
-            get_engine(),
-        )
-        return df
-    except Exception:
-        return pd.DataFrame()
 
 
 # ================================================================ пайплайн
@@ -406,6 +412,8 @@ def collect_rows(rows: pd.DataFrame) -> None:
             status.update(label=t("matrix.done"), state="complete")
         cur.close()
         conn.close()
+        # Сбор меняет снапшоты и диагнозы — их читают ВСЕ страницы,
+        # поэтому здесь глобальный сброс честнее точечного.
         st.cache_data.clear()
         # список пропущенных переживает st.rerun(): без этого он исчезал бы
         # ровно в тот момент, когда нужен
@@ -600,7 +608,8 @@ else:
                             "DELETE FROM product_matrix "
                             "WHERE asin = %s AND marketplace = %s", (a, m))
                 conn.close()
-                st.cache_data.clear()
+                cache.after_matrix_change()
+                load_matrix.clear()
                 st.success(f"{t('matrix.deleted')} {len(sel_keys)}")
                 st.rerun()
             except Exception as e:
@@ -717,7 +726,8 @@ else:
                         (asin, mp),
                     )
             conn.close()
-            st.cache_data.clear()
+            cache.after_matrix_change()
+            load_matrix.clear()
             st.success(f"{t('matrix.deleted')} {len(selected_keys)}")
             st.rerun()
         except Exception as e:
@@ -794,7 +804,7 @@ with st.expander(t("matrix.schedule_edit")):
                     (enabled, run_time.strftime("%H:%M"), ",".join(days_sel)),
                 )
             conn.close()
-            st.cache_data.clear()
+            load_schedule.clear()
             st.success(t("matrix.schedule_saved"))
             st.rerun()
         except Exception as e:
