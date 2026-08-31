@@ -84,6 +84,8 @@ LANGS: dict[str, dict[str, str]] = {
         "meth.history": "Version history",
         "meth.active_label": "active",
         "meth.rollback": "Roll back to",
+        "meth.load_failed": "Could not read the methodology: {e}. This is a read failure, not an empty scope — saving is locked so an active version is not overwritten.",
+        "meth.load_blocked": "Saving is locked until the methodology is read.",
         "meth.empty_scope": "No methodology for this scope yet — write the text below and save the first version.",
         "meth.no_active": "No active version — save a new one or roll back an old one below.",
         # --- Области методологии (scopes)
@@ -789,6 +791,8 @@ LANGS: dict[str, dict[str, str]] = {
         "meth.history": "История версий",
         "meth.active_label": "активная",
         "meth.rollback": "Откатиться на",
+        "meth.load_failed": "Не удалось прочитать методологию: {e}. Это сбой чтения, а не пустая область — сохранение заперто, чтобы не затереть действующую версию.",
+        "meth.load_blocked": "Сохранение заперто, пока методология не прочитана.",
         "meth.empty_scope": "Для этой области методологии ещё нет — напиши текст ниже и сохрани первую версию.",
         "meth.no_active": "Нет активной версии — сохрани новую или откати старую ниже.",
         # --- Области методологии (scopes)
@@ -1494,6 +1498,8 @@ LANGS: dict[str, dict[str, str]] = {
         "meth.history": "Історія версій",
         "meth.active_label": "активна",
         "meth.rollback": "Відкотитися на",
+        "meth.load_failed": "Не вдалося прочитати методологію: {e}. Це збій читання, а не порожня область — збереження замкнене, щоб не затерти чинну версію.",
+        "meth.load_blocked": "Збереження замкнене, поки методологію не прочитано.",
         "meth.empty_scope": "Для цієї області методології ще немає — напиши текст нижче і збережи першу версію.",
         "meth.no_active": "Немає активної версії — збережи нову або відкоти стару нижче.",
         # --- Області методології (scopes)

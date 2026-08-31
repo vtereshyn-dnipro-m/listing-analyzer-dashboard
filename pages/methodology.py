@@ -37,7 +37,16 @@ scope = st.selectbox(
 
 
 @st.cache_data(ttl=60)
-def load_versions(scope_: str) -> pd.DataFrame:
+def load_versions(scope_: str) -> tuple[pd.DataFrame, str | None]:
+    """Версии области и ПРИЧИНА, если прочитать не удалось.
+
+    Причину возвращаем отдельно намеренно. Пока функция отдавала пустую
+    таблицу на любой сбой, страница говорила «для этой области методологии
+    ещё нет» — то есть утверждала про данные то, чего не знала. Именно так
+    30.08 живая v8 выглядела отсутствующей: в этом блоке стоял
+    `conn.close()` при том, что переменной `conn` здесь уже не было, и
+    NameError уходил в общий except.
+    """
     try:
         df = pd.read_sql(
             """
@@ -48,15 +57,21 @@ def load_versions(scope_: str) -> pd.DataFrame:
             """,
             get_engine(), params={"scope": scope_},
         )
-        conn.close()
-        return df
-    except Exception:
-        return pd.DataFrame()
+        return df, None
+    except Exception as e:
+        return pd.DataFrame(), f"{type(e).__name__}: {e}"
 
 
-versions = load_versions(scope)
+versions, load_err = load_versions(scope)
 
-if versions.empty:
+if load_err:
+    # Редактор и сохранение заперты, пока методология не прочитана.
+    # Пустой редактор при сбое — это заряженная кнопка: «Сохранить как v1»
+    # деактивировала бы действующую версию и подменила её пустой.
+    st.error("⚠ " + t("meth.load_failed", e=load_err))
+    current_text = ""
+    current_version = 0
+elif versions.empty:
     st.info(t("meth.empty_scope"))
     current_text = ""
     current_version = 0
@@ -83,12 +98,15 @@ edited = st.text_area(
     height=420,
     label_visibility="collapsed",
     placeholder=t("meth.editor_placeholder"),
+    disabled=bool(load_err),
 )
 
 save = st.button(
     f"{t('meth.save_as')} v{current_version + 1}",
     type="primary",
-    disabled=(edited.strip() == current_text.strip() or not edited.strip()),
+    disabled=(bool(load_err) or edited.strip() == current_text.strip()
+              or not edited.strip()),
+    help=t("meth.load_blocked") if load_err else None,
 )
 
 if save:
