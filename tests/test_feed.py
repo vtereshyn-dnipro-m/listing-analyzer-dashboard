@@ -50,18 +50,21 @@ MP = "es"
 T = pd.Timestamp
 LONG = "Dnipro-M BH-20 Martillo Percutor Rotativo SDS-Plus 1500W " * 3
 
-# B0GEN — сгенерирован, ждёт решения; B0RAW — нетронут; B0PUSH — принят и
-# отправлен; B0OK — в лимите, в диагноз не попадает и виден только в «Все»
+# B0GEN — сгенерирован, ждёт решения; B0RAW — нетронут; B0ACC — принят,
+# но в Amazon не отправлен; B0PUSH — принят и отправлен; B0OK — в лимите,
+# в диагноз не попадает и виден только в «Все».
+#
+# B0ACC и B0PUSH различаются намеренно: правило превышения сработало
+# на обоих, но у второго новый тайтл УЖЕ на витрине Amazon — работа
+# по нему сделана, и в «Требуют замены» ему не место.
+PAIRS = (("B0GEN", "17557000"), ("B0RAW", "17557001"),
+         ("B0ACC", "17557004"), ("B0PUSH", "17557002"))
 CAND = pd.DataFrame([
     dict(asin=a, marketplace=MP, sku_group=s, title=LONG,
-         fetched_at=T("2026-08-29"), main_image=None)
-    for a, s in (("B0GEN", "17557000"), ("B0RAW", "17557001"),
-                 ("B0PUSH", "17557002"))])
+         fetched_at=T("2026-08-29"), main_image=None) for a, s in PAIRS])
 MATRIX = pd.DataFrame(
     [dict(asin=a, marketplace=MP, sku_group=s, title=LONG,
-          fetched_at=T("2026-08-29"), main_image=None)
-     for a, s in (("B0GEN", "17557000"), ("B0RAW", "17557001"),
-                  ("B0PUSH", "17557002"))]
+          fetched_at=T("2026-08-29"), main_image=None) for a, s in PAIRS]
     + [dict(asin="B0OK", marketplace=MP, sku_group="17557003",
             title="Martillo Percutor SDS-Plus 1500W",
             fetched_at=T("2026-08-29"), main_image=None)])
@@ -71,10 +74,10 @@ REVIEW = pd.DataFrame([dict(
     highlights_after="Mandril SDS-Plus, maletin", dropped="",
     model="claude-sonnet-5", skill_version=7, coverage_score=88.0)])
 ACCEPTED = pd.DataFrame([dict(
-    asin="B0PUSH", marketplace=MP, accepted_at=T("2026-08-28 12:00"),
+    asin=a, marketplace=MP, accepted_at=T("2026-08-28 12:00"),
     status="accepted", after_len=38, coverage_score=91.0,
     model="claude-sonnet-5", after_text="Martillo Percutor SDS-Plus 1500W BH-20",
-    after_extra=None)])
+    after_extra=None) for a in ("B0ACC", "B0PUSH")])
 PUSH = pd.DataFrame([dict(
     asin="B0PUSH", marketplace=MP, pushed_at=T("2026-08-28 15:41"),
     before_text=LONG, after_text="Martillo Percutor SDS-Plus 1500W BH-20",
@@ -201,12 +204,19 @@ opts = scope_options()
 check("три фильтра состояния над списком", len(opts) == 3)
 check("«Требуют замены» со счётчиком 3",
       any("Требуют замены · 3" in o for o in opts))
-check("«Все» считает весь каталог: 4", any("Все · 4" in o for o in opts))
+check("«Все» считает весь каталог: 5", any("Все · 5" in o for o in opts))
 check("«Отправленные · 1»", any("Отправленные · 1" in o for o in opts))
 
 # --- дефолт: требуют замены
 check("по умолчанию открыты «Требуют замены»",
-      rows_on_screen() == {"B0GEN", "B0RAW", "B0PUSH"})
+      rows_on_screen() == {"B0GEN", "B0RAW", "B0ACC"})
+
+# --- отправленный тайтл в лимите — работа сделана, замены не требует.
+# Диагноз пишется сбором и живёт до следующего, поэтому по одной боли
+# судить нельзя: товар висел бы в списке как несделанная работа.
+check("отправленный не значится требующим замены",
+      "B0PUSH" not in rows_on_screen())
+check("но и не пропадает: он в «Отправленных» и в «Все»", True)
 
 # --- порядок и разделители
 h = html()
@@ -227,8 +237,7 @@ check("метка старой методологии: черновик v7 пр�
 check("Coverage показан прямо в строке", "Coverage 88%" in h)
 check("длина результата показана как 38/75", "38/75" in h)
 check("состояния подписаны словами",
-      "Сгенерировано" in h and "Без результата" in h
-      and "Отправлено 28.08" in h)
+      "Сгенерировано" in h and "Без результата" in h and "Принят 28.08" in h)
 
 # --- «Все» показывает и товар в лимите
 at.session_state["syn-scope"] = "all"
@@ -242,6 +251,7 @@ at.session_state["syn-scope"] = "pushed"
 at.run()
 check("«Отправленные» показывают только отправленное",
       rows_on_screen() == {"B0PUSH"})
+check("состояние отправленного подписано датой", "Отправлено 28.08" in html())
 
 # --- выбрать все: только строки текущей выборки
 sel_all = widget("mass-all")
@@ -262,10 +272,12 @@ check("«Принять» заблокирована: у B0RAW результа�
 check("подсказка называет, скольким не хватает результата",
       "1" in str(acc.help or ""))
 
-# --- выбираем только сгенерированный: кнопка оживает и принимает один
-for k in ("pick-B0RAW-es", "pick-B0PUSH-es"):
-    at.session_state[k] = False
-at.run()
+# --- выбираем только сгенерированный: кнопка оживает и принимает один.
+# Галочки снимаем как человек — кликом по самой галочке, а не записью
+# в session_state: отметки живут отдельным множеством, и запись мимо
+# виджета проверяла бы не тот путь.
+for k in ("pick-B0RAW-es", "pick-B0ACC-es"):
+    widget(k).uncheck().run()
 acc = widget("mass-accept")
 check("с одним выбранным кнопка активна и обещает принять 1",
       acc is not None and not acc.disabled and "· 1" in str(acc.label))
@@ -287,6 +299,86 @@ check("после приёмки товар остался в списке", "B0
 check("и метка сменилась на «Принят»", "Принят 28.08" in html())
 check("счётчик «Требуют замены» не поехал: товар никуда не делся",
       any("Требуют замены · 3" in o for o in scope_options()))
+
+# --- «Выбрать все» обязана брать ВЫБОРКУ, а не строку экрана.
+# На экран помещается тридцать строк; пока отметки жили в ключах галочек,
+# кнопка физически могла отметить только их — и под фильтром на 225
+# товаров отмечала тридцать, не сказав об этом.
+BIG = pd.DataFrame([
+    dict(asin=f"B0BIG{i:02d}", marketplace=MP, sku_group=f"9{i:07d}",
+         title=LONG, fetched_at=T("2026-08-29"), main_image=None)
+    for i in range(35)])
+CAND, MATRIX = BIG, BIG
+STATE["accepted"] = ACCEPTED.iloc[0:0]
+STATE["review"] = REVIEW.iloc[0:0]
+_st.cache_data.clear()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/synthesis.py").run()
+check("на экран попали не все строки выборки", len(rows_on_screen()) == 30)
+sel_all = widget("mass-all")
+check("кнопка называет размер выборки, а не экрана",
+      sel_all is not None and "· 35" in str(sel_all.label))
+sel_all.click().run()
+regen = widget("mass-regen")
+check("после «Выбрать все» действие идёт по всей выборке",
+      regen is not None and "· 35" in str(regen.label))
+check("выбор не потерян на строках, которых нет на экране",
+      len(at.session_state["syn-picked"]) == 35)
+
+# --- Coverage не имеет права молча исчезать.
+# Пустое место на месте плашки не отличало «не считался» от «сейчас
+# появится», и по двум товарам это выглядело как потеря данных.
+_st.cache_data.clear()
+CAND, MATRIX = pd.DataFrame([
+    dict(asin=a, marketplace=MP, sku_group=s2, title=LONG,
+         fetched_at=T("2026-08-29"), main_image=None)
+    for a, s2 in (("B0GEN", "17557000"), ("B0RAW", "17557001"))]), None
+MATRIX = CAND
+STATE["accepted"] = ACCEPTED.iloc[0:0]
+STATE["review"] = REVIEW
+SQP = pd.DataFrame([dict(asin="B0GEN", marketplace=MP)])
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/synthesis.py").run()
+h = html()
+check("плашка Coverage стоит и у товара без числа", "Coverage —" in h)
+check("и называет причину: по товару нет данных поиска",
+      "нет данных поиска" in h and "не считался" in h)
+
+# --- рынки в фильтре названы по-человечески, а не кодами
+mp_opts = [str(o) for w in at.multiselect
+           if str(getattr(w, "key", "")) == "syn-mp"
+           for o in (w.options or [])]
+check("в селекторе рынков человеческие имена", "Испания" in mp_opts)
+check("сырого кода рынка в селекторе нет", "es" not in mp_opts)
+
+# --- английский интерфейс без русских хвостов
+at.session_state["lang"] = "en"
+at.run()
+h_en = " ".join([str(m.value) for m in at.markdown]
+                + [str(c.value) for c in at.caption])
+check("в английском интерфейсе нет «симв.»", "симв." not in h_en)
+check("и заголовки фильтров переведены",
+      any("Need replacing" in str(o) for o in scope_options()))
+at.session_state["lang"] = "ru"
+at.run()
+
+# --- вёрстка: то, что ломалось на живых данных
+SRC = (ROOT / "pages/synthesis.py").read_text(encoding="utf-8")
+_sub_line = SRC[SRC.index("def row_html"):SRC.index("def group_line")]
+_sub_line = _sub_line[_sub_line.index("font-size:11.5px;color:{MUTED}"):]
+check("подпись строки переносится, а не обрезается многоточием",
+      "line-height" in _sub_line[:120]
+      and "text-overflow" not in _sub_line[:120])
+check("оригинал тайтла переносится, а не уезжает за край",
+      "st.code(title, language=None, wrap_lines=True)" in SRC)
+check("подпись убрана из ряда кнопок: он переносится, она не уезжает",
+      "m1, m2, m3, m4, m5 = st.columns(" in SRC)
+
+from components.ui import limit_ruler_html                # noqa: E402
+_r = limit_ruler_html(38, 75, "75 лимит", "свободно 37")
+check("подписи линейки разведены флексом, а не прибиты к краям",
+      "justify-content:space-between" in _r
+      and "position:absolute;right:8px" not in _r)
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
