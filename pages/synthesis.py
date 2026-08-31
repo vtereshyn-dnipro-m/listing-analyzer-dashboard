@@ -23,7 +23,7 @@ import pandas as pd
 import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT, HIGHLIGHTS_LIMIT as _HL_DEFAULT
-from i18n import t, mp_label
+from i18n import t, mp_label, current_lang
 from services.db import get_conn, cfg, get_engine
 from services.settings import get_setting, get_int
 from services.ai import (
@@ -2038,6 +2038,70 @@ SCOPES = ("replace", "all", "pushed")
 PAGE = 30                      # строк на экран
 
 
+def sticky_select(widget, label: str, options: list, state_key: str,
+                  wkey: str, fallback=None, **kw):
+    """Виджет выбора, переживающий смену языка.
+
+    Streamlit опознаёт виджет в том числе по подписям опций. Подписи
+    даёт format_func, а он у нас переводит — значит при смене языка
+    виджет считается новым и откатывается к default. Пока выбор жил
+    В САМОМ виджете, он на этом и терялся: чип на экране ещё показывал
+    страну, а список уже был без фильтра.
+
+    Поэтому выбор живёт отдельно — кодами, не подписями. Виджету он
+    отдаётся как default, а обратно приезжает колбэком: колбэк
+    выполняется ДО перезапуска скрипта, поэтому шапка страницы, которая
+    рисуется ВЫШЕ фильтров, видит свежий выбор, а не прошлый.
+    """
+    # список или одиночный выбор — по типу fallback, а не по тому, что
+    # лежит в состоянии: на первом заходе там пусто, и multiselect,
+    # которому досталось None вместо [], роняет страницу изнутри
+    # Streamlit («NoneType object is not iterable»)
+    saved = st.session_state.get(state_key)
+    multi = isinstance(fallback, list)
+    value = ([o for o in (saved or []) if o in options] if multi
+             else saved if saved in options else fallback)
+
+    def _sync() -> None:
+        """Ответ виджета — в наше состояние, но только если это ОПЦИИ.
+
+        Колбэк зовётся не только на клик человека: пересоздавая виджет
+        под новые подписи, Streamlit присылает сюда старое значение,
+        уже превращённое в подписи прошлого языка («Испания» вместо
+        «es»). Приняв такое, мы бы сами и стёрли выбор — поэтому чужие
+        значения молча игнорируем, а пустой выбор принимаем: это человек
+        снял фильтр.
+        """
+        raw = st.session_state.get(wkey)
+        if isinstance(raw, (list, tuple)):
+            clean = [o for o in raw if o in options]
+            if raw and not clean:
+                return
+            st.session_state[state_key] = clean
+        elif raw in options or raw is None:
+            st.session_state[state_key] = raw
+
+    # ключ виджета привязан к языку: при смене языка Streamlit всё равно
+    # считает виджет новым, и пусть лучше он создастся честно — с нашим
+    # значением в default. Иначе чип на экране останется пустым, хотя
+    # фильтр применён, и человек снова увидит расхождение
+    wkey = f"{wkey}-{current_lang()}"
+    # Значение выставляем через session_state и НЕ передаём default:
+    # вместе они запрещены — Streamlit ругается «created with a default
+    # value but also had its value set via the Session State API», и
+    # виджет не создаётся вовсе. Через состояние надёжнее: default
+    # действует только при создании, а нам нужно, чтобы чип на экране
+    # всегда показывал то же, по чему реально фильтруется. К этому месту
+    # колбэк уже отработал (он идёт до скрипта), поэтому value — это
+    # выбор человека, а не прошлый снимок.
+    if st.session_state.get(wkey) != value:
+        st.session_state[wkey] = value
+    widget(label, options, key=wkey, on_change=_sync, **kw)
+    # возвращаем СВОЁ состояние, а не ответ виджета: после пересоздания
+    # виджет отвечает default, и это то же самое значение
+    return value
+
+
 def pick_key(x: dict) -> str:
     return f'pick-{x["r"]["asin"]}-{x["r"]["marketplace"]}'
 
@@ -2120,27 +2184,34 @@ with feed:
         unsafe_allow_html=True)
 
     with st.container(key="syn_filters"):
-        f1, f2, f3 = st.columns([4.0, 1.8, 1.7])
+        # колонка фильтра рынков шире поиска: в неё должен помещаться
+        # плейсхолдер целиком, иначе он обрезается на «Все маркетплей»
+        f1, f2, f3 = st.columns([3.2, 2.6, 1.7])
         query = f1.text_input("q", label_visibility="collapsed",
                               placeholder=t("synth.search"))
         mps = sorted({x["r"]["marketplace"] for x in ALL_ROWS})
-        # ключ обязателен: шапка страницы читает выбор из session_state,
-        # она рисуется выше этого виджета
-        # format_func обязателен: без него в списке стоят коды рынков
-        # («es», «de»), а рядом на той же странице те же рынки названы
-        # по-человечески — разрез, шапка, строка состояния
-        mp_sel = f2.multiselect("MP", mps, default=[],
-                                format_func=mp_label,
-                                label_visibility="collapsed",
-                                placeholder=t("list.all_mp"),
-                                key=MP_FILTER_KEY)
+        # Выбор рынков ХРАНИТСЯ КОДАМИ, отдельно от виджета, а подпись
+        # берётся через mp_label.
+        #
+        # Иначе смена языка теряет фильтр. Streamlit опознаёт виджет
+        # в том числе по ПОДПИСЯМ опций, а их даёт format_func: сменил
+        # язык — подписи другие — виджет считается новым и возвращается
+        # к default, то есть к пустому выбору. Чип «Германия» при этом
+        # ещё висит на экране, а список уже показывает все рынки: ровно
+        # то расхождение, из-за которого числам перестают верить.
+        mp_sel = sticky_select(
+            f2.multiselect, "MP", mps, MP_FILTER_KEY, "syn-mp-w",
+            fallback=[], format_func=mp_label,
+            label_visibility="collapsed",
+            placeholder=t("list.all_mp"))
         try:
-            q_mode = f3.segmented_control(
-                "вид", ["cards", "table"], default="cards",
+            q_mode = sticky_select(
+                f3.segmented_control, "вид", ["cards", "table"],
+                "syn-mode", "syn-mode-w",
                 format_func=lambda k: t("list.cards") if k == "cards"
                 else t("list.table"),
                 selection_mode="single", label_visibility="collapsed",
-                key="syn-mode")
+                fallback="cards")
         except AttributeError:
             q_mode = f3.radio("вид", ["cards", "table"], horizontal=True,
                               label_visibility="collapsed", key="syn-mode")
@@ -2172,11 +2243,15 @@ with feed:
         return f"{SCOPE_LABEL[k]} · {len(SCOPE_ROWS[k])}"
 
     with st.container(key="syn_scope"):
+        # то же, что у фильтра рынков: подписи здесь и локализованы,
+        # и содержат счётчики, поэтому виджет пересоздаётся особенно
+        # охотно — а выбранный фильтр обязан пережить это
         try:
-            scope = st.segmented_control(
-                "состояние", list(SCOPES), default="replace",
-                format_func=scope_text, selection_mode="single",
-                label_visibility="collapsed", key="syn-scope")
+            scope = sticky_select(
+                st.segmented_control, "состояние", list(SCOPES),
+                "syn-scope", "syn-scope-w", format_func=scope_text,
+                selection_mode="single", label_visibility="collapsed",
+                fallback="replace")
         except AttributeError:
             scope = st.radio("состояние", list(SCOPES), horizontal=True,
                              format_func=scope_text,

@@ -220,7 +220,7 @@ LANGS: dict[str, dict[str, str]] = {
         "list.cards": "Cards",
         "list.table": "Table",
         "list.search_pains": "Search: ASIN, SKU or pain text...",
-        "list.all_mp": "All marketplaces",
+        "list.all_mp": "All markets",
         "list.prev": "← Back",
         "list.next": "Next →",
         "list.page": "page",
@@ -587,8 +587,6 @@ LANGS: dict[str, dict[str, str]] = {
         "export.csv": "Download CSV",
         "export.none_here": "{where}: nothing accepted yet — accept a title and it appears here.",
         "export.state_here": "{where}: {n} accepted · rows: {rows} · files: {files}",
-        "export.template_note": "Справжній шаблон Seller Central: службові рядки 1–6 збережені, дані з 7-го.",
-        "export.template_note": "Настоящий шаблон Seller Central: служебные строки 1–6 сохранены, данные с 7-й.",
         "export.template_note": "A real Seller Central template: service rows 1–6 kept, data from row 7.",
         "export.no_template": "No template stored for this marketplace. Upload the Seller Central file in Settings.",
         "export.skipped": "{n} accepted titles did not make it into the file",
@@ -933,7 +931,7 @@ LANGS: dict[str, dict[str, str]] = {
         "list.cards": "Карточки",
         "list.table": "Таблица",
         "list.search_pains": "Поиск: ASIN, SKU или текст боли...",
-        "list.all_mp": "Все маркетплейсы",
+        "list.all_mp": "Все рынки",
         "list.prev": "← Назад",
         "list.next": "Вперёд →",
         "list.page": "стр.",
@@ -1644,7 +1642,7 @@ LANGS: dict[str, dict[str, str]] = {
         "list.cards": "Картки",
         "list.table": "Таблиця",
         "list.search_pains": "Пошук: ASIN, SKU або текст болю...",
-        "list.all_mp": "Всі маркетплейси",
+        "list.all_mp": "Усі ринки",
         "list.prev": "← Назад",
         "list.next": "Вперед →",
         "list.page": "стор.",
@@ -2160,10 +2158,38 @@ def current_lang() -> str:
     return st.session_state.get("lang", DEFAULT_LANG)
 
 
+MISSING_KEY = "i18n.missing"
+
+
+def missing_keys() -> list[str]:
+    """Ключи, которых в словаре не нашлось за эту сессию.
+
+    Нужны не ради аккуратности, а ради одного конкретного отказа.
+    Streamlit Cloud подтягивает свежие файлы, но процесс живёт дальше
+    и держит уже импортированные модули: страница получает новый код,
+    а i18n остаётся старым. Новый код зовёт ключи, которых старый
+    словарь не знает, и на экране появляются сырые `synth.cov_no_sqp`.
+    Выглядит как регрессия перевода, лечится ребутом за полминуты,
+    а ищется часами — потому что сама страница об этом молчит.
+    """
+    try:
+        return sorted(st.session_state.get(MISSING_KEY) or ())
+    except Exception:
+        return []
+
+
 def t(key: str, **kwargs) -> str:
     """Перевод по ключу с подстановками: t('dash.header', n=187, days=16)."""
     lang = current_lang()
-    s = LANGS.get(lang, {}).get(key) or LANGS[DEFAULT_LANG].get(key) or key
+    s = LANGS.get(lang, {}).get(key) or LANGS[DEFAULT_LANG].get(key)
+    if s is None:
+        # промах запоминаем: по одному ключу на экране не поймёшь, забыт
+        # перевод или отстал весь словарь
+        try:
+            st.session_state.setdefault(MISSING_KEY, set()).add(key)
+        except Exception:
+            pass
+        s = key
     return s.format(**kwargs) if kwargs else s
 
 

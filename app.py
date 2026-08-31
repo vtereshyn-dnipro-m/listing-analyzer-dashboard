@@ -8,6 +8,7 @@ app.py — точка входа Listing Suite. Три языка: EN / RU / UA 
 import streamlit as st
 
 from config import APP_NAME, days_to_deadline
+import i18n as i18n_mod
 from i18n import t, lang_selector
 
 st.set_page_config(
@@ -65,8 +66,32 @@ nav = st.navigation(
 )
 
 # ---------------------------------------------------------------- сайдбар
+def stale_modules() -> str | None:
+    """Рассинхрон страницы и модулей: свежий код, старый импортированный
+    модуль. Возвращает, что именно отстало, или None.
+
+    app.py перечитывается на каждом запуске, а `i18n` — нет: Streamlit
+    Cloud держит его в sys.modules с прошлого деплоя. Отсюда сырые ключи
+    на экране при живых переводах в репозитории. Проверяем две вещи:
+    нет ли в словаре самой функции-детектора (значит модуль старее этой
+    правки) и не промахнулись ли уже вызовы t().
+
+    Заглушек здесь нет намеренно: смысл в том, чтобы рассинхрон КРИЧАЛ,
+    а не прятался.
+    """
+    probe = getattr(i18n_mod, "missing_keys", None)
+    if probe is None:
+        return "i18n"
+    miss = probe()
+    return ", ".join(miss[:6]) + ("…" if len(miss) > 6 else "") if miss else None
+
+
 with st.sidebar:
     st.markdown(f"**{APP_NAME}**  \n{t('app.tagline')}")
+    _stale = stale_modules()
+    if _stale:
+        st.warning(f"⚠ Интерфейс новее модулей: {_stale}. "
+                   f"Нужен ребут приложения (Manage app → Reboot app).")
     lang_selector()
     # тумблер мобильного вида: флаг читает inject_fonts() в components/ui.py
     st.toggle(t("sidebar.mobile"), key="mobile_preview",
