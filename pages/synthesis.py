@@ -1338,8 +1338,8 @@ def row_html(x: dict) -> str:
         f'<div style="font-size:13px;font-weight:600;color:{INK};'
         f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
         f'{esc(head)}</div>'
-        f'<div style="font-size:11.5px;color:{MUTED};white-space:nowrap;'
-        f'overflow:hidden;text-overflow:ellipsis;">{" · ".join(sub)}</div>'
+        f'<div style="font-size:11.5px;color:{MUTED};line-height:1.5;">'
+        f'{" · ".join(sub)}</div>'
         f'</div>'
         f'<div style="display:flex;gap:10px;align-items:center;'
         f'flex:0 0 auto;">{"".join(m for m in marks if m)}</div></div>')
@@ -1920,7 +1920,7 @@ def render_push_result(state_key: str = "push-confirm") -> None:
         st.error(f'✗ {res["sku"]}: {res.get("error") or res.get("status")}')
         for line in (issues_text(res.get("issues")) or "").split(" · "):
             if line:
-                st.code(line, language=None)
+                st.code(line, language=None, wrap_lines=True)
     for s in res.get("skipped") or []:
         st.caption("⚠ " + s)
     if res.get("log_err"):
@@ -2126,7 +2126,11 @@ with feed:
         mps = sorted({x["r"]["marketplace"] for x in ALL_ROWS})
         # ключ обязателен: шапка страницы читает выбор из session_state,
         # она рисуется выше этого виджета
+        # format_func обязателен: без него в списке стоят коды рынков
+        # («es», «de»), а рядом на той же странице те же рынки названы
+        # по-человечески — разрез, шапка, строка состояния
         mp_sel = f2.multiselect("MP", mps, default=[],
+                                format_func=mp_label,
                                 label_visibility="collapsed",
                                 placeholder=t("list.all_mp"),
                                 key=MP_FILTER_KEY)
@@ -2310,8 +2314,8 @@ with feed:
     _all_on = bool(view) and len(selected) == len(view)
     _mass = st.container(key="mass_bar")
     with _mass:
-        m1, m2, m3, m4, m5, m6 = st.columns(
-            [1.6, 1.2, 2.0, 1.5, 1.9, 3.0], gap="small")
+        m1, m2, m3, m4, m5 = st.columns(
+            [1.7, 1.2, 2.0, 1.5, 1.9], gap="small")
 
     # подпись называет число, которое кнопка реально отметит — всю
     # выборку под фильтрами, а не строки, поместившиеся на экран
@@ -2383,8 +2387,9 @@ with feed:
             selected, skill_text, skill_version)
         st.rerun()
 
-    m6.caption(t("synth.selected_n", n=len(selected)) + " · "
-               + t("synth.batch_pending", n=len(_pending_gen)))
+    st.caption(t("synth.selected_n", n=len(selected)) + " · "
+               + t("synth.batch_pending", n=len(_pending_gen))
+               + " · " + t("synth.batch_hint"))
 
     _mass_out = st.session_state.pop("mass_outcome", None)
     if _mass_out:
@@ -2425,7 +2430,7 @@ with feed:
             if _write and not _read:
                 st.caption("⚠ " + t("synth.cache_miss"))
         for _line in _out.get("errors", [])[:5]:
-            st.code(_line, language=None)
+            st.code(_line, language=None, wrap_lines=True)
         if len(_out.get("errors", [])) > 5:
             st.caption(t("synth.errors_more", n=len(_out["errors"]) - 5))
 
@@ -2468,7 +2473,7 @@ with feed:
                 "len": st.column_config.NumberColumn(
                     t("metric.title"), width="small"),
                 "over": st.column_config.NumberColumn(
-                    t("ruler.excess"), width="small"),
+                    t("synth.col_over"), width="small"),
                 "risk": st.column_config.NumberColumn(
                     f"{t('synth.at_risk_line')}, EUR", format="%.0f",
                     width="small"),
@@ -2524,11 +2529,12 @@ with feed:
             fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
                        if pd.notna(r["fetched_at"]) else "—")
             st.markdown(
-                eyebrow(f"{t('synth.original')} · {len(title)} симв. · "
+                eyebrow(f"{t('synth.original')} · "
+                        f"{t('common.chars', n=len(title))} · "
                         f"{t('matrix.collected_at')} {fetched} · "
                         f"{t('synth.methodology')} v{skill_version}"),
                 unsafe_allow_html=True)
-            st.code(title, language=None)
+            st.code(title, language=None, wrap_lines=True)
             st.markdown(
                 limit_ruler_html(
                     len(title), TITLE_LIMIT,

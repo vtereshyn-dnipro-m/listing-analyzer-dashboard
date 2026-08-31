@@ -325,6 +325,61 @@ check("после «Выбрать все» действие идёт по вс�
 check("выбор не потерян на строках, которых нет на экране",
       len(at.session_state["syn-picked"]) == 35)
 
+# --- Coverage не имеет права молча исчезать.
+# Пустое место на месте плашки не отличало «не считался» от «сейчас
+# появится», и по двум товарам это выглядело как потеря данных.
+_st.cache_data.clear()
+CAND, MATRIX = pd.DataFrame([
+    dict(asin=a, marketplace=MP, sku_group=s2, title=LONG,
+         fetched_at=T("2026-08-29"), main_image=None)
+    for a, s2 in (("B0GEN", "17557000"), ("B0RAW", "17557001"))]), None
+MATRIX = CAND
+STATE["accepted"] = ACCEPTED.iloc[0:0]
+STATE["review"] = REVIEW
+SQP = pd.DataFrame([dict(asin="B0GEN", marketplace=MP)])
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/synthesis.py").run()
+h = html()
+check("плашка Coverage стоит и у товара без числа", "Coverage —" in h)
+check("и называет причину: по товару нет данных поиска",
+      "нет данных поиска" in h and "не считался" in h)
+
+# --- рынки в фильтре названы по-человечески, а не кодами
+mp_opts = [str(o) for w in at.multiselect
+           if str(getattr(w, "key", "")) == "syn-mp"
+           for o in (w.options or [])]
+check("в селекторе рынков человеческие имена", "Испания" in mp_opts)
+check("сырого кода рынка в селекторе нет", "es" not in mp_opts)
+
+# --- английский интерфейс без русских хвостов
+at.session_state["lang"] = "en"
+at.run()
+h_en = " ".join([str(m.value) for m in at.markdown]
+                + [str(c.value) for c in at.caption])
+check("в английском интерфейсе нет «симв.»", "симв." not in h_en)
+check("и заголовки фильтров переведены",
+      any("Need replacing" in str(o) for o in scope_options()))
+at.session_state["lang"] = "ru"
+at.run()
+
+# --- вёрстка: то, что ломалось на живых данных
+SRC = (ROOT / "pages/synthesis.py").read_text(encoding="utf-8")
+_sub_line = SRC[SRC.index("def row_html"):SRC.index("def group_line")]
+_sub_line = _sub_line[_sub_line.index("font-size:11.5px;color:{MUTED}"):]
+check("подпись строки переносится, а не обрезается многоточием",
+      "line-height" in _sub_line[:120]
+      and "text-overflow" not in _sub_line[:120])
+check("оригинал тайтла переносится, а не уезжает за край",
+      "st.code(title, language=None, wrap_lines=True)" in SRC)
+check("подпись убрана из ряда кнопок: он переносится, она не уезжает",
+      "m1, m2, m3, m4, m5 = st.columns(" in SRC)
+
+from components.ui import limit_ruler_html                # noqa: E402
+_r = limit_ruler_html(38, 75, "75 лимит", "свободно 37")
+check("подписи линейки разведены флексом, а не прибиты к краям",
+      "justify-content:space-between" in _r
+      and "position:absolute;right:8px" not in _r)
+
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
       else f"{len(FAILS)} провалов: {FAILS}")

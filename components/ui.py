@@ -227,15 +227,25 @@ def limit_ruler_html(current: int, limit: int,
         left_color = AMBER_TEXT if not over_style else OK_TEXT
         right_color = MUTED
 
+    # Подписи разложены ФЛЕКСОМ, а не прибиты к краям абсолютом.
+    # Абсолютные left:8px и right:8px не знают друг о друге: на узкой
+    # колонке или при длинных подписях («75 лимит» и «свободно 37»)
+    # правая наезжала на левую и получалась каша из двух текстов.
+    # Флекс разводит их по краям и упирает друг в друга, а не внахлёст;
+    # лишнее прячется многоточием.
     return (
         f'<div style="position:relative;height:26px;width:100%;'
         f'background:{TRACK};border-radius:6px;overflow:hidden;'
         f'margin:10px 0 12px;">'
         f"{fill}"
-        f'<span class="ls-mono" style="position:absolute;left:8px;top:5px;'
-        f'font-size:12px;color:{left_color};">{left_label}</span>'
-        f'<span class="ls-mono" style="position:absolute;right:8px;top:5px;'
-        f'font-size:12px;color:{right_color};">{right_label}</span>'
+        f'<div style="position:relative;display:flex;align-items:center;'
+        f'justify-content:space-between;gap:10px;height:100%;'
+        f'padding:0 8px;">'
+        f'<span class="ls-mono" style="font-size:12px;color:{left_color};'
+        f'white-space:nowrap;flex:0 0 auto;">{left_label}</span>'
+        f'<span class="ls-mono" style="font-size:12px;color:{right_color};'
+        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;'
+        f'flex:0 1 auto;">{right_label}</span></div>'
         f"</div>"
     )
 
