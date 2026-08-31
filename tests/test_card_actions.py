@@ -201,7 +201,7 @@ card_labels = " | ".join(str(b.label) for b in
 check("у карточных кнопок счётчика нет",
       "· 3" not in card_labels and "· 1" not in card_labels)
 check("строка состояния наверху называет область и число",
-      any("Все маркетплейсы" in str(c.value) and "принято 3" in str(c.value)
+      any("Все рынки" in str(c.value) and "принято 3" in str(c.value)
           for c in at.caption))
 
 # --- отправка из карточки шлёт один товар и именно свой

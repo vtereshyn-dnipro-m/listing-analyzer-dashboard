@@ -179,9 +179,13 @@ def widget(key: str):
 
 
 def scope_options() -> list[str]:
-    """Подписи фильтра состояния — вместе со счётчиками."""
+    """Подписи фильтра состояния — вместе со счётчиками.
+
+    Ключ виджета оканчивается языком: выбор хранится отдельно, кодами,
+    а сам виджет пересоздаётся под подписи текущего языка.
+    """
     for w in list(getattr(at, "segmented_control", [])) + list(at.radio):
-        if str(getattr(w, "key", "")) == "syn-scope":
+        if str(getattr(w, "key", "")).startswith("syn-scope"):
             # AppTest отдаёт уже отформатированные подписи — вместе
             # со счётчиками, а они здесь и проверяются
             return [str(o) for o in getattr(w, "options", []) or []]
@@ -346,7 +350,7 @@ check("и называет причину: по товару нет данных
 
 # --- рынки в фильтре названы по-человечески, а не кодами
 mp_opts = [str(o) for w in at.multiselect
-           if str(getattr(w, "key", "")) == "syn-mp"
+           if str(getattr(w, "key", "")).startswith("syn-mp-w")
            for o in (w.options or [])]
 check("в селекторе рынков человеческие имена", "Испания" in mp_opts)
 check("сырого кода рынка в селекторе нет", "es" not in mp_opts)
@@ -379,6 +383,55 @@ _r = limit_ruler_html(38, 75, "75 лимит", "свободно 37")
 check("подписи линейки разведены флексом, а не прибиты к краям",
       "justify-content:space-between" in _r
       and "position:absolute;right:8px" not in _r)
+
+# --- смена языка не имеет права терять фильтр.
+# Streamlit опознаёт виджет в том числе по подписям опций, а их даёт
+# format_func — то есть перевод. Пока выбор жил в самом виджете, смена
+# языка откатывала его к пустому: на экране чип «Германия» ещё висел,
+# а список показывал уже все рынки. Здесь проверяется и то, и другое —
+# и по чипу, и по числу строк.
+_st.cache_data.clear()
+TWO = pd.DataFrame(
+    [dict(asin="B0ES1", marketplace="es", sku_group="1", title=LONG,
+          fetched_at=T("2026-08-29"), main_image=None),
+     dict(asin="B0DE1", marketplace="de", sku_group="2", title=LONG,
+          fetched_at=T("2026-08-29"), main_image=None),
+     dict(asin="B0DE2", marketplace="de", sku_group="3", title=LONG,
+          fetched_at=T("2026-08-29"), main_image=None)])
+CAND, MATRIX = TWO, TWO
+STATE["accepted"] = ACCEPTED.iloc[0:0]
+STATE["review"] = REVIEW.iloc[0:0]
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/synthesis.py").run()
+
+
+def mp_widget():
+    return next((w for w in at.multiselect
+                 if str(getattr(w, "key", "")).startswith("syn-mp-w")), None)
+
+
+def mp_state():
+    return list(at.session_state["syn-mp"]
+                if "syn-mp" in at.session_state else [])
+
+
+mp_widget().select("de").run()
+check("фильтр по Германии применился",
+      mp_state() == ["de"] and rows_on_screen() == {"B0DE1", "B0DE2"})
+for _lang in ("en", "uk", "ru"):
+    at.session_state["lang"] = _lang
+    at.run()
+    at.run()          # сброс случался на ВТОРОМ прогоне после смены
+check("после ru → en → uk → ru фильтр цел", mp_state() == ["de"])
+check("и список по-прежнему только по Германии",
+      rows_on_screen() == {"B0DE1", "B0DE2"})
+check("чип на экране показывает тот же выбор",
+      (mp_widget() is not None and list(mp_widget().value) == ["de"]))
+check("выбор хранится кодом рынка, а не подписью",
+      all(v in ("es", "de") for v in mp_state()))
+# и снять фильтр по-прежнему можно
+mp_widget().unselect("de").run()
+check("фильтр снимается", mp_state() == [] and len(rows_on_screen()) == 3)
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
