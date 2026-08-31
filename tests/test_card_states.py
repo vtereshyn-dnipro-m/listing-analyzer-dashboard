@@ -119,6 +119,14 @@ at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/synthesis.py").run()
 check("страница отрисована", not at.exception)
 
+# Смотрим состояния в фильтре «Все». Товар с уже ОТПРАВЛЕННЫМ тайтлом
+# в лимите замены не требует и в фильтр по умолчанию не попадает —
+# именно этого от него теперь и ждут. Состояния карточки при этом
+# никуда не делись, и проверять их надо там, где товар виден.
+at.session_state["syn-scope"] = "all"
+at.run()
+check("в «Все» видны товары всех состояний", not at.exception)
+
 
 def widget(key: str):
     for b in list(at.button) + list(at.download_button):

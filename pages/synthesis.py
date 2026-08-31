@@ -995,12 +995,22 @@ def text_of(v) -> str:
     return "" if v is None or pd.isna(v) else str(v)
 
 
-def make_row(r, needs: bool) -> dict:
-    """Строка ленты. `needs` — по товару сработало правило превышения
-    лимита, то есть тайтл требует замены."""
+def make_row(r, rule_hit: bool) -> dict:
+    """Строка ленты. `rule_hit` — по товару сработало правило превышения
+    лимита на последнем сборе.
+
+    «Требует замены» — НЕ то же самое, что «правило сработало». Диагноз
+    пишется сбором и живёт до следующего: товар, тайтл которого уже
+    заменён и отправлен в Amazon, остаётся в `diagnosis` со старой болью
+    и висел в списке как несделанная работа. Поэтому удачная отправка
+    укладывающегося тайтла снимает признак сразу, не дожидаясь сбора.
+    """
     key = (r["asin"], r["marketplace"])
     e = ECON.get(key) or {}
     title = text_of(r.get("title"))
+    pushed = last_push(r["asin"], r["marketplace"])
+    sent_len = len(text_of(pushed.get("after"))) if pushed else 0
+    sent_fits = bool(pushed) and 0 < sent_len <= TITLE_LIMIT
     return {
         "r": r,
         "risk": money_at_risk("title_over_limit", e.get("revenue_30d")),
@@ -1009,8 +1019,9 @@ def make_row(r, needs: bool) -> dict:
         "draft": DRAFTS.get(key) or {},
         "accepted": ACCEPTED.get(key),
         "pending": PENDING_MAP.get(key),
-        "pushed": last_push(r["asin"], r["marketplace"]),
-        "needs": needs,
+        "pushed": pushed,
+        "sent_fits": sent_fits,
+        "needs": rule_hit and not sent_fits,
         "sqp_state": ("ready" if key in SQP_HAVE
                       else "queued" if r["marketplace"] in SQP_MARKETPLACES
                       else "off"),
@@ -1221,19 +1232,48 @@ def row_result(x: dict) -> dict | None:
     return None
 
 
-def cov_badge(cov) -> str:
-    """Coverage строкой. Цвета те же, что у карточки (draft_quality):
-    зелёный — принимать бегло, красный — открыть и посмотреть."""
+def kw_ready(asin: str, mp: str) -> bool:
+    """Есть ли по паре данные Brand Analytics. Тот же источник, что
+    у метки в строке, — иначе строка и карточка объясняли бы отсутствие
+    Coverage по-разному."""
+    return (str(asin), str(mp)) in SQP_HAVE
+
+
+def cov_value(cov) -> float | None:
+    """Число Coverage или None. pd.isna, а не `if cov`: ноль — это
+    настоящий Coverage, и трактовать его как «нет данных» нельзя."""
     try:
-        v = None if cov is None or pd.isna(cov) else float(cov)
+        return None if cov is None or pd.isna(cov) else float(cov)
     except (TypeError, ValueError):
-        v = None
-    if v is None:
-        return ""
-    color = (Q_COLOR["green"] if v >= 85
-             else Q_COLOR["amber"] if v >= 70 else Q_COLOR["red"])
-    return (f'<span class="ls-mono" style="font-size:11.5px;font-weight:700;'
-            f'color:{color};white-space:nowrap;">Coverage {v:.0f}%</span>')
+        return None
+
+
+def cov_badge(cov, x: dict | None = None) -> str:
+    """Coverage строкой. Цвета те же, что у карточки: зелёный — принимать
+    бегло, красный — открыть и посмотреть.
+
+    Пустого места на месте Coverage быть не должно. Раньше при
+    отсутствии числа плашка просто исчезала, и строка молчала о том,
+    посчитан ли поисковый вес вообще: «не считался» выглядело точно
+    так же, как «считается, просто ещё не показано». Теперь плашка
+    стоит всегда и называет ПРИЧИНУ:
+
+      · нет данных поиска (SQP) — считать не из чего, и это видно
+        по второй метке в той же строке;
+      · есть SQP, но записи нет — результат сделан до того, как
+        Coverage начал считаться (старые версии методологии).
+    """
+    v = cov_value(cov)
+    if v is not None:
+        color = (Q_COLOR["green"] if v >= 85
+                 else Q_COLOR["amber"] if v >= 70 else Q_COLOR["red"])
+        return (f'<span class="ls-mono" style="font-size:11.5px;'
+                f'font-weight:700;color:{color};white-space:nowrap;">'
+                f'Coverage {v:.0f}%</span>')
+    why = (t("synth.cov_no_sqp") if x is not None
+           and x.get("sqp_state") != "ready" else t("synth.cov_not_counted"))
+    return (f'<span class="ls-mono" title="{esc(why)}" style="font-size:11.5px;'
+            f'color:{MUTED};white-space:nowrap;">Coverage —</span>')
 
 
 def state_badge(state: str, label: str) -> str:
@@ -1284,7 +1324,8 @@ def row_html(x: dict) -> str:
         sub.append(esc(history_line(x["draft"], x["accepted"])))
     elif x["accepted"] is None and int0(x["draft"].get("drafts")) > 1:
         sub.append(t("synth.tries_n", n=int0(x["draft"].get("drafts"))))
-    marks = [cov_badge(res["cov"] if res else x["draft"].get("coverage")),
+    marks = [cov_badge(res["cov"] if res is not None and res["cov"] is not None
+                       else x["draft"].get("coverage"), x),
              state_badge(state, state_label),
              (counter_html(len(res["text"]), TITLE_LIMIT)
               if res and res["text"] else "")]
@@ -1416,8 +1457,8 @@ def render_card_actions(asin: str, mp: str, is_accepted: bool,
     следующего шага не осталось.
 
     Наверху страницы есть такие же по названию кнопки с другой областью
-    действия (всё принятое по фильтру), у них в подписи «для всех
-    принятых · N».
+    действия — всё принятое под фильтром. Там у подписи есть счётчик,
+    здесь его нет: счётчик и означает «не про один товар».
     """
     st.markdown(
         f'<div style="border-top:1px solid #E7E4DD;margin:10px 0 8px;"></div>'
@@ -1760,8 +1801,11 @@ def render_result(asin: str, mp: str, before: str, draft) -> tuple[str, str]:
         if accepted is not None and not editing:
             _marks.append("✓ " + t("card.accepted_at", day=pd.to_datetime(
                 accepted["accepted_at"]).strftime("%d.%m")))
-        if cov is not None and not pd.isna(cov):
-            _marks.append(f"Coverage {float(cov):.0f}%")
+        _cv = cov_value(cov)
+        _marks.append(f"Coverage {_cv:.0f}%" if _cv is not None
+                      else "Coverage — " + (t("synth.cov_no_sqp")
+                                            if not kw_ready(asin, mp)
+                                            else t("synth.cov_not_counted")))
         if _marks:
             a4.caption(" · ".join(_marks))
 
@@ -1998,6 +2042,35 @@ def pick_key(x: dict) -> str:
     return f'pick-{x["r"]["asin"]}-{x["r"]["marketplace"]}'
 
 
+# Отметки живут ОТДЕЛЬНО от галочек, множеством пар.
+#
+# Галочка существует только у отрисованной строки, а на экране их тридцать
+# из выборки в сотни. Пока выбор хранился в ключах виджетов, «Выбрать все»
+# физически могла отметить только видимые, и подпись врала: под фильтром
+# на 225 товаров кнопка отмечала тридцать. Множество переживает и прокрутку
+# списка, и смену фильтра, а действия применяются к пересечению с текущей
+# выборкой — то есть ровно к тому, что человек видит в счётчике.
+def picked_set() -> set:
+    v = st.session_state.get("syn-picked")
+    if not isinstance(v, set):
+        v = set()
+        st.session_state["syn-picked"] = v
+    return v
+
+
+def pick_pair(x: dict) -> tuple:
+    return (str(x["r"]["asin"]), str(x["r"]["marketplace"]))
+
+
+def on_pick(pair: tuple, wkey: str) -> None:
+    """Ручной клик по галочке — синхронизируем множество."""
+    picked = picked_set()
+    if st.session_state.get(wkey):
+        picked.add(pair)
+    else:
+        picked.discard(pair)
+
+
 def row_group(x: dict) -> int:
     """Блок внутри «Требуют замены»: 0 — результат ждёт решения,
     1 — решение принято, 2 — результата нет.
@@ -2114,8 +2187,8 @@ with feed:
     _day = pd.Timestamp.now().strftime("%Y-%m-%d")
     _acc = load_accepted_titles(tuple(mp_sel) if mp_sel else None)
     # Та же природа, что в карточке: без флекса кнопки растягиваются
-    # на всю долю колонки, и длинная подпись «для всех принятых · N»
-    # переносится внутри кнопки на две строки.
+    # на всю долю колонки, и длинная подпись со счётчиком переносится
+    # внутри кнопки на две строки.
     st.markdown(
         '<style>.st-key-exp_bar div[data-testid="stHorizontalBlock"],'
         '.st-key-mass_bar div[data-testid="stHorizontalBlock"]'
@@ -2135,66 +2208,83 @@ with feed:
         '</style>', unsafe_allow_html=True)
     _bar = st.container(key="exp_bar")
     # третья колонка держит место под кнопку прямой отправки по API:
-    # когда она появится, соседние не поедут и подписи не переверстаются
+    # соседние не поедут и подписи не переверстаются
     with _bar:
-        e1, e2, e3, e4 = st.columns([2.0, 1.6, 2.0, 3.4])
-    if _acc.empty:
-        # неактивны и с прямой подсказкой, что сделать: раньше две серые
-        # кнопки просто терялись и было непонятно, почему они не нажимаются
-        e1.button(t("export.flat"), disabled=True, key="exp-flat-none",
-                  help=t("export.accept_first"))
-        e2.button(t("export.csv"), disabled=True, key="exp-csv-none")
-        e4.caption(f'{t("export.nothing")} — {t("export.accept_first")}')
-    else:
+        e1, e2, e3, e4 = st.columns([2.2, 1.6, 2.2, 3.4])
+
+    # Все числа этого ряда — из ОДНОГО источника: принятые под текущим
+    # фильтром. Раньше подпись кнопки считала строки готового файла,
+    # соседняя — принятые правки, а третья могла вовсе не появиться,
+    # и ряд говорил о разном: «для всех принятых · 1» рядом с «принятых
+    # по этому фильтру нет». Теперь противоречить нечему: одно число,
+    # и в подписи названо, что фильтр учтён.
+    _n_acc = 0 if _acc.empty else len(_acc)
+    _where_txt = (", ".join(mp_label(m) for m in sorted(mp_sel)) if mp_sel
+                  else t("list.all_mp"))
+    _plan, _bad, _in, _pushable = [], [], 0, []
+    if not _acc.empty:
         # раскладываем по шаблонам Amazon: один шаблон покрывает часть типов
         # товара, поэтому файлов может быть несколько, а часть строк может
         # не попасть никуда — про такие говорим прямо, а не молчим
         _plan, _bad = plan_export(_acc)
         _in = sum(len(i["rows"]) for i in _plan)
-        _cname, _cmime, _cdata = build_csv_export(_acc, _day)
-        if _plan:
-            _fname, _fmime, _fdata = build_flat_cached(
-                _plan, plan_signature(_plan), _day)
-            e1.download_button(
-                f'⬇ {t("export.flat")} · {t("export.for_all", n=_in)}', _fdata,
-                               file_name=_fname, mime=_fmime, key="exp-flat",
-                               type="primary")
-        else:
-            e1.button(t("export.flat"), disabled=True, key="exp-flat-notpl",
-                      help=t("export.no_template"))
-        e2.download_button(t("export.csv"), _cdata, file_name=_cname,
-                           mime=_cmime, key="exp-csv")
-        _mps_txt = ", ".join(sorted(_acc["marketplace"].unique())).upper()
-        e4.caption(t("export.hint", n=_in, mps=_mps_txt,
-                     files=len(_plan) or 1))
-        if _bad:
-            _why = Counter(b["reason"] for b in _bad)
-            e4.caption("⚠ " + t("export.skipped", n=len(_bad)) + " — " +
-                       ", ".join(f'{t("export.why_" + k)}: {v}'
-                                 for k, v in _why.most_common()))
-            with e4.expander(t("export.skipped_list"), expanded=False):
-                st.dataframe(pd.DataFrame(_bad), hide_index=True,
-                             width="stretch")
-
-        # ---- прямая отправка в Amazon: третья кнопка, место под неё
-        # держали с самого начала. Всё, что она делает по нажатию, —
-        # открывает подтверждение. Отправку запускает только вторая кнопка,
-        # внутри подтверждения: это запись в живые листинги клиента.
         _pushable = [dict(r, marketplace=i["marketplace"], tpl=i["tpl"])
                      for i in _plan for r in i["rows"]]
-        _miss = missing_secrets()
-        if not _pushable or _miss:
-            e3.button(
-                f'{t("push.button")} · {t("export.for_all", n=len(_pushable))}',
-                disabled=True, key="push-open-off",
-                      help=(t("push.no_keys", keys=", ".join(_miss)) if _miss
-                            else t("export.accept_first")))
-        elif e3.button(
-                f'{t("push.button")} · {t("export.for_all", n=len(_pushable))}',
-                key="push-open"):
-            st.session_state["push-confirm"] = True
-        if st.session_state.get("push-confirm") and _pushable:
-            render_push_confirm(_pushable)
+
+    # В подписи только число. «Для всех принятых» отсюда убрано: под
+    # фильтром это было неправдой — кнопка берёт принятые ПОД ФИЛЬТРОМ,
+    # а формулировка обещала все. Что именно посчитано, говорит строка
+    # состояния ниже, и она всегда называет фильтр.
+    _flat_label = f'⬇ {t("export.flat")} · {_in}'
+    if _plan:
+        _fname, _fmime, _fdata = build_flat_cached(
+            _plan, plan_signature(_plan), _day)
+        e1.download_button(_flat_label, _fdata, file_name=_fname,
+                           mime=_fmime, key="exp-flat", type="primary")
+    else:
+        # кнопка остаётся на месте и с тем же числом: исчезающая кнопка
+        # заставляла ряд прыгать, а человека — гадать, куда она делась
+        e1.button(_flat_label, disabled=True, key="exp-flat-off",
+                  help=(t("export.accept_first") if not _n_acc
+                        else t("export.no_template")))
+
+    if _acc.empty:
+        e2.button(t("export.csv"), disabled=True, key="exp-csv-off")
+    else:
+        _cname, _cmime, _cdata = build_csv_export(_acc, _day)
+        e2.download_button(t("export.csv"), _cdata, file_name=_cname,
+                           mime=_cmime, key="exp-csv")
+
+    # ---- прямая отправка в Amazon. Всё, что делает кнопка по нажатию, —
+    # открывает подтверждение. Отправку запускает только вторая кнопка,
+    # внутри подтверждения: это запись в живые листинги клиента.
+    _miss = missing_secrets()
+    _push_label = f'{t("push.button")} · {len(_pushable)}'
+    if not _pushable or _miss:
+        e3.button(_push_label, disabled=True, key="push-open-off",
+                  help=(t("push.no_keys", keys=", ".join(_miss)) if _miss
+                        else t("export.accept_first") if not _n_acc
+                        else t("export.no_template")))
+    elif e3.button(_push_label, key="push-open"):
+        st.session_state["push-confirm"] = True
+
+    # одна строка состояния на весь ряд, и она всегда называет фильтр
+    if not _n_acc:
+        e4.caption(t("export.none_here", where=_where_txt))
+    else:
+        e4.caption(t("export.state_here", where=_where_txt, n=_n_acc,
+                     files=len(_plan) or 1, rows=_in)
+                   + " · " + t("export.template_note"))
+    if _bad:
+        _why = Counter(b["reason"] for b in _bad)
+        e4.caption("⚠ " + t("export.skipped", n=len(_bad)) + " — " +
+                   ", ".join(f'{t("export.why_" + k)}: {v}'
+                             for k, v in _why.most_common()))
+        with e4.expander(t("export.skipped_list"), expanded=False):
+            st.dataframe(pd.DataFrame(_bad), hide_index=True, width="stretch")
+
+    if st.session_state.get("push-confirm") and _pushable:
+        render_push_confirm(_pushable)
 
     render_push_result()
 
@@ -2214,17 +2304,24 @@ with feed:
     # Область действия у всех кнопок здесь одна — ВЫБРАННЫЕ строки текущей
     # выборки, и «Выбрать все» ставит галочки только им, а не всему
     # каталогу. У кнопок выгрузки выше область другая (всё принятое под
-    # фильтром), поэтому там в подписи стоит «для всех принятых · N».
-    selected = [x for x in shown if st.session_state.get(pick_key(x))]
-    _all_on = bool(shown) and len(selected) == len(shown)
+    # фильтром), и они помечены счётчиком в подписи.
+    PICKED = picked_set()
+    selected = [x for x in view if pick_pair(x) in PICKED]
+    _all_on = bool(view) and len(selected) == len(view)
     _mass = st.container(key="mass_bar")
     with _mass:
         m1, m2, m3, m4, m5, m6 = st.columns(
             [1.6, 1.2, 2.0, 1.5, 1.9, 3.0], gap="small")
 
-    if m1.button(t("synth.select_none") if _all_on else t("synth.select_all"),
-                 disabled=not shown, key="mass-all"):
-        for _x in shown:
+    # подпись называет число, которое кнопка реально отметит — всю
+    # выборку под фильтрами, а не строки, поместившиеся на экран
+    if m1.button((t("synth.select_none") if _all_on
+                  else f'{t("synth.select_all")} · {len(view)}'),
+                 disabled=not view, key="mass-all"):
+        for _x in view:
+            PICKED.discard(pick_pair(_x)) if _all_on else PICKED.add(pick_pair(_x))
+            # у видимых строк переставляем и саму галочку: её состояние
+            # держит Streamlit, и без этого она осталась бы прежней
             st.session_state[pick_key(_x)] = not _all_on
         st.rerun()
 
@@ -2414,7 +2511,10 @@ with feed:
 
         c1, c2 = st.columns([0.6, 13], gap="small",
                             vertical_alignment="center")
-        c1.checkbox("pick", key=pick_key(x), label_visibility="collapsed")
+        _wkey = pick_key(x)
+        c1.checkbox("pick", key=_wkey, value=pick_pair(x) in PICKED,
+                    label_visibility="collapsed",
+                    on_change=on_pick, args=(pick_pair(x), _wkey))
         c2.markdown(row_html(x), unsafe_allow_html=True)
 
         with st.expander(f"{t('synth.work_with')} · {asin} · {mp}"):
