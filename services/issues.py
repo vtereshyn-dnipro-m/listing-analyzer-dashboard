@@ -25,7 +25,7 @@ import re
 import pandas as pd
 import streamlit as st
 
-from i18n import t
+from i18n import t, tr_opt
 from services.db import get_conn, get_engine
 
 # рынки, по которым Кабинет реально собирает Issues
@@ -144,10 +144,10 @@ def fmt_issue_date(v, with_year: bool = False) -> str:
 
 def cause_label(cause: str | None) -> str:
     """Короткая подпись причины блокировки для плашки."""
+    # tr_opt, а не t(): коды и причины Amazon приходят сотнями,
+    # переведены выборочно, и промах здесь — норма, а не забытая строка
     c = _text(cause) or "generic"
-    key = f"issue.cause.{c}"
-    val = t(key)
-    return val if val != key else c
+    return tr_opt(f"issue.cause.{c}") or c
 
 
 # ISO-дата в текстах Amazon: 2026-08-12T00:00:00.000Z
@@ -173,9 +173,7 @@ def extract_deadline(summary: dict) -> tuple[str, pd.Timestamp] | None:
 def code_label(code: str | None) -> str:
     """Подпись кода проблемы; незнакомый код показывается как есть."""
     c = _text(code)
-    key = f"issue.code.{c}"
-    val = t(key)
-    return val if val != key else c
+    return tr_opt(f"issue.code.{c}") or c
 
 
 # ---------------------------------------------------------------- загрузка
@@ -389,9 +387,8 @@ def action_hint(summary: dict) -> str:
     state = summary.get("state")
     if state == "blocked":
         cause = summary.get("cause") or "generic"
-        key = f"issue.act.{cause}"
-        val = t(key)
-        return val if val != key else t("issue.act.generic")
+        return (tr_opt(f"issue.act.{cause}")
+                or t("issue.act.generic"))
     if state == "fba_out":
         return t("issue.act.fba_out")
     if state == "warning" and extract_deadline(summary):

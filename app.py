@@ -5,6 +5,9 @@ app.py — точка входа Listing Suite. Три языка: EN / RU / UA 
 Запуск: streamlit run app.py
 """
 
+import pathlib
+import re
+
 import streamlit as st
 
 from config import APP_NAME, days_to_deadline
@@ -66,24 +69,42 @@ nav = st.navigation(
 )
 
 # ---------------------------------------------------------------- сайдбар
+@st.cache_data(ttl=300, show_spinner=False)
+def _keys_on_disk(path: str, mtime: float) -> set:
+    """Ключи словаря, лежащего на ДИСКЕ. mtime в аргументах — чтобы кэш
+    сам протух после деплоя."""
+    src = pathlib.Path(path).read_text(encoding="utf-8")
+    return set(re.findall(r'^        "([\w.]+)":', src, re.M))
+
+
 def stale_modules() -> str | None:
     """Рассинхрон страницы и модулей: свежий код, старый импортированный
     модуль. Возвращает, что именно отстало, или None.
 
     app.py перечитывается на каждом запуске, а `i18n` — нет: Streamlit
     Cloud держит его в sys.modules с прошлого деплоя. Отсюда сырые ключи
-    на экране при живых переводах в репозитории. Проверяем две вещи:
-    нет ли в словаре самой функции-детектора (значит модуль старее этой
-    правки) и не промахнулись ли уже вызовы t().
+    на экране при живых переводах в репозитории.
 
-    Заглушек здесь нет намеренно: смысл в том, чтобы рассинхрон КРИЧАЛ,
-    а не прятался.
+    Сравниваем ключи ФАЙЛА и ключи модуля В ПАМЯТИ. Это единственный
+    признак, который означает ровно рассинхрон и ничего больше.
+    По промахам t() судить нельзя: есть места, где отсутствие перевода
+    штатно (подписи болей по rule_id, коды проблем Amazon), и первая же
+    версия этой проверки объявила ребут там, где всё работало.
     """
-    probe = getattr(i18n_mod, "missing_keys", None)
-    if probe is None:
-        return "i18n"
-    miss = probe()
-    return ", ".join(miss[:6]) + ("…" if len(miss) > 6 else "") if miss else None
+    if getattr(i18n_mod, "tr_opt", None) is None:
+        return "i18n"                     # модуль старее самой проверки
+    try:
+        path = pathlib.Path(i18n_mod.__file__)
+        disk = _keys_on_disk(str(path), path.stat().st_mtime)
+    except Exception:
+        return None                       # файл не прочитался — молчим
+    loaded: set = set()
+    for d in i18n_mod.LANGS.values():
+        loaded |= set(d)
+    ahead = sorted(disk - loaded)
+    if not ahead:
+        return None
+    return ", ".join(ahead[:6]) + ("…" if len(ahead) > 6 else "")
 
 
 with st.sidebar:
