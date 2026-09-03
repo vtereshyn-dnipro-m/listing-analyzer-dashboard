@@ -162,6 +162,7 @@ def load_candidates() -> pd.DataFrame:
             LEFT JOIN product_matrix m
                    ON m.asin = d.asin AND m.marketplace = d.marketplace
             WHERE d.rule_id = 'title_over_limit'
+              AND d.resolved_at IS NULL
             ORDER BY d.asin, d.marketplace, d.created_at DESC
             """,
             get_engine(),
@@ -1309,7 +1310,7 @@ def row_html(x: dict) -> str:
     sub = []
     if sku:
         sub.append(esc(sku))
-    sub.append(asin_link(esc(asin), mp, MUTED))
+    sub.append(asin_link(esc(asin), mp))
     sub.append(esc(mp_label(mp)))
     if title:
         sub.append(t("synth.was_n", n=len(title)))

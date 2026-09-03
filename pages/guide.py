@@ -74,6 +74,7 @@ def load_flow_status() -> dict:
                 (SELECT COUNT(*) FROM (
                     SELECT DISTINCT ON (asin, marketplace, rule_id) 1
                     FROM diagnosis
+                    WHERE resolved_at IS NULL
                     ORDER BY asin, marketplace, rule_id, created_at DESC
                 ) x) AS pains
             """,

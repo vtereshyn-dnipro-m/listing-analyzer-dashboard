@@ -457,7 +457,7 @@ en → сам ключ (забытый перевод виден в UI, без �
 | `listing_snapshots` | append-only снапшоты ScrapingDog, `raw` jsonb | `matrix_setup` | dashboard, catalog, synthesis, photo, guide, serp |
 | `listing_latest` | последний снапшот по паре + `has_aplus` — признак A+ по трём снимкам (вью) | — | catalog, matrix_setup, photo |
 | `listing_analysis` | `title_len`, `title_over`, `highlights_len`, `ai_grade` | `matrix_setup`, `analyze` | `analyze` |
-| `diagnosis` | боли: `rule_id`, `severity`, `pain`, `cause`, `action`, `money_impact` | `matrix_setup` | dashboard, synthesis, guide, matrix_setup |
+| `diagnosis` | боли: `rule_id`, `severity`, `pain`, `cause`, `action`, `money_impact`, `resolved_at` | `matrix_setup` | dashboard, synthesis, guide, matrix_setup, catalog |
 | `asin_economics` | выручка/сессии/конверсия за 30 дней, шаблон доставки | ноутбук Sync Economics | `economics.py` |
 | `sqp_reports` | Brand Analytics Search Query Performance | ноутбук | `seo.py`, `search.py`, synthesis |
 | `listing_attributes` | атрибуты, browse node, generic_keyword, буллеты | ноутбук | `attributes.py` |
@@ -509,6 +509,7 @@ python tests/test_feed.py
 python tests/test_methodology_page.py
 python tests/test_i18n_sync.py
 python tests/test_tables_photo_asin.py
+python tests/test_resolved_pains.py
 ```
 
 `tests/fixture_template.py` — не тест, а общая миниатюра шаблона Amazon
@@ -633,6 +634,16 @@ pandas через движок действительно молчит (оста
 вывод, который легко потерять: переключение фильтра запросов НЕ делает,
 поэтому добавлять фильтры в ключ кэша нельзя — каждая комбинация стала бы
 отдельным запросом.
+
+`test_resolved_pains.py` — закрытая боль не имеет права вернуться.
+Боль закрывается, когда сбор её больше не находит, но запись остаётся
+в `diagnosis` с `resolved_at`. Без фильтра закрытое возвращалось
+на экран вместе с живым: товар с готовым A+ показывал «Нет A+
+контента». Дороже самой ошибки то, что деньги под риском и счётчики
+болей считаются по ТОМУ ЖЕ набору — завышенным было всё. Вторая
+половина набора про обратную сторону: пустой ответ означает «проблем
+нет», и страница рисует зелёное «✓ N товаров без болей», то есть при
+недоступной базе УТВЕРЖДАЕТ, что всё в порядке.
 
 `test_tables_photo_asin.py` — фото и кликабельный ASIN во всех списках.
 Три свойства, и каждое ломается тихо: домен (у Бельгии ссылка вела
@@ -799,15 +810,16 @@ Percutor…`. Бренд Amazon берёт из поля `brand` и показы
 гипотезе.
 
 **1. «Пусто» и «сломалось» по-прежнему неразличимы в 25 загрузчиках.**
-Выстрелило 30.08 на «Методологии»: там починено (`load_versions`
-возвращает причину, редактор и сохранение при сбое заперты).
+Выстрелило дважды и дважды починено точечно: «Методология»
+(`load_versions` возвращает причину, редактор и сохранение заперты)
+и «Диагноз» (`load_diagnosis` возвращает причину, при сбое страница
+не показывает «✓ N товаров без болей»).
 Шаблон `except Exception: return pd.DataFrame()` живёт почти в каждом
 `load_*`. Починены только два: `services/seo.py` (там цена была высшей —
 генерация уходила без must_keep) и `services/history.py`. Остальные при
-недоступной БД молча показывают «данных нет». Дороже прочих
-`dashboard.load_diagnosis`: страница рисует зелёное «✓ N здоровых
-товаров», то есть УТВЕРЖДАЕТ, что проблем нет.
-Лечится одним хелпером `safe_read(sql) -> (df, error)` плюс общий баннер.
+недоступной БД молча показывают «данных нет». Лечится одним хелпером `safe_read(sql) -> (df, error)` плюс общий
+баннер — по образцу того, как это сделано в `load_diagnosis`
+и `load_versions`.
 
 **2. ~~`st.cache_data.clear()` сносит ВСЕ кэши~~ — закрыто 30.08.**
 Заменено точечной инвалидацией через `services/cache.py`: приёмка тайтла
