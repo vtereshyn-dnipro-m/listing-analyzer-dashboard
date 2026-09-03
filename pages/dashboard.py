@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT, days_to_deadline
-from i18n import t
+from i18n import t, tr_opt
 from services.db import get_conn, get_engine
 from services.settings import get_int
 from services.economics import (
@@ -157,16 +157,14 @@ def cause_text(r: pd.Series) -> str:
     его по идентификатору правила, а старые записи показываем как есть.
     """
     rule = r.get("rule_id", "")
-    key = f"cause.{rule}"
-    val = t(key)
-    return val if val != key else str(r.get("cause") or "")
+    # tr_opt, а не t(): отсутствие перевода здесь — обычное дело, боль
+    # могла прийти по правилу, которого в словаре ещё нет
+    return tr_opt(f"cause.{rule}") or str(r.get("cause") or "")
 
 
 def action_text(r: pd.Series) -> str:
     rule = r.get("rule_id", "")
-    key = f"action.{rule}"
-    val = t(key)
-    return val if val != key else str(r.get("action") or "")
+    return tr_opt(f"action.{rule}") or str(r.get("action") or "")
 
 
 def build_card_args(r: pd.Series, product_title: str | None) -> dict:

@@ -2158,38 +2158,27 @@ def current_lang() -> str:
     return st.session_state.get("lang", DEFAULT_LANG)
 
 
-MISSING_KEY = "i18n.missing"
+def tr_opt(key: str) -> str | None:
+    """Перевод или None, БЕЗ отметки о промахе.
 
+    Есть места, где отсутствие перевода — штатный ход, а не забытая
+    строка: подписи болей подставляются по `rule_id`, коды проблем
+    Amazon приходят сотнями и переводятся выборочно. Такие места
+    спрашивают словарь и при промахе берут запасной текст.
 
-def missing_keys() -> list[str]:
-    """Ключи, которых в словаре не нашлось за эту сессию.
-
-    Нужны не ради аккуратности, а ради одного конкретного отказа.
-    Streamlit Cloud подтягивает свежие файлы, но процесс живёт дальше
-    и держит уже импортированные модули: страница получает новый код,
-    а i18n остаётся старым. Новый код зовёт ключи, которых старый
-    словарь не знает, и на экране появляются сырые `synth.cov_no_sqp`.
-    Выглядит как регрессия перевода, лечится ребутом за полминуты,
-    а ищется часами — потому что сама страница об этом молчит.
+    Раньше они спрашивали через `t()`, и каждый такой вопрос считался
+    промахом — сайдбар набирал полдюжины «пропавших» ключей и объявлял
+    рассинхрон там, где всё работало как задумано. Ложная тревога
+    в этом месте дороже молчания: следующую, настоящую, уже
+    не воспримут всерьёз.
     """
-    try:
-        return sorted(st.session_state.get(MISSING_KEY) or ())
-    except Exception:
-        return []
+    lang = current_lang()
+    return LANGS.get(lang, {}).get(key) or LANGS[DEFAULT_LANG].get(key)
 
 
 def t(key: str, **kwargs) -> str:
     """Перевод по ключу с подстановками: t('dash.header', n=187, days=16)."""
-    lang = current_lang()
-    s = LANGS.get(lang, {}).get(key) or LANGS[DEFAULT_LANG].get(key)
-    if s is None:
-        # промах запоминаем: по одному ключу на экране не поймёшь, забыт
-        # перевод или отстал весь словарь
-        try:
-            st.session_state.setdefault(MISSING_KEY, set()).add(key)
-        except Exception:
-            pass
-        s = key
+    s = tr_opt(key) or key
     return s.format(**kwargs) if kwargs else s
 
 

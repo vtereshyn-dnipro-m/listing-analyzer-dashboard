@@ -19,6 +19,14 @@ tests/test_i18n_sync.py — словарь и его рассинхрон с к�
 и приложение обязано так и сказать, а не молчать. Симптом ищется
 часами, лечится ребутом за полминуты.
 
+Судить об этом можно ТОЛЬКО по сравнению файла с модулем в памяти.
+Первая версия проверки считала промахи `t()` — и объявила ребут на
+ровном месте: в приложении есть места, где отсутствие перевода
+штатно (подписи болей по `rule_id`, коды проблем Amazon приходят
+сотнями). Такие места спрашивают словарь через `tr_opt`, и здесь
+проверяется, что от их вопросов баннер молчит: ложная тревога дороже
+молчания, после неё настоящую уже не воспримут всерьёз.
+
 Запуск (pytest не нужен):  python tests/test_i18n_sync.py
 """
 from __future__ import annotations
@@ -72,27 +80,51 @@ _ph = {k: {lg: set(re.findall(r"\{(\w+)\}", i18n.LANGS[lg].get(k, "")))
 _bad_ph = [k for k, v in _ph.items() if len({frozenset(s) for s in v.values()}) > 1]
 check(f"плейсхолдеры совпадают ({_bad_ph or '—'})", not _bad_ph)
 
-# --- промах t() запоминается: по одному сырому ключу на экране не понять,
-# забыт перевод или отстал весь словарь
+# --- штатный промах не поднимает тревогу
+import streamlit as st                                  # noqa: E402
 at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 check("на живом словаре предупреждения нет", not at.sidebar.warning)
-check("и промахов не записано", not i18n.missing_keys())
 
-at2 = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180)
-at2.session_state["i18n.missing"] = {"synth.cov_no_sqp", "export.state_here"}
-at2.run()
+check("tr_opt возвращает None вместо ключа",
+      i18n.tr_opt("issue.code.100232") is None
+      and i18n.tr_opt("nav.synthesis") is not None)
+_ = [i18n.t("cause.amazon_blocked"), i18n.t("action.lost_amazon_choice"),
+     i18n.t("issue.code.100232")]
+at1 = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+check("промахи по несуществующим ключам тревогу НЕ поднимают",
+      not at1.sidebar.warning)
+
+# --- модуль отстал от файла: вот это и есть рассинхрон
+_saved = {lg: {k: i18n.LANGS[lg][k] for k in ("synth.cov_no_sqp",
+                                              "export.state_here")}
+          for lg in i18n.LANGS}
+for _lg in i18n.LANGS:
+    for _k in ("synth.cov_no_sqp", "export.state_here"):
+        i18n.LANGS[_lg].pop(_k, None)
+st.cache_data.clear()
+at2 = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 _w = " ".join(str(w.value) for w in at2.sidebar.warning)
-check("промахнувшиеся ключи поднимают предупреждение", bool(_w))
+for _lg, _kv in _saved.items():
+    i18n.LANGS[_lg].update(_kv)
+st.cache_data.clear()
+check("ключи в файле, которых нет в модуле, поднимают тревогу", bool(_w))
 check("предупреждение называет ключи и говорит про ребут",
       "synth.cov_no_sqp" in _w and "ребут" in _w.lower())
 
-# --- модуль старее детектора: сам факт, что функции нет, — уже рассинхрон
-_probe = i18n.missing_keys
-del i18n.missing_keys
+# --- модуль старее самой проверки: тоже рассинхрон.
+# Подсовываем КОПИЮ модуля без tr_opt, а не удаляем имя в оригинале:
+# t() зовёт tr_opt по глобалям своего модуля и просто упал бы —
+# проверялось бы падение, а не детектор. Функции копии ходят
+# в оригинальные глобали и работают.
+import types                                            # noqa: E402
+_fake = types.ModuleType("i18n")
+_fake.__dict__.update(i18n.__dict__)
+del _fake.tr_opt
+sys.modules["i18n"] = _fake
 at3 = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 _w3 = " ".join(str(w.value) for w in at3.sidebar.warning)
-i18n.missing_keys = _probe
-check("старый i18n без детектора тоже виден", "i18n" in _w3)
+sys.modules["i18n"] = i18n
+check("старый i18n без tr_opt тоже виден", "i18n" in _w3)
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
