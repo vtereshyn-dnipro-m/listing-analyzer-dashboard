@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import streamlit as st
 
+from services.marketplaces import asin_link
+
 from i18n import t
 
 INK = "#1A1815"
@@ -279,8 +281,8 @@ def pain_card(severity: str, kind_label: str, asin: str, marketplace: str,
 
     fetched_part = f" · {fetched_label}" if fetched_label else ""
     head = eyebrow(
-        f'{kind_label} · <a href="https://www.amazon.{marketplace}/dp/{asin}" '
-        f'target="_blank">{asin}</a> · {marketplace}{fetched_part}'
+        f'{kind_label} · {asin_link(asin, marketplace)} · '
+        f'{marketplace}{fetched_part}'
     )
 
     html = (

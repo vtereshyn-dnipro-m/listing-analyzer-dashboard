@@ -21,6 +21,8 @@ from services import cache
 from services.db import get_conn, cfg, get_engine
 from services.settings import get_setting
 from services.ai import generate_json, task_config, no_credit_banner
+from services.marketplaces import (product_url, asin_link,
+                                   img_or_stub, ASIN_IN_URL)
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
@@ -502,8 +504,9 @@ st.markdown(f"{len(rows)} {t('catalog.products')}")
 # ---- таблица
 if mode == "table":
     tv = pd.DataFrame([{
-        "фото": (x["imgs"][0] if x["imgs"] else None),
-        "SKU": x["r"]["sku_group"], "ASIN": x["r"]["asin"],
+        "фото": img_or_stub(x["imgs"][0] if x["imgs"] else None),
+        "SKU": x["r"]["sku_group"],
+        "ASIN": product_url(x["r"]["asin"], x["r"]["marketplace"]),
         "MP": x["r"]["marketplace"],
         "фото, шт": len(x["imgs"]), "A+, модулей": len(x["apl"]),
         "грейд галереи": x["g_grade"] or "—",
@@ -511,13 +514,15 @@ if mode == "table":
         "аудит": (pd.to_datetime(x["g_at"]).strftime("%d.%m %H:%M")
                   if x["g_at"] is not None else "—"),
         "название": (x["r"]["title"] or "")[:70],
-        "ссылка": f"https://www.amazon.{x['r']['marketplace']}/dp/{x['r']['asin']}",
     } for x in rows])
     st.dataframe(
         tv,
         column_config={
             "фото": st.column_config.ImageColumn("Фото", width="small"),
-            "ссылка": st.column_config.LinkColumn("Листинг", display_text="открыть"),
+            # ASIN сам ведёт на карточку: колонка «открыть» говорила
+            # то же самое
+            "ASIN": st.column_config.LinkColumn("ASIN",
+                                                display_text=ASIN_IN_URL),
         },
         hide_index=True, width="stretch", height=520)
     st.caption(t("list.sort_hint"))
@@ -541,7 +546,7 @@ for x in rows:
             else OK_TEXT if x["g_grade"] in ("A", "B") else BORDER)
     head_line = (
         f'{sku + " · " if sku else ""}'
-        f'<a href="https://www.amazon.{mp}/dp/{asin}" target="_blank">{asin}</a>'
+        f'{asin_link(asin, mp)}'
         f' · {MP_FLAG.get(mp, "")} {mp} · {t("matrix.collected_at")} {fetched}'
     )
     st.markdown(

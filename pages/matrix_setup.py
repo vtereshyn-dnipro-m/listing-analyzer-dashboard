@@ -16,6 +16,8 @@ from i18n import t
 from services import cache
 from services.db import get_conn, add_matrix_rows, parse_asin_lines, cfg, get_engine
 from services.worklog import worklog_map, work_badges, has_work
+from services.marketplaces import (product_url, asin_link,
+                                   img_or_stub, ASIN_IN_URL)
 from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
@@ -65,7 +67,9 @@ def load_matrix() -> pd.DataFrame:
                    d.red, d.amber, d.yellow
             FROM product_matrix m
             LEFT JOIN LATERAL (
-                SELECT fetched_at, ok, title, raw->>'main_image' AS main_image
+                SELECT fetched_at, ok, title,
+                       COALESCE(raw->>'main_image',
+                                raw->'images'->>0) AS main_image
                 FROM listing_snapshots s
                 WHERE s.asin = m.asin AND s.marketplace = m.marketplace
                 ORDER BY s.fetched_at DESC LIMIT 1
@@ -546,6 +550,7 @@ else:
     # ---- табличный режим (с выбором строк)
     if view_mode == "table":
         tv = chunk.copy()
+        tv["main_image"] = tv["main_image"].map(img_or_stub)
         tv["status"] = tv.apply(
             lambda x: "✓" if x["last_ok"] is True
             else ("✗" if x["last_ok"] is False else "—"), axis=1)
@@ -555,22 +560,26 @@ else:
             lambda x: int(0 if pd.isna(x["red"]) else x["red"])
             + int(0 if pd.isna(x["amber"]) else x["amber"])
             + int(0 if pd.isna(x["yellow"]) else x["yellow"]), axis=1)
-        tv["link"] = tv.apply(
-            lambda x: f"https://www.amazon.{x['marketplace']}/dp/{x['asin']}",
-            axis=1)
+        # ASIN показываем ССЫЛКОЙ, но ключи для сбора и удаления берём
+        # не из таблицы, а по индексу строки (ниже): подменив здесь ASIN
+        # на URL и оставив прежний способ, мы бы получили кнопку
+        # «Удалить выбранные», которая молча не удаляет ничего
+        tv["asin"] = tv.apply(
+            lambda x: product_url(x["asin"], x["marketplace"]), axis=1)
         tv.insert(0, "pick", False)
 
         edited = st.data_editor(
             tv[["pick", "main_image", "sku_group", "asin", "marketplace",
-                "status", "got", "pains", "title", "link"]],
+                "status", "got", "pains", "title"]],
             column_config={
                 "pick": st.column_config.CheckboxColumn("", width="small"),
                 "main_image": st.column_config.ImageColumn(
                     t("metric.photos"), width="small"),
                 "sku_group": st.column_config.TextColumn("SKU", width="small",
                                                          disabled=True),
-                "asin": st.column_config.TextColumn("ASIN", width="small",
-                                                    disabled=True),
+                "asin": st.column_config.LinkColumn(
+                    "ASIN", display_text=ASIN_IN_URL, width="small",
+                    disabled=True),
                 "marketplace": st.column_config.TextColumn("MP", width="small",
                                                            disabled=True),
                 "status": st.column_config.TextColumn("OK", width="small",
@@ -583,21 +592,21 @@ else:
                 "title": st.column_config.TextColumn(t("card.title"),
                                                      width="large",
                                                      disabled=True),
-                "link": st.column_config.LinkColumn(t("matrix.collect"),
-                                                    display_text="→"),
             },
             hide_index=True, width="stretch", height=460,
             key=f"matrix-table-{page}",
         )
-        sel = edited[edited["pick"]]
-        sel_keys = [(r["asin"], r["marketplace"]) for _, r in sel.iterrows()]
+        # выбор — по ИНДЕКСУ строки, а не по её содержимому: в колонке
+        # asin теперь ссылка, и пара (asin, marketplace) из таблицы
+        # больше не совпадает с парой из базы
+        sel_idx = list(edited[edited["pick"]].index)
+        sel_rows = chunk.loc[sel_idx]
+        sel_keys = [(r["asin"], r["marketplace"]) for _, r in sel_rows.iterrows()]
 
         ta1, ta2, _ = st.columns([2, 2, 3])
         if ta1.button(f"{t('matrix.collect_selected')} ({len(sel_keys)})",
                       type="primary", disabled=not sel_keys, key="tbl-collect"):
-            mask = chunk.apply(
-                lambda x: (x["asin"], x["marketplace"]) in sel_keys, axis=1)
-            collect_rows(chunk[mask])
+            collect_rows(sel_rows)
         if ta2.button(f"{t('matrix.delete_selected')} ({len(sel_keys)})",
                       disabled=not sel_keys, key="tbl-delete"):
             try:
@@ -656,16 +665,16 @@ else:
             f"{sku_part}"
             f"<span style='font-family:{MONO};font-weight:400;color:{MUTED};"
             f"font-size:12px;'>"
-            f"<a href='https://www.amazon.{mp}/dp/{asin}' target='_blank' "
-            f"style='color:{MUTED};text-decoration:none;"
-            f"border-bottom:1px dotted {MUTED};'>{asin}</a> · {mp}</span>"
+            f"{asin_link(asin, mp, MUTED)} · {mp}</span>"
         )
         badges = work_badges(WORK.get((asin, mp)))
-        img = None if pd.isna(r.get("main_image")) else r.get("main_image")
+        # заглушка вместо пустоты: без неё строки без фото сдвигались
+        # влево и список выглядел рваным
         thumb_html = (
-            f"<img src='{img}' style='width:40px;height:40px;object-fit:contain;"
+            f"<img src='{img_or_stub(r.get('main_image'))}' "
+            f"style='width:40px;height:40px;object-fit:contain;"
             f"background:#fff;border:1px solid {BORDER};border-radius:8px;"
-            f"margin-right:12px;vertical-align:middle;'>" if img else ""
+            f"margin-right:12px;vertical-align:middle;'>"
         )
         c_check, c_card, c_badge, c_btn = st.columns([0.4, 7, 1, 1.3])
         if c_check.checkbox("", key=f"sel-{row_key}", label_visibility="collapsed"):

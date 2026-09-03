@@ -34,6 +34,8 @@ from services.issues import (
     issues_map, asin_index, family_map, extract_deadline, action_hint,
     MONITORED, cause_label, code_label, fmt_issue_date,
 )
+from services.marketplaces import (product_url, asin_link,
+                                   img_or_stub, ASIN_IN_URL)
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
@@ -512,8 +514,10 @@ chunk = rows[(page - 1) * PAGE_SIZE: page * PAGE_SIZE]
 # ---- таблица
 if mode == "table":
     tv = exp.copy()
-    tv["img"] = [x["mx"]["main_img"] for x in rows]
-    tv["link"] = [f"https://www.amazon.{x['r']['marketplace']}/dp/{x['r']['asin']}"
+    tv["img"] = [img_or_stub(x["mx"]["main_img"]) for x in rows]
+    # ASIN сам ведёт на карточку Amazon — отдельная колонка-стрелка
+    # говорила то же самое и занимала место
+    tv["asin"] = [product_url(x["r"]["asin"], x["r"]["marketplace"])
                   for x in rows]
     tv["bsr_cat"] = [x["mx"]["bsr"][1] if x["mx"]["bsr"] else "" for x in rows]
     tv = tv.rename(columns={"title_len": "len", "in_stock": "stock",
@@ -522,14 +526,15 @@ if mode == "table":
     cols = [c for c in ["img", "sku", "asin", "mp", "who", "health", "len",
                         "photos", "video", "aplus", "reviews", "rating",
                         "price", "bsr", "bsr_cat", "stock", "rev", "sess",
-                        "ship", "name", "link"] if c in tv.columns]
+                        "ship", "name"] if c in tv.columns]
     st.dataframe(
         tv[cols],
         column_config={
             "img": st.column_config.ImageColumn(t("metric.photos"),
                                                 width="small"),
             "sku": st.column_config.TextColumn("SKU", width="small"),
-            "asin": st.column_config.TextColumn("ASIN", width="small"),
+            "asin": st.column_config.LinkColumn(
+                "ASIN", display_text=ASIN_IN_URL, width="small"),
             "mp": st.column_config.TextColumn("MP", width="small"),
             "who": st.column_config.TextColumn(t("common.our"), width="small"),
             "health": st.column_config.TextColumn(t("catalog.h_ok"),
@@ -559,8 +564,6 @@ if mode == "table":
             "ship": st.column_config.TextColumn(t("metric.shipping"),
                                                 width="medium"),
             "name": st.column_config.TextColumn(t("card.title"), width="large"),
-            "link": st.column_config.LinkColumn(t("matrix.collect"),
-                                                display_text="→"),
         },
         hide_index=True, width="stretch", height=560,
     )
@@ -575,7 +578,7 @@ def issue_details(entries: list, group_sku: str = "") -> None:
     отличается от группового — чинить в Seller Central придётся по нему."""
     for m, s in entries:
         asin_link = (
-            f'<a href="https://www.amazon.{m}/dp/{s["asin"]}" target="_blank" '
+            f'<a href="{product_url(s["asin"], m)}" target="_blank" '
             f'style="font-family:{MONO};color:{INK};">{s["asin"]}</a>'
         ) if s.get("asin") else ""
         if s["state"] == "blocked":
@@ -820,8 +823,7 @@ for x in chunk:
         f'border-radius:10px;">'
     ) if mx["main_img"] else ""
     head_html = eyebrow(
-        f'{head}<a href="https://www.amazon.{mp}/dp/{asin}" target="_blank" '
-        f'style="color:{MUTED};">{asin}</a> · {mp} · {who_lbl}'
+        f'{head}{asin_link(asin, mp, MUTED)} · {mp} · {who_lbl}'
     )
     badges_html = (f'<div style="margin-top:6px;">{_badges}</div>'
                    if _badges else "")

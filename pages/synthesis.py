@@ -53,6 +53,8 @@ from services.history import (
     load_history, summary as history_summary, stamp as history_stamp,
     load_error as history_error,
 )
+from services.marketplaces import (product_url, asin_link,
+                                   img_or_stub, ASIN_IN_URL)
 from components.ui import inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
@@ -149,7 +151,9 @@ def load_candidates() -> pd.DataFrame:
                    s.main_image, m.sku_group
             FROM diagnosis d
             JOIN LATERAL (
-                SELECT title, fetched_at, raw->>'main_image' AS main_image
+                SELECT title, fetched_at,
+                       COALESCE(raw->>'main_image',
+                                raw->'images'->>0) AS main_image
                 FROM listing_snapshots s
                 WHERE s.asin = d.asin AND s.marketplace = d.marketplace
                   AND s.ok = TRUE AND s.title <> ''
@@ -839,7 +843,9 @@ def load_all_products() -> pd.DataFrame:
                    s.title, s.fetched_at, s.main_image
             FROM product_matrix m
             LEFT JOIN LATERAL (
-                SELECT title, fetched_at, raw->>'main_image' AS main_image
+                SELECT title, fetched_at,
+                       COALESCE(raw->>'main_image',
+                                raw->'images'->>0) AS main_image
                 FROM listing_snapshots s
                 WHERE s.asin = m.asin AND s.marketplace = m.marketplace
                   AND s.ok = TRUE AND s.title <> ''
@@ -1303,9 +1309,7 @@ def row_html(x: dict) -> str:
     sub = []
     if sku:
         sub.append(esc(sku))
-    sub.append(f'<a href="https://www.amazon.{mp}/dp/{asin}" target="_blank" '
-               f'style="color:{MUTED};text-decoration:none;'
-               f'border-bottom:1px dotted #C9C4B8;">{esc(asin)}</a>')
+    sub.append(asin_link(esc(asin), mp, MUTED))
     sub.append(esc(mp_label(mp)))
     if title:
         sub.append(t("synth.was_n", n=len(title)))
@@ -1330,10 +1334,18 @@ def row_html(x: dict) -> str:
              (counter_html(len(res["text"]), TITLE_LIMIT)
               if res and res["text"] else "")]
     edge = ACCENT if x["needs"] else "#E7E4DD"
+    # фото слева от текста: по картинке товар узнают быстрее, чем по
+    # ASIN. Заглушка вместо пустоты — иначе строки без фото сдвигаются
+    # относительно соседних и список выглядит рваным
+    photo = (f'<img src="{img_or_stub(r.get("main_image"))}" '
+             f'style="width:38px;height:38px;object-fit:contain;'
+             f'background:#fff;border:1px solid #E7E4DD;border-radius:7px;'
+             f'flex:0 0 38px;">')
     return (
         f'<div class="ls-card" style="background:#fff;border:1px solid #E7E4DD;'
         f'border-left:3px solid {edge};border-radius:0 10px 10px 0;'
-        f'padding:8px 12px;display:flex;gap:12px;align-items:center;">'
+        f'padding:8px 12px;display:flex;gap:10px;align-items:center;">'
+        f'{photo}'
         f'<div style="flex:1;min-width:0;">'
         f'<div style="font-size:13px;font-weight:600;color:{INK};'
         f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
@@ -2520,10 +2532,9 @@ with feed:
         # имена колонок технические, подписи — в column_config: иначе при
         # переводе возникают дубли имён и pyarrow роняет страницу
         tv = pd.DataFrame([{
-            "img": (None if pd.isna(z["r"].get("main_image"))
-                    else z["r"].get("main_image")),
+            "img": img_or_stub(z["r"].get("main_image")),
             "sku": z["r"]["sku_group"],
-            "asin": z["r"]["asin"],
+            "asin": product_url(z["r"]["asin"], z["r"]["marketplace"]),
             "mp": z["r"]["marketplace"],
             "len": len(text_of(z["r"].get("title"))),
             "over": z["over"],
@@ -2534,8 +2545,6 @@ with feed:
                     if z["draft"].get("coverage") is not None
                     and not pd.isna(z["draft"].get("coverage")) else None),
             "title": text_of(z["r"].get("title"))[:70],
-            "link": f"https://www.amazon.{z['r']['marketplace']}"
-                    f"/dp/{z['r']['asin']}",
         } for z in view])
         st.dataframe(
             tv,
@@ -2543,7 +2552,8 @@ with feed:
                 "img": st.column_config.ImageColumn(
                     t("metric.photos"), width="small"),
                 "sku": st.column_config.TextColumn("SKU", width="small"),
-                "asin": st.column_config.TextColumn("ASIN", width="small"),
+                "asin": st.column_config.LinkColumn(
+                    "ASIN", display_text=ASIN_IN_URL, width="small"),
                 "mp": st.column_config.TextColumn("MP", width="small"),
                 "len": st.column_config.NumberColumn(
                     t("metric.title"), width="small"),
@@ -2559,8 +2569,6 @@ with feed:
                     "Coverage, %", format="%.0f", width="small"),
                 "title": st.column_config.TextColumn(
                     t("card.title"), width="large"),
-                "link": st.column_config.LinkColumn(
-                    t("matrix.collect"), display_text="→"),
             },
             hide_index=True, width="stretch", height=520)
         st.caption(t("list.sort_hint"))
