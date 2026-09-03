@@ -21,6 +21,7 @@ from services.economics import (
     econ_map, money_at_risk, fmt_money, fmt_conversion,
 )
 from services.issues import build_pains as issue_pains
+from services.marketplaces import product_url, img_or_stub, ASIN_IN_URL
 from components.ui import (
     inject_fonts, verdict, limit_ruler_html, pain_card, eyebrow,
 )
@@ -79,7 +80,8 @@ def load_titles() -> pd.DataFrame:
             """
             SELECT DISTINCT ON (s.asin, s.marketplace)
                    s.asin, s.marketplace, s.title, s.fetched_at,
-                   s.raw->>'main_image' AS main_image
+                   COALESCE(s.raw->>'main_image',
+                            s.raw->'images'->>0) AS main_image
             FROM listing_snapshots s
             WHERE s.ok = TRUE AND s.title <> ''
             ORDER BY s.asin, s.marketplace, s.fetched_at DESC
@@ -462,19 +464,32 @@ if mode == "table":
         lambda r: t(f"pain.{r['rule_id']}") if t(f"pain.{r['rule_id']}")
         != f"pain.{r['rule_id']}" else r["pain"], axis=1)
     tbl["action"] = tbl.apply(action_text, axis=1)
-    tbl["link"] = tbl.apply(
-        lambda r: f"https://www.amazon.{r['marketplace']}/dp/{r['asin']}", axis=1)
     tbl["risk"] = tbl["_money"].round(0)
     tbl["rev"] = tbl.apply(
         lambda r: (ECON.get((r["asin"], r["marketplace"])) or {}).get("revenue_30d"),
         axis=1)
-
+    # фото слева от названия: по картинке товар узнают быстрее, чем
+    # по ASIN, а место под неё занято всегда — иначе строки без фото
+    # разъезжаются по высоте
+    tbl["img"] = tbl.apply(
+        lambda r: img_or_stub(image_map.get((r["asin"], r["marketplace"]))),
+        axis=1)
+    # подмена ASIN на ссылку — ПОСЛЕДНЕЙ: всё, что ищет по ключу
+    # (название, экономика, фото), должно успеть отработать по самому
+    # ASIN, иначе колонки молча опустеют
+    tbl["asin"] = tbl.apply(
+        lambda r: product_url(r["asin"], r["marketplace"]), axis=1)
     st.dataframe(
-        tbl[["prod", "asin", "marketplace", "name", "cnt", "sev", "_group",
-             "risk", "rev", "pain", "action", "link"]],
+        tbl[["img", "prod", "asin", "marketplace", "name", "cnt", "sev",
+             "_group", "risk", "rev", "pain", "action"]],
         column_config={
+            "img": st.column_config.ImageColumn(t("metric.photos"),
+                                                width="small"),
             "prod": st.column_config.TextColumn("SKU", width="small"),
-            "asin": st.column_config.TextColumn("ASIN", width="small"),
+            # ASIN сам ведёт на карточку Amazon: отдельная колонка-стрелка
+            # занимала место и говорила то же самое
+            "asin": st.column_config.LinkColumn(
+                "ASIN", display_text=ASIN_IN_URL, width="small"),
             "marketplace": st.column_config.TextColumn("MP", width="small"),
             "name": st.column_config.TextColumn(t("card.title"), width="medium"),
             "cnt": st.column_config.NumberColumn(t("card.pain"), width="small"),
@@ -488,8 +503,6 @@ if mode == "table":
             "pain": st.column_config.TextColumn(t("card.pain"), width="large"),
             "action": st.column_config.TextColumn(t("pain.fix_now"),
                                                   width="medium"),
-            "link": st.column_config.LinkColumn(t("matrix.collect"),
-                                                display_text="→"),
         },
         hide_index=True, width="stretch", height=560,
     )
