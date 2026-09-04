@@ -83,6 +83,7 @@ def load_matrix() -> pd.DataFrame:
                     SELECT DISTINCT ON (rule_id) severity
                     FROM diagnosis dd
                     WHERE dd.asin = m.asin AND dd.marketplace = m.marketplace
+                      AND dd.resolved_at IS NULL
                     ORDER BY rule_id, created_at DESC
                 ) latest
             ) d ON TRUE
@@ -665,7 +666,7 @@ else:
             f"{sku_part}"
             f"<span style='font-family:{MONO};font-weight:400;color:{MUTED};"
             f"font-size:12px;'>"
-            f"{asin_link(asin, mp, MUTED)} · {mp}</span>"
+            f"{asin_link(asin, mp)} · {mp}</span>"
         )
         badges = work_badges(WORK.get((asin, mp)))
         # заглушка вместо пустоты: без неё строки без фото сдвигались

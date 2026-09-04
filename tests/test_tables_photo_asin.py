@@ -118,6 +118,21 @@ def col(df, *names):
     return []
 
 
+# --- ссылка должна быть ВИДНА ссылкой.
+# ASIN и раньше вёл на карточку, но был серым с еле заметным пунктиром —
+# по нему просто не кликали, потому что он выглядел обычным текстом.
+_link = mk.asin_link("B0AAA", "es")
+check("ASIN покрашен и подчёркнут, а не слит с текстом",
+      mk.LINK_COLOR in _link and "text-decoration:underline" in _link)
+check("ссылка выделена весом", "font-weight:600" in _link)
+check("цвет ссылки не акцентный: оранжевый в проекте означает боль",
+      "#E8590C" not in _link and "#57534A" not in _link)
+_pages = " ".join((ROOT / f"pages/{p}.py").read_text(encoding="utf-8")
+                  for p in ("catalog", "matrix_setup", "synthesis"))
+check("страницы больше не перекрашивают ASIN в серый",
+      "asin_link(asin, mp, MUTED)" not in _pages
+      and "asin_link(esc(asin), mp, MUTED)" not in _pages)
+
 # --- домены: главная находка
 check("Бельгия ведёт на amazon.com.be, а не на несуществующий amazon.be",
       mk.product_url("B0BBB", "be") == "https://www.amazon.com.be/dp/B0BBB")

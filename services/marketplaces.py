@@ -61,15 +61,29 @@ def product_url(asin: str | None, marketplace: str | None) -> str:
     return f"https://www.amazon.{domain(marketplace)}/dp/{a}"
 
 
+# Цвет ссылки. Не акцентный оранжевый: он в этом проекте означает боль,
+# и ASIN, покрашенный им, читался бы как проблема. Синий здесь работает
+# ровно потому, что больше нигде не встречается, — «это ссылка» видно
+# без наведения.
+LINK_COLOR = "#1B5FA8"
+
+
 def asin_link(asin: str | None, marketplace: str | None,
-              color: str = "#57534A") -> str:
-    """ASIN ссылкой для HTML-разметки карточек. Одной строкой — правило 1."""
+              color: str = LINK_COLOR) -> str:
+    """ASIN ссылкой для HTML-разметки карточек. Одной строкой — правило 1.
+
+    Ссылка помечена цветом и подчёркиванием: серый ASIN с еле заметным
+    пунктиром выглядел обычным текстом, и по нему не кликали, хотя он
+    и раньше вёл на карточку Amazon.
+    """
     a = str(asin or "").strip()
     url = product_url(a, marketplace)
     if not url:
         return a
     return (f'<a href="{url}" target="_blank" style="color:{color};'
-            f'text-decoration:none;border-bottom:1px dotted #C9C4B8;">{a}</a>')
+            f'font-weight:600;text-decoration:underline;'
+            f'text-decoration-color:#9DBEDF;text-underline-offset:2px;">'
+            f'{a}</a>')
 
 
 def img_or_stub(url: str | None) -> str:

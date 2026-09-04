@@ -261,7 +261,8 @@ def load_rule_pairs() -> dict:
     """(asin, marketplace) -> множество rule_id из diagnosis."""
     try:
         d = pd.read_sql(
-            "SELECT DISTINCT asin, marketplace, rule_id FROM diagnosis", get_engine())
+            "SELECT DISTINCT asin, marketplace, rule_id FROM diagnosis "
+            "WHERE resolved_at IS NULL", get_engine())
     except Exception:
         return {}
     out: dict = {}
@@ -286,6 +287,7 @@ def load_lost_choice() -> dict:
                    asin, marketplace, created_at
             FROM diagnosis
             WHERE rule_id = 'lost_amazon_choice'
+              AND resolved_at IS NULL
             ORDER BY asin, marketplace, created_at DESC
             """, get_engine())
     except Exception:
@@ -823,7 +825,7 @@ for x in chunk:
         f'border-radius:10px;">'
     ) if mx["main_img"] else ""
     head_html = eyebrow(
-        f'{head}{asin_link(asin, mp, MUTED)} · {mp} · {who_lbl}'
+        f'{head}{asin_link(asin, mp)} · {mp} · {who_lbl}'
     )
     badges_html = (f'<div style="margin-top:6px;">{_badges}</div>'
                    if _badges else "")

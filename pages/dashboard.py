@@ -58,19 +58,34 @@ st.title(t("nav.dashboard"))
 
 # ---------------------------------------------------------------- данные
 @st.cache_data(ttl=300)
-def load_diagnosis() -> pd.DataFrame:
+def load_diagnosis() -> tuple[pd.DataFrame, str | None]:
+    """Открытые боли и ПРИЧИНА, если прочитать не удалось.
+
+    `resolved_at IS NULL` — не украшение: боль закрывается, когда сбор
+    её больше не находит, но запись остаётся в таблице. Без фильтра
+    закрытое возвращалось на экран вместе с живым: товар с готовым A+
+    показывал «Нет A+ контента», а деньги под риском и счётчики болей
+    считаются по этому же набору — значит завышались все числа страницы.
+
+    Причина сбоя возвращается отдельно намеренно. Пустая таблица здесь
+    означает «проблем нет», и страница рисует зелёное «✓ N здоровых
+    товаров» — то есть при недоступной базе УТВЕРЖДАЕТ, что всё в
+    порядке. Это самое дорогое молчание в приложении: оно не просто
+    скрывает сбой, а говорит противоположное правде.
+    """
     try:
         df = pd.read_sql(
             """
             SELECT DISTINCT ON (d.asin, d.marketplace, d.rule_id) d.*
             FROM diagnosis d
+            WHERE d.resolved_at IS NULL
             ORDER BY d.asin, d.marketplace, d.rule_id, d.created_at DESC
             """,
             get_engine(),
         )
-        return df
-    except Exception:
-        return pd.DataFrame()
+        return df, None
+    except Exception as e:
+        return pd.DataFrame(), f"{type(e).__name__}: {e}"
 
 
 @st.cache_data(ttl=300)
@@ -108,7 +123,14 @@ def load_scope() -> tuple[int, int]:
 
 @st.cache_data(ttl=300)
 def load_delta() -> tuple[int, int]:
-    """Новых / закрытых болей между последним и предыдущим прогоном."""
+    """Новых / закрытых болей между последним и предыдущим прогоном.
+
+    Здесь `resolved_at IS NULL` НЕ ставится, и это осознанно: запрос
+    сравнивает два прогона по факту появления записи. Отфильтруй мы
+    закрытые — они исчезли бы и из прошлого прогона, а «закрыто N»
+    всегда показывало бы ноль. Дельте нужна история, остальным местам —
+    текущее состояние.
+    """
     try:
         df = pd.read_sql(
             """
@@ -289,7 +311,11 @@ def render_pain(r: pd.Series, title_map: dict) -> None:
 
 
 # ---------------------------------------------------------------- страница
-db_diag = load_diagnosis()
+db_diag, diag_error = load_diagnosis()
+if diag_error:
+    # «болей нет» и «не смогли прочитать» — разные вещи, и вторую
+    # нельзя показывать зелёным
+    st.error("⚠ " + t("dash.load_failed", e=diag_error))
 # боли Amazon Issues считаются на лету из реплики (свежее, чем автосбор:
 # сбор в 13:00, реплика в 14:00) и в diagnosis не пишутся
 issue_diag = issue_pains()
@@ -582,7 +608,10 @@ if total_products:
 
     st.divider()
     parts = []
-    if healthy:
+    # при сбое чтения диагноза здоровье не считается вовсе: «✓ N
+    # здоровых» из непрочитанных болей — утверждение, которого мы
+    # не знаем
+    if healthy and not diag_error:
         parts.append(f"<span style='color:#2F6B3A;'>✓ {healthy} "
                      f"{t('dash.healthy_products')}</span>")
     if not_collected:
