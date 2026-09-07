@@ -23,10 +23,12 @@ services/localization.py — переводы текстовых слоёв ма
 """
 from __future__ import annotations
 
+import datetime as dt
+
 import pandas as pd
 import streamlit as st
 
-from services.db import get_engine
+from services.db import get_conn, get_engine
 
 # Порядок языков на экране: источник первым, дальше рынки.
 SOURCE_LANG = "en"
@@ -97,6 +99,98 @@ def summarize(products: pd.DataFrame) -> dict:
     for _, r in products.iterrows():
         counts[product_state(set(r.get("langs_done") or ()))] += 1
     return {"total": len(products), **counts}
+
+
+# Суточный кеш. Figma отвечает 429 и просит ждать сотни секунд на каждую
+# попытку, а структура файла меняется редко — раз в сутки достаточно.
+# Метка последнего чтения живёт в самих данных (synced_at), а не в кеше
+# процесса: процесс на Streamlit Cloud перезапускается, и кеш в памяти
+# заставил бы читать Figma заново после каждого перезапуска.
+SYNC_EVERY_HOURS = 24
+
+
+def sync_age_hours(products: pd.DataFrame) -> float | None:
+    """Сколько часов назад читали Figma. None — не читали никогда."""
+    if products is None or products.empty or "synced_at" not in products:
+        return None
+    ts = pd.to_datetime(products["synced_at"], errors="coerce", utc=True).max()
+    if pd.isna(ts):
+        return None
+    now = pd.Timestamp.now(tz="UTC")
+    return max(0.0, (now - ts).total_seconds() / 3600.0)
+
+
+def needs_sync(products: pd.DataFrame) -> bool:
+    age = sync_age_hours(products)
+    return age is None or age >= SYNC_EVERY_HOURS
+
+
+# ---------------------------------------------------------------- запись
+
+def save_parsed(parsed: dict) -> tuple[int, int, str | None]:
+    """Разобранный документ → таблицы. (товаров, слоёв, ошибка).
+
+    Английские секции дают исходный текст и ПРЕДЕЛ символов, секции
+    языковых страниц — уже существующие переводы. Один и тот же товар
+    приходит с разных страниц, поэтому запись идёт по паре
+    (файл, секция) с обновлением, а не вставкой заново: иначе каждое
+    чтение плодило бы дубли товаров.
+    """
+    products = parsed.get("products") or []
+    if not products:
+        return 0, 0, None
+    n_p = n_l = 0
+    try:
+        conn = get_conn()
+        with conn, conn.cursor() as cur:
+            for p in products:
+                cur.execute(
+                    """
+                    INSERT INTO figma_products
+                        (asin, sku, name, section_type, page_name,
+                         figma_file_key, figma_node_id, layers_count, synced_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now())
+                    ON CONFLICT (figma_file_key, figma_node_id) DO UPDATE
+                        SET name = EXCLUDED.name,
+                            sku = EXCLUDED.sku,
+                            layers_count = EXCLUDED.layers_count,
+                            synced_at = now()
+                    RETURNING id
+                    """,
+                    (p["asin"], p.get("sku"), p.get("name"),
+                     p.get("section_type"), p.get("page_name"),
+                     p.get("file_key") or "", p["figma_node_id"],
+                     len(p.get("layers") or [])))
+                pid = cur.fetchone()[0]
+                n_p += 1
+                for lr in p.get("layers") or []:
+                    # текст со страницы-языка — это перевод, с английской —
+                    # исходник; предел символов берётся у обоих, потому
+                    # что ширина слоя своя на каждой странице
+                    is_source = p.get("lang") == SOURCE_LANG
+                    cur.execute(
+                        """
+                        INSERT INTO figma_layers
+                            (product_id, layer_id, frame_name, lang,
+                             source_text, translated_text, char_limit,
+                             status, updated_at)
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now())
+                        ON CONFLICT (layer_id, lang) DO UPDATE
+                            SET source_text = EXCLUDED.source_text,
+                                char_limit = EXCLUDED.char_limit,
+                                frame_name = EXCLUDED.frame_name,
+                                updated_at = now()
+                        """,
+                        (pid, lr["layer_id"], lr.get("frame_name"),
+                         p.get("lang"), lr["source_text"],
+                         None if is_source else lr["source_text"],
+                         lr.get("char_limit"),
+                         ST_NONE if is_source else ST_APPLIED))
+                    n_l += 1
+        conn.close()
+        return n_p, n_l, None
+    except Exception as e:
+        return n_p, n_l, f"{type(e).__name__}: {e}"
 
 
 # ---------------------------------------------------------------- чтение
