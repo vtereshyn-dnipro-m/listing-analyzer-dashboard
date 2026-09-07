@@ -78,6 +78,7 @@ LANGS: dict[str, dict[str, str]] = {
         "sidebar.mobile": "Mobile view",
         "sidebar.mobile_help": "Preview how the page looks on a phone",
         "common.no_data": "No data yet — collect products in the Product matrix",
+        "common.read_failed": "Could not read from the database: {e}. This is a read failure, not empty data — nothing here needs to be entered again.",
         "common.our": "ours",
         "common.competitor": "competitor",
         "dash.header": "{n} titles will be rewritten by Amazon in {days} days",
@@ -281,6 +282,7 @@ LANGS: dict[str, dict[str, str]] = {
         # --- Фото (photo.*)
         "photo.title": "Photos & A+",
         "photo.caption": "Visual audit by methodology. The grade is computed by code, AI only looks.",
+        "photo.audits_read_failed": "Could not read saved audits: {e}. Products below will look «not audited» — do not re-run the model on them until the read succeeds.",
         "photo.product": "Product",
         "photo.tab_gallery": "Gallery",
         "photo.tab_aplus": "A+ content",
@@ -828,6 +830,7 @@ LANGS: dict[str, dict[str, str]] = {
         "sidebar.mobile": "Мобильный вид",
         "sidebar.mobile_help": "Посмотреть, как страница выглядит на телефоне",
         "common.no_data": "Данных ещё нет — соберите товары в Матрице",
+        "common.read_failed": "Не удалось прочитать из базы: {e}. Это сбой чтения, а не пустые данные — заводить здесь ничего заново не нужно.",
         "common.our": "наш",
         "common.competitor": "конкурент",
         "dash.header": "{n} тайтлов перепишет Amazon через {days} дней",
@@ -1031,6 +1034,7 @@ LANGS: dict[str, dict[str, str]] = {
         # --- Фото (photo.*)
         "photo.title": "Фото и A+",
         "photo.caption": "Аудит визуала по методологиям. Грейд считает код, ИИ только смотрит.",
+        "photo.audits_read_failed": "Не удалось прочитать сохранённые аудиты: {e}. Товары ниже будут выглядеть как «без аудита» — не запускайте модель повторно, пока чтение не пройдёт.",
         "photo.product": "Товар",
         "photo.tab_gallery": "Галерея",
         "photo.tab_aplus": "A+ контент",
@@ -1578,6 +1582,7 @@ LANGS: dict[str, dict[str, str]] = {
         "sidebar.mobile": "Мобільний вигляд",
         "sidebar.mobile_help": "Подивитися, як сторінка виглядає на телефоні",
         "common.no_data": "Даних ще немає — зберіть товари в Матриці",
+        "common.read_failed": "Не вдалося прочитати з бази: {e}. Це збій читання, а не порожні дані — заводити тут нічого заново не потрібно.",
         "common.our": "наш",
         "common.competitor": "конкурент",
         "dash.header": "{n} тайтлів перепише Amazon через {days} днів",
@@ -1781,6 +1786,7 @@ LANGS: dict[str, dict[str, str]] = {
         # --- Фото (photo.*)
         "photo.title": "Фото і A+",
         "photo.caption": "Аудит візуалу за методологіями. Грейд рахує код, ШІ лише дивиться.",
+        "photo.audits_read_failed": "Не вдалося прочитати збережені аудити: {e}. Товари нижче виглядатимуть як «без аудиту» — не запускайте модель повторно, доки читання не пройде.",
         "photo.product": "Товар",
         "photo.tab_gallery": "Галерея",
         "photo.tab_aplus": "A+ контент",

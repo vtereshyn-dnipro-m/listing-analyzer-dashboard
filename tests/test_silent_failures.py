@@ -138,6 +138,84 @@ out2 = syn.batch_generate(ITEMS, "методика", 7)
 check("а при честном отсутствии SQP генерация идёт", len(GENERATED) == 1)
 check("и товар сохранён", out2["done"] == 1)
 
+# ------------------------------------------------- «пусто» против «сломалось»
+# Пустой ответ на этих страницах означает «товаров ещё нет», и человеку
+# советуют собрать их в Матрице. При СБОЕ чтения тот же совет означает
+# «заведи заново почти тысячу пар, которые в базе уже лежат» — поэтому
+# причина обязана доходить до экрана, а совет собирать — не обязан.
+import services.db as sdb                                 # noqa: E402
+
+pd.read_sql = lambda *a, **k: pd.DataFrame({"asin": ["B0AAA"]})
+_df, _err = sdb.safe_read("SELECT 1")
+check("safe_read при успехе не выдумывает ошибку",
+      _err is None and len(_df) == 1)
+
+pd.read_sql = lambda *a, **k: pd.DataFrame()
+_df, _err = sdb.safe_read("SELECT 1")
+check("честно пустой ответ — без причины", _df.empty and _err is None)
+
+pd.read_sql = sqp_fails
+_df, _err = sdb.safe_read("SELECT 1")
+check("сбой возвращает причину, а не пустоту молча",
+      _df.empty and "connection refused" in (_err or ""))
+
+
+def page(path: str):
+    st.cache_data.clear()
+    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+    at.switch_page(path).run()
+    return at
+
+
+def texts(at) -> str:
+    """Всё, что страница сказала человеку, одной строкой."""
+    parts = [str(e.value) for e in at.error]
+    parts += [str(i.value) for i in at.info]
+    parts += [str(c.value) for c in at.caption]
+    parts += [str(m.value) for m in at.markdown]
+    parts += [str(w.value) for w in at.warning]
+    return " ".join(parts)
+
+
+import streamlit as st                                    # noqa: E402
+from streamlit.testing.v1 import AppTest                  # noqa: E402
+
+pd.read_sql = sqp_fails
+for _name, _path in (("Каталог", "pages/catalog.py"),
+                     ("Матрица", "pages/matrix_setup.py"),
+                     ("Фото", "pages/photo.py")):
+    _at = page(_path)
+    _said = texts(_at)
+    check(f"{_name}: страница не падает при недоступной базе",
+          not _at.exception)
+    check(f"{_name}: сбой чтения назван сбоем",
+          "не удалось прочитать" in _said.lower())
+    check(f"{_name}: и НЕ зовёт заводить товары заново",
+          "оберите товары" not in _said)
+
+# Отдельно — аудиты фото: они читаются вторым запросом, и их сбой
+# выглядит как «без аудита», то есть зовёт заплатить vision-модели
+# за уже сделанную работу.
+CANDS = pd.DataFrame([{"asin": "B0AAA", "marketplace": "es",
+                       "title": "Taladro", "raw": {}, "fetched_at": None,
+                       "sku_group": "17557000", "is_competitor": False,
+                       "has_aplus": True}])
+
+
+def only_audits_fail(sql, *a, **k):
+    if "photo_analysis" in str(sql):
+        raise RuntimeError("connection refused")
+    return CANDS.copy()
+
+
+pd.read_sql = only_audits_fail
+at_photo = page("pages/photo.py")
+_said = texts(at_photo)
+check("Фото: сбой чтения аудитов назван отдельно",
+      "сохранённые аудиты" in _said)
+check("Фото: и сказано не запускать модель повторно",
+      "повторно" in _said)
+
 # ---------------------------------------------------------------- мёртвый код
 db_src = (ROOT / "services/db.py").read_text(encoding="utf-8")
 check("ensure_all_schemas удалён", "def ensure_all_schemas" not in db_src)
