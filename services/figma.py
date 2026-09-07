@@ -63,6 +63,16 @@ AVG_CHAR_RATIO = 0.52
 # Межстрочный интервал по умолчанию, если Figma его не отдала.
 DEFAULT_LINE_RATIO = 1.2
 
+# Retry-After Figma отдаёт то в секундах, то в МИЛЛИСЕКУНДАХ — заголовок
+# один, единицы разные, и различить их можно только по величине. 306325
+# это не 85 часов, а пять минут. Ошибка тут не косметическая: «ждать
+# 85 часов» человек читает как «сегодня уже никак» и уходит, хотя
+# перечитать макеты можно после чашки кофе.
+#
+# Порог — сутки: столько Figma ждать не просит никогда, а вот 86400
+# миллисекунд (полторы минуты) просит регулярно.
+RETRY_MS_OVER = 86_400
+
 
 class FigmaError(Exception):
     """Отказ Figma, о котором нужно сказать человеку дословно."""
@@ -70,6 +80,24 @@ class FigmaError(Exception):
     def __init__(self, message: str, retry_after: int | None = None):
         super().__init__(message)
         self.retry_after = retry_after
+
+
+def retry_seconds(raw) -> int | None:
+    """Сколько ждать по Retry-After — в секундах, каким бы ни пришёл ответ.
+
+    См. RETRY_MS_OVER: единицы заголовка непостоянны. Нечисловое значение
+    (HTTP-дата, пустая строка) даёт None — «сколько ждать, неизвестно»
+    честнее выдуманного числа.
+    """
+    try:
+        val = float(raw)
+    except (TypeError, ValueError):
+        return None
+    if val < 0:
+        return None
+    if val > RETRY_MS_OVER:
+        val /= 1000.0
+    return int(val)
 
 
 def token() -> str:
@@ -104,11 +132,7 @@ def fetch_document(key: str | None = None) -> dict:
         raise FigmaError(f"{type(e).__name__}: {e}") from e
 
     if r.status_code == 429:
-        wait = r.headers.get("Retry-After") or ""
-        try:
-            secs = int(float(wait))
-        except (TypeError, ValueError):
-            secs = None
+        secs = retry_seconds(r.headers.get("Retry-After"))
         raise FigmaError("лимит запросов Figma исчерпан", retry_after=secs)
     if r.status_code == 403:
         raise FigmaError("токен не даёт доступа к файлу (403)")
