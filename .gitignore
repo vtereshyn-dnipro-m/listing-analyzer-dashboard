@@ -8,3 +8,6 @@ check_md.py
 run_pages.py
 nav_test.py
 .claude/launch.json
+
+# креды MCP к Lakebase
+.mcp.json

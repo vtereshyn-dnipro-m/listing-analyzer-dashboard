@@ -28,9 +28,13 @@ def load_worklog() -> pd.DataFrame:
                 FROM synthesis_drafts GROUP BY 1, 2
             ),
             c AS (
+                -- только правки ТАЙТЛА: таблица общая на все поля
+                -- листинга, и принятый буллет иначе поставил бы значок
+                -- «тайтл принят» товару, у которого тайтл не трогали
                 SELECT DISTINCT ON (asin, marketplace)
                        asin, marketplace, accepted_at, status, coverage_score
                 FROM synthesis_changes
+                WHERE change_type = 'title_split'
                 ORDER BY asin, marketplace, accepted_at DESC
             ),
             g AS (

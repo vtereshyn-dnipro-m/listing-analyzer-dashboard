@@ -78,8 +78,11 @@ pd.read_sql = fake_sql
 class _Cur:
     def execute(self, sql, params=None):
         if "INSERT INTO synthesis_changes" in str(sql):
-            SAVED.append({"title": params[4], "highlights": params[6],
-                          "source": params[-1]})
+            # порядок сместился на единицу: change_type больше не зашит
+            # в SQL литералом, а приходит параметром — иначе принятый
+            # буллет писался бы как правка тайтла
+            SAVED.append({"type": params[2], "title": params[5],
+                          "highlights": params[7], "source": params[-1]})
 
     def __enter__(self):
         return self
@@ -145,6 +148,8 @@ check("«Перегенерировать» этой карточки в реж�
 button(at, "Сохранить правку").click().run()
 check("сохранение без правок записано как ai",
       len(SAVED) == 1 and SAVED[0]["source"] == "ai")
+check("тип правки записан как title_split",
+      SAVED and SAVED[0]["type"] == "title_split")
 check("текст ушёл тот же", SAVED and SAVED[0]["title"] == DRAFT_TITLE)
 
 # --- сохранение после правки: manual

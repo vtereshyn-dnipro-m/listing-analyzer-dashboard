@@ -194,9 +194,13 @@ def _remember_skill_error(text: str | None) -> None:
 
 
 @st.cache_data(ttl=120)
-def load_skill() -> tuple[str, int]:
-    """Общая методология (common) + title_split, склеенные.
-    Версия в подписи — от title_split.
+def load_skill(scope: str = "title_split") -> tuple[str, int]:
+    """Общая методология (common) + область `scope`, склеенные.
+    Версия в подписи — от области, а не от common.
+
+    Область параметром, потому что таких областей в synthesis_skill
+    двенадцать (bullets, description, aplus, keyword_research …), а
+    подключён пока один тайтл. Склейка с common одинакова для всех.
 
     ЗАПАСНОЙ МЕТОДОЛОГИИ ЗДЕСЬ НЕТ И БЫТЬ НЕ ДОЛЖНО. Раньше при любом сбое
     возвращался зашитый текст «Бренд Dnipro-M первым» — то есть правило,
@@ -212,16 +216,16 @@ def load_skill() -> tuple[str, int]:
             """
             SELECT DISTINCT ON (scope) scope, skill_text, version
             FROM synthesis_skill
-            WHERE is_active = TRUE AND scope IN ('common', 'title_split')
+            WHERE is_active = TRUE AND scope IN ('common', %(scope)s)
             ORDER BY scope, version DESC
             """,
-            get_engine(),
+            get_engine(), params={"scope": scope},
         )
         if not df.empty:
             parts: list[str] = []
             version = 0
             common = df[df["scope"] == "common"]
-            spec = df[df["scope"] == "title_split"]
+            spec = df[df["scope"] == scope]
             if not common.empty:
                 parts.append(str(common.iloc[0]["skill_text"]))
             if not spec.empty:
@@ -621,7 +625,14 @@ def load_draft_stats() -> dict:
 
 @st.cache_data(ttl=60)
 def load_accepted() -> dict:
-    """Принятые правки: (asin, mp) -> дата и статус."""
+    """Принятые правки ТАЙТЛА: (asin, mp) -> дата и статус.
+
+    Фильтр по change_type обязателен, хотя пока в таблице лежит один тип.
+    `synthesis_changes` — общая на все поля листинга, и первая же принятая
+    правка буллетов вернулась бы сюда как принятый тайтл: карточка
+    показала бы чужой текст, счётчик длины считал бы «212/75», а признак
+    «отправлено, замены не требует» сработал бы по чужой записи. Молча.
+    """
     try:
         conn = get_conn()
         df = pd.read_sql(
@@ -630,6 +641,7 @@ def load_accepted() -> dict:
                    asin, marketplace, accepted_at, status, after_len,
                    coverage_score, model, after_text, after_extra
             FROM synthesis_changes
+            WHERE change_type = 'title_split'
             ORDER BY asin, marketplace, accepted_at DESC
             """, get_engine())
         conn.close()
@@ -662,7 +674,8 @@ def invalidate_change(asin: str | None = None,
 
 def accept_change(asin: str, mp: str, before: str, result: dict,
                   coverage_score, skill_version: int, model: str,
-                  source: str = "ai") -> bool:
+                  source: str = "ai",
+                  change_type: str = "title_split") -> bool:
     """Фиксирует принятый сплит — цикл замыкается здесь.
 
     Дальше эта запись используется экраном «До / после»: сравнение
@@ -684,10 +697,10 @@ def accept_change(asin: str, mp: str, before: str, result: dict,
                      after_text, after_len, after_extra, after_extra_len,
                      dropped, coverage_score, skill_version, model, status,
                      source)
-                VALUES (%s,%s,'title_split',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,
                         'accepted',%s)
                 """,
-                (asin, mp, before, len(before or ""),
+                (asin, mp, change_type, before, len(before or ""),
                  result.get("title", ""), len(result.get("title", "")),
                  result.get("highlights", ""), len(result.get("highlights", "")),
                  "; ".join(result.get("dropped", []) or []),
