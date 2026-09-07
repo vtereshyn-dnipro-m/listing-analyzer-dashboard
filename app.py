@@ -48,6 +48,10 @@ photo = st.Page(
     "pages/photo.py", title=t("nav.photo"),
     icon=":material/photo_camera:",
 )
+content = st.Page(
+    "pages/content.py", title=t("nav.content"),
+    icon=":material/translate:",
+)
 matrix_setup = st.Page(
     "pages/matrix_setup.py", title=t("nav.matrix"),
     icon=":material/account_tree:",
@@ -63,7 +67,7 @@ settings = st.Page(
 
 nav = st.navigation(
     {
-        t("nav.section.work"): [guide, dashboard, catalog, synthesis, photo],
+        t("nav.section.work"): [guide, dashboard, catalog, synthesis, photo, content],
         t("nav.section.settings"): [matrix_setup, methodology, settings],
     }
 )
