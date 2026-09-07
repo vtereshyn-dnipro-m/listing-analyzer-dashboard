@@ -20,10 +20,11 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t
+from services import figma
 from services.localization import (
-    ALL_LANGS, TARGET_LANGS, ST_APPLIED, ST_APPROVED, ST_NONE, ST_TRANSLATED,
-    demo_layers, demo_products, fits, load_layers, load_products, over_rows,
-    product_state, summarize,
+    ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
+    demo_layers, demo_products, fits, load_layers, load_products, needs_sync,
+    over_rows, product_state, save_parsed, summarize, sync_age_hours,
 )
 from components.ui import inject_fonts, eyebrow
 
@@ -131,7 +132,76 @@ def counter_html(n: int, lim: int | None, state: str) -> str:
 
 
 # ---------------------------------------------------------------- экраны
+def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
+    """Когда читали Figma и кнопка перечитать.
+
+    Читаем раз в сутки и по кнопке — не из экономии, а потому что при
+    исчерпанном лимите Figma просит ждать сотни секунд на КАЖДУЮ
+    попытку. Автоматический повтор здесь только растянул бы ожидание.
+    """
+    miss = figma.missing_secrets()
+    age = sync_age_hours(products) if not demo else None
+    c1, c2 = st.columns([2.2, 7], gap="small", vertical_alignment="center")
+
+    if c1.button(t("loc.resync"), key="loc-sync", type="primary",
+                 disabled=bool(miss),
+                 help=t("loc.no_secrets", keys=", ".join(miss)) if miss else None):
+        with st.status(t("loc.sync_run"), expanded=True) as status:
+            try:
+                doc = figma.fetch_document()
+                status.write("· " + t("loc.sync_parsing"))
+                parsed = figma.parse_document(doc)
+                for p in parsed["products"]:
+                    p["file_key"] = figma.file_key()
+                n_p, n_l, err = save_parsed(parsed)
+                if err:
+                    status.update(label=t("loc.sync_failed"), state="error")
+                    st.error("⚠ " + t("loc.save_failed", e=err))
+                else:
+                    status.update(label=t("loc.sync_done", p=n_p, l=n_l),
+                                  state="complete")
+                st.session_state["loc-sync-report"] = {
+                    "skipped_sections": parsed["skipped_sections"],
+                    "skipped_pages": parsed["skipped_pages"],
+                    "source_checked": parsed.get("source_checked", 0),
+                    "source_over": parsed.get("source_over", 0),
+                }
+                load_products.clear()
+                st.rerun()
+            except figma.FigmaError as e:
+                status.update(label=t("loc.sync_failed"), state="error")
+                wait = getattr(e, "retry_after", None)
+                if wait:
+                    st.error("⚠ " + t("loc.rate_limited", s=int(wait),
+                                      m=max(1, int(wait) // 60)))
+                else:
+                    st.error("⚠ " + t("loc.sync_error", e=str(e)))
+
+    if miss:
+        c2.caption("⚠ " + t("loc.no_secrets", keys=", ".join(miss)))
+    elif age is None:
+        c2.caption(t("loc.never_synced"))
+    else:
+        stale = " · " + t("loc.stale") if needs_sync(products) else ""
+        c2.caption(t("loc.synced_ago", h=int(age), every=SYNC_EVERY_HOURS)
+                   + stale)
+
+    # что не разобралось при последнем чтении — видно, а не потеряно
+    rep = st.session_state.get("loc-sync-report") or {}
+    # английский текст уже стоит в макете и в него влезает; если расчёт
+    # утверждает обратное на заметной доле слоёв — занижен коэффициент
+    _checked, _over = rep.get("source_checked") or 0, rep.get("source_over") or 0
+    if _checked and _over / _checked > 0.25:
+        st.warning("⚠ " + t("loc.ratio_off", over=_over, total=_checked))
+    if rep.get("skipped_sections"):
+        with st.expander(t("loc.skipped_n", n=len(rep["skipped_sections"]))):
+            st.caption(t("loc.skipped_hint"))
+            for line in rep["skipped_sections"][:20]:
+                st.code(line, language=None)
+
+
 def render_list(products: pd.DataFrame, demo: bool) -> None:
+    render_sync_bar(products, demo)
     st.markdown(summary_html(summarize(products)), unsafe_allow_html=True)
     st.caption(t("loc.list_hint"))
 
@@ -232,6 +302,10 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
               disabled=True, help=t("loc.apply_soon"))
     a2.button(t("loc.retranslate"), key="loc-retry",
               disabled=True, help=t("loc.model_soon"))
+    # Предел — расчётный, и об этом надо сказать прямо: ширина слоя
+    # приходит в пикселях, а знаки разной ширины. Без этой строки текст,
+    # не влезший на самой границе, выглядит ошибкой расчёта.
+    st.caption(t("loc.limit_note", ratio=figma.AVG_CHAR_RATIO))
     st.caption(t("loc.export_note"))
 
 
