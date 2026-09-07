@@ -17,7 +17,7 @@ import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT
 from i18n import t
-from services.db import get_conn, get_engine
+from services.db import get_conn, get_engine, safe_read
 from services.settings import get_int, get_float
 from services.economics import (
     econ_map, fmt_money, fmt_conversion, money_at_risk, num, risk_coef,
@@ -64,9 +64,15 @@ PAGE_SIZE = 20
 
 
 @st.cache_data(ttl=300)
-def load_catalog() -> pd.DataFrame:
-    try:
-        df = pd.read_sql(
+def load_catalog() -> tuple[pd.DataFrame, str | None]:
+    """Каталог и ПРИЧИНА, если прочитать не удалось.
+
+    Пустой ответ здесь означает «товаров нет», и страница советует
+    собрать их в Матрице. При сбое чтения тот же совет становится
+    указанием завести заново почти тысячу товаров, которые в базе
+    лежат — поэтому причина возвращается отдельно.
+    """
+    return safe_read(
             """
             SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor,
                    s.fetched_at, s.ok, s.title, s.in_stock, s.review_count,
@@ -84,12 +90,7 @@ def load_catalog() -> pd.DataFrame:
                 ORDER BY s.fetched_at DESC LIMIT 1
             ) s ON TRUE
             ORDER BY m.is_competitor, m.sku_group, m.asin
-            """,
-            get_engine(),
-        )
-        return df
-    except Exception:
-        return pd.DataFrame()
+            """)
 
 
 def _raw(v) -> dict:
@@ -241,7 +242,12 @@ ATTRS = attrs_map()
 ISSUES = issues_map()
 AIDX = asin_index(ISSUES)
 FAMILY = family_map(ISSUES)
-df = load_catalog()
+df, catalog_error = load_catalog()
+if catalog_error:
+    # сбой чтения — это НЕ «товаров нет»: совет «соберите товары
+    # в Матрице» отправил бы заводить заново то, что уже в базе
+    st.error("⚠ " + t("common.read_failed", e=catalog_error))
+    st.stop()
 if df.empty:
     st.caption(t("common.no_data"))
     st.stop()

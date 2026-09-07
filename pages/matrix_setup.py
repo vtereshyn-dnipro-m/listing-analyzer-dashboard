@@ -14,7 +14,8 @@ import streamlit as st
 
 from i18n import t
 from services import cache
-from services.db import get_conn, add_matrix_rows, parse_asin_lines, cfg, get_engine
+from services.db import (add_matrix_rows, cfg, get_conn, get_engine,
+                         parse_asin_lines, safe_read)
 from services.worklog import worklog_map, work_badges, has_work
 from services.marketplaces import (product_url, asin_link,
                                    img_or_stub, ASIN_IN_URL)
@@ -57,9 +58,15 @@ st.caption(t("matrix.caption"))
 
 
 @st.cache_data(ttl=120)
-def load_matrix() -> pd.DataFrame:
-    try:
-        df = pd.read_sql(
+def load_matrix() -> tuple[pd.DataFrame, str | None]:
+    """Матрица и ПРИЧИНА, если прочитать не удалось.
+
+    Здесь молчание дороже, чем где-либо: пустая матрица означает
+    «товаров ещё нет», и страница зовёт добавить первый. При сбое
+    чтения это приглашение завести заново почти тысячу существующих
+    пар — прямо на той странице, где ввод пачкой и стоит.
+    """
+    return safe_read(
             """
             SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor, m.added_at,
                    s.fetched_at AS last_fetch, s.ok AS last_ok, s.title,
@@ -88,12 +95,7 @@ def load_matrix() -> pd.DataFrame:
                 ) latest
             ) d ON TRUE
             ORDER BY m.sku_group, m.marketplace, m.asin
-            """,
-            get_engine(),
-        )
-        return df
-    except Exception:
-        return pd.DataFrame()
+            """)
 
 
 # ================================================================ ввод пачкой
@@ -453,9 +455,13 @@ def render_collect_skipped() -> None:
 render_collect_skipped()
 
 WORK = worklog_map()
-df = load_matrix()
+df, matrix_error = load_matrix()
 
-if df.empty:
+if matrix_error:
+    # «товаров нет» и «не смогли прочитать» на этой странице ведут
+    # к разным действиям, и второе — к заведению дублей
+    st.error("⚠ " + t("common.read_failed", e=matrix_error))
+elif df.empty:
     st.caption(t("common.no_data"))
 else:
     ours_n = int((~df.is_competitor).sum())

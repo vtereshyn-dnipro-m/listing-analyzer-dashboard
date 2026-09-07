@@ -18,7 +18,7 @@ import streamlit as st
 
 from i18n import t, current_lang
 from services import cache
-from services.db import get_conn, cfg, get_engine
+from services.db import get_conn, cfg, get_engine, safe_read
 from services.settings import get_setting
 from services.ai import generate_json, task_config, no_credit_banner
 from services.marketplaces import (product_url, asin_link,
@@ -124,9 +124,9 @@ PROMPT_TPL = """{skill}
 
 # ---------------------------------------------------------------- данные
 @st.cache_data(ttl=300)
-def load_candidates() -> pd.DataFrame:
-    try:
-        df = pd.read_sql(
+def load_candidates() -> tuple[pd.DataFrame, str | None]:
+    """Товары для аудита и ПРИЧИНА, если прочитать не удалось."""
+    return safe_read(
             """
             SELECT DISTINCT ON (s.asin, s.marketplace)
                    s.asin, s.marketplace, s.title, s.raw, s.fetched_at,
@@ -138,12 +138,7 @@ def load_candidates() -> pd.DataFrame:
                 ON ll.asin = s.asin AND ll.marketplace = s.marketplace
             WHERE s.ok = TRUE AND s.title <> ''
             ORDER BY s.asin, s.marketplace, s.fetched_at DESC
-            """,
-            get_engine(),
-        )
-        return df
-    except Exception:
-        return pd.DataFrame()
+            """)
 
 
 @st.cache_data(ttl=120)
@@ -351,14 +346,17 @@ def failed_reasons(res: dict, block: str,
 
 # ---------------------------------------------------------------- аудиты
 @st.cache_data(ttl=120)
-def load_audits() -> pd.DataFrame:
+def load_audits() -> tuple[pd.DataFrame, str | None]:
     """Последний аудит по каждому товару и типу — с полным результатом.
 
     Раньше результат жил только в session_state и пропадал при перезагрузке,
     из-за чего анализ приходилось гонять заново. Теперь читаем сохранённый.
+
+    И по той же причине возвращается причина сбоя: без неё непрочитанный
+    аудит выглядит как «без аудита», а это приглашение прогнать
+    vision-модель ещё раз — то есть заплатить за уже сделанное.
     """
-    try:
-        df_a = pd.read_sql(
+    return safe_read(
             """
             SELECT DISTINCT ON (asin, marketplace, analysis_type)
                    asin, marketplace, analysis_type, grade,
@@ -366,12 +364,7 @@ def load_audits() -> pd.DataFrame:
                    designer_brief, images_analyzed, skill_version, raw
             FROM photo_analysis
             ORDER BY asin, marketplace, analysis_type, created_at DESC
-            """,
-            get_engine(),
-        )
-        return df_a
-    except Exception:
-        return pd.DataFrame()
+            """)
 
 
 def saved_result(audits: pd.DataFrame, asin: str, mp: str,
@@ -417,12 +410,19 @@ def grade_chip(g: str | None) -> str:
 # ---------------------------------------------------------------- UI
 st.caption(t("photo.caption"))
 
-cands = load_candidates()
+cands, cands_error = load_candidates()
+if cands_error:
+    st.error("⚠ " + t("common.read_failed", e=cands_error))
+    st.stop()
 if cands.empty:
     st.info(t("common.no_data"))
     st.stop()
 
-audits = load_audits()
+audits, audits_error = load_audits()
+if audits_error:
+    # без этого непрочитанный аудит выглядит как «без аудита»,
+    # то есть зовёт заплатить vision-модели за уже сделанное
+    st.error("⚠ " + t("photo.audits_read_failed", e=audits_error))
 skill_g, ver_g = load_skill("photo_brief")
 skill_a, ver_a = load_skill("aplus")
 gallery_ready = bool(skill_g) and ver_g > 0
