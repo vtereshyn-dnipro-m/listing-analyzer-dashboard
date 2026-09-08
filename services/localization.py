@@ -28,6 +28,7 @@ import datetime as dt
 import pandas as pd
 import streamlit as st
 
+from services import figma
 from services.db import get_conn, get_engine
 
 # Порядок языков на экране: источник первым, дальше рынки.
@@ -228,6 +229,19 @@ def load_products() -> tuple[pd.DataFrame, str | None]:
         return df, None
     except Exception as e:
         return pd.DataFrame(), f"{type(e).__name__}: {e}"
+
+
+@st.cache_data(ttl=figma.IMAGE_TTL, show_spinner=False)
+def preview_url(node_id: str) -> tuple[str | None, str | None]:
+    """Ссылка на превью макета: (url, причина отказа).
+
+    Кэш живёт чуть меньше самой ссылки (Figma держит её около часа):
+    истёкшая ссылка отдаёт битую картинку, а повторный запрос — это
+    квота, которой у нас нет. Ключ кэша — узел, поэтому переключение
+    языка в таблице картинку заново не запрашивает: превью показывает
+    английский макет, по нему и видно роль строки.
+    """
+    return figma.node_image(node_id)
 
 
 @st.cache_data(ttl=60)

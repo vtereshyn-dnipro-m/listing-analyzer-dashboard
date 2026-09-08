@@ -229,8 +229,49 @@ except fg.FigmaError as e:
     check("403 отличается от лимита",
           e.retry_after is None and "403" in str(e))
 
+# --- превью макета: один запрос на ОТКРЫТЫЙ товар, не на список
+fg.cfg = lambda name, default=None: {"FIGMA_TOKEN": "figd_x",
+                                     "FIGMA_FILE_KEY": "ZZJ9"}.get(name, default)
+_img_calls: list = []
+
+
+class _ImgResp:
+    def __init__(self, payload, code=200, headers=None):
+        self.status_code, self._p = code, payload
+        self.headers, self.text = headers or {}, ""
+
+    def json(self):
+        return self._p
+
+
+def _img_ok(url, headers=None, timeout=None, params=None):
+    _img_calls.append(params)
+    return _ImgResp({"err": None, "images": {"1:1": "https://figma.example/x.png"}})
+
+
+fg.requests.get = _img_ok
+_url, _err = fg.node_image("1:1")
+check("ссылка на рендер получена", _url and _err is None)
+check("запрошен именно png половинного масштаба",
+      _img_calls[-1]["format"] == "png" and _img_calls[-1]["scale"] == 0.5)
+check("запрошен ровно один узел", _img_calls[-1]["ids"] == "1:1")
+
+# Figma кладёт причину отказа в тело, а не в код ответа: 200 с err —
+# это отказ, и молча вернуть None значит показать пустое место
+fg.requests.get = lambda *a, **k: _ImgResp({"err": "Nothing to render"})
+_url, _err = fg.node_image("1:1")
+check("200 с err — это отказ, а не пустая картинка",
+      _url is None and "Nothing to render" in (_err or ""))
+
+fg.requests.get = lambda *a, **k: _ImgResp({}, 429, {"Retry-After": "306325"})
+_url, _err = fg.node_image("1:1")
+check("лимит на превью назван лимитом и в секундах",
+      _url is None and "306" in (_err or ""))
+
 # без секретов до сети дело не доходит вовсе
 fg.cfg = lambda name, default=None: default
+_url, _err = fg.node_image("1:1")
+check("без секретов превью не запрашивается", _url is None and _err)
 try:
     fg.fetch_document()
     check("без секретов запрос не уходит", False)

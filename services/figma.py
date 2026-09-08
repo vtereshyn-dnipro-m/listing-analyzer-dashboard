@@ -75,6 +75,15 @@ DEFAULT_LINE_RATIO = 1.2
 # миллисекунд (полторы минуты) просит регулярно.
 RETRY_MS_OVER = 86_400
 
+# Рендер узла под превью. Половинный масштаб: картинка стоит рядом
+# с таблицей и нужна для понимания РОЛИ строки — крупный ли это
+# заголовок на тёмном фоне или мелкая подпись, — а не для вычитки.
+IMAGE_SCALE = 0.5
+
+# Ссылку на рендер Figma держит около часа. Кэшируем с запасом: истёкшая
+# ссылка отдаёт битую картинку, а лишний запрос — это квота.
+IMAGE_TTL = 50 * 60
+
 
 class FigmaError(Exception):
     """Отказ Figma, о котором нужно сказать человеку дословно."""
@@ -82,6 +91,45 @@ class FigmaError(Exception):
     def __init__(self, message: str, retry_after: int | None = None):
         super().__init__(message)
         self.retry_after = retry_after
+
+
+def node_image(node_id: str, key: str | None = None,
+               scale: float = IMAGE_SCALE) -> tuple[str | None, str | None]:
+    """Ссылка на PNG-рендер узла: (url, причина отказа).
+
+    Рендер запрашивается ТОЛЬКО для открытого товара. Миниатюры в списке
+    стоили бы по запросу на строку, а список — это сотни строк: тот же
+    лимит, который закрывается от одного чтения документа.
+
+    Ссылку Figma держит около часа и отдаёт на файловом хранилище,
+    поэтому кэшируется она сама, а не картинка: перекачивать байты
+    незачем, а вот повторно просить ссылку — значит тратить квоту.
+    """
+    key = key or file_key()
+    tok = token()
+    if not tok or not key or not node_id:
+        return None, "нет секретов: " + ", ".join(missing_secrets() or ["node_id"])
+    try:
+        r = requests.get(f"{API}/images/{key}",
+                         params={"ids": node_id, "format": "png",
+                                 "scale": scale},
+                         headers={"X-Figma-Token": tok}, timeout=TIMEOUT)
+    except requests.RequestException as e:
+        return None, f"{type(e).__name__}: {e}"
+    if r.status_code == 429:
+        secs = retry_seconds(r.headers.get("Retry-After"))
+        return None, f"429, ждать {secs} с" if secs else "429"
+    if r.status_code != 200:
+        return None, f"HTTP {r.status_code}"
+    try:
+        data = r.json()
+    except ValueError as e:
+        return None, f"ответ не разобрался как JSON: {e}"
+    # Figma кладёт причину отказа в поле err, а не в код ответа
+    if data.get("err"):
+        return None, str(data["err"])
+    url = (data.get("images") or {}).get(node_id)
+    return (url, None) if url else (None, "рендер не пришёл")
 
 
 def retry_seconds(raw) -> int | None:
