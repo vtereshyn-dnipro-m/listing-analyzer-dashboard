@@ -1,0 +1,43 @@
+# Объекты схемы listing_data — СНИМОК ЖИВОЙ БАЗЫ на 08.09.2026.
+#
+# Не миграция и не источник истины: истина в Databricks. Это слепок,
+# по которому tests/test_schema_contract.py проверяет, что код не читает
+# таблицу, которой в базе нет. Ровно так месяцами жил `policy_alerts`:
+# страница читала несуществующую таблицу и говорила «Новых изменений
+# нет — все источники соответствуют текущим методологиям».
+#
+# Как обновить: запрос в schema/README.md, результат сюда.
+# Формат строки: <имя> <table|view>
+
+analysis_latest          view
+app_settings             table
+asin_economics           table
+catalog_source           table
+collection_schedule      table
+diagnosis                table
+diagnosis_latest         view
+discount_analysis        view
+figma_layers             table
+figma_products           table
+flatfile_templates       table
+listing_analysis         table
+listing_attributes       table
+listing_changes          table
+listing_issues           table
+listing_latest           view
+listing_push_log         table
+listing_snapshots        table
+photo_analysis           table
+policy_sources           table
+product_matrix           table
+protected_keywords       table
+search_query_performance table
+sku_economics            table
+sqp_report_queue         table
+sqp_reports              table
+suppressed_listings      table
+synthesis_changes        table
+synthesis_coverage       table
+synthesis_drafts         table
+synthesis_skill          table
+wound_down_candidates    view
