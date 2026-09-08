@@ -57,50 +57,72 @@ def text_node(nid, name, chars, w, h, size, line_h=None):
     return node
 
 
-# Структура повторяет живой файл: секция → фрейм → фрейм → фрейм → текст,
-# рядом картинка (её трогать нельзя), чужие страницы и секция чужого
-# формата.
+# Структура повторяет живой файл, снятый 08.09: на странице лежат
+# ПОДПИСИ (текст) и ФРЕЙМЫ макетов с ASIN в имени, а текст — внутри
+# фреймов на глубине трёх-четырёх вложений. Рядом картинка (её трогать
+# нельзя), модули A+ «carousel» и чужие страницы.
 DOC = {"document": {"children": [
     {"name": "UK/US", "children": [
-        {"id": "1:1",
-         "name": "Main Images_B0G4S9SJ3M 54225000 Battery stapler Dnipro-M CC-36",
-         "children": [
-             {"id": "1:2", "type": "FRAME", "name": "B0G4S9SJ3M.PT01", "children": [
-                 {"id": "1:3", "type": "FRAME", "name": "Frame 35841", "children": [
-                     {"id": "1:4", "type": "FRAME", "name": "Frame 1614", "children": [
-                         text_node("1:5", "title", "USB-C Charging", 220, 24, 20),
-                         {"id": "1:6", "type": "RECTANGLE",
-                          "name": "ChatGPT Image 6 авг. 2026.png",
-                          "absoluteBoundingBox": {"width": 4822, "height": 3709,
-                                                  "x": -964, "y": -893}},
-                     ]}]}]},
-             {"id": "1:7", "type": "FRAME", "name": "B0G4S9SJ3M.MAIN", "children": [
-                 text_node("1:8", "body",
-                           "Charges from power banks and car adapters",
-                           300, 66, 18, 22),
-             ]}]},
-        {"id": "1:9",
-         "name": "A+ Premium Content_B0GTRY26HB 99601000 Leaf blower SBA-36",
-         "children": [text_node("1:10", "carousel 2.2", "Two-year warranty",
-                                220, 20, 16)]},
-        {"id": "1:11", "name": "Random frame without pattern", "children": []},
+        # подписи: восемь вариантов написания, здесь три из них
+        {"id": "1:0", "type": "TEXT",
+         "name": "label",
+         "characters": "Main Images_B0G4S9SJ3M  54225000 Battery stapler CC-36"},
+        {"id": "1:0b", "type": "TEXT", "name": "label",
+         "characters": "Main Images_41500000_B0DG2Y9MSS_Blower DVB-200"},
+        {"id": "1:0c", "type": "TEXT", "name": "label",
+         "characters": "Просто заметка дизайнера"},
+        {"id": "1:2", "type": "FRAME", "name": "B0G4S9SJ3M.PT01", "children": [
+            {"id": "1:3", "type": "FRAME", "name": "Frame 35841", "children": [
+                {"id": "1:4", "type": "FRAME", "name": "Frame 1614", "children": [
+                    text_node("1:5", "title", "USB-C Charging", 220, 24, 20),
+                    {"id": "1:6", "type": "RECTANGLE",
+                     "name": "ChatGPT Image 6 авг. 2026.png",
+                     "absoluteBoundingBox": {"width": 4822, "height": 3709,
+                                             "x": -964, "y": -893}},
+                ]}]}]},
+        {"id": "1:7", "type": "FRAME", "name": "B0G4S9SJ3M.MAIN", "children": [
+            text_node("1:8", "body",
+                      "Charges from power banks and car adapters",
+                      300, 66, 18, 22)]},
+        {"id": "1:12", "type": "FRAME", "name": "B0DG2Y9MSS.PT01", "children": [
+            text_node("1:13", "t", "Tapered Nozzle", 220, 24, 20)]},
+        # A+ отложен: ASIN в имени нет, «carousel 2.2» есть у многих
+        {"id": "1:9", "type": "FRAME", "name": "carousel 2.2", "children": [
+            text_node("1:10", "t", "Two-year warranty", 220, 20, 16)]},
+        {"id": "1:11", "type": "FRAME", "name": "Random frame", "children": []},
     ]},
     {"name": "ES", "children": [
-        {"id": "2:1",
-         "name": "Main Images_B0G4S9SJ3M 54225000 Battery stapler Dnipro-M CC-36",
-         "children": [text_node("2:2", "title", "Carga USB-C", 220, 24, 20)]}]},
+        {"id": "2:1", "type": "FRAME", "name": "B0G4S9SJ3M.PT01", "children": [
+            {"id": "2:3", "type": "FRAME", "name": "Frame 35841", "children": [
+                {"id": "2:4", "type": "FRAME", "name": "Frame 1614", "children": [
+                    text_node("2:2", "title", "Carga USB-C", 220, 24, 20)]}]}]}]},
     {"name": "Gazi", "children": [{"id": "9:1", "name": "чужое", "children": []}]},
     {"name": "UK/US (OLD)", "children": []},
 ]}}
 
 R = fg.parse_document(DOC)
 
+# --- подписи разбираются по признакам, а не по одному шаблону
+_lbl = fg.parse_label("Main Images_41473000_B0DG616BXX_Cordless angle grinder")
+check("SKU впереди ASIN разбирается",
+      _lbl["asin"] == "B0DG616BXX" and _lbl["sku"] == "41473000"
+      and _lbl["name"] == "Cordless angle grinder")
+_lbl2 = fg.parse_label("A+ Premium Content_B0H26Y485K  Cordless blower DCB-202BC")
+check("подпись без SKU не теряется целиком",
+      _lbl2["asin"] == "B0H26Y485K" and _lbl2["sku"] is None)
+_lbl3 = fg.parse_label("B0DG2Y9MSS 41500000 Blower DVB-200")
+check("подпись без типа тоже читается",
+      _lbl3["asin"] == "B0DG2Y9MSS" and _lbl3["type"] is None)
+check("SKU с хвостом остаётся целым",
+      fg.parse_label("Main Images_B0FXY75N5G_84516000-49_Saw")["sku"]
+      == "84516000-49")
+check("текст без ASIN подписью не считается",
+      fg.parse_label("Просто заметка дизайнера") is None)
+
 # --- обход и связь
-# Товар один на (ASIN, тип секции), даже если нарисован на четырёх
-# языковых страницах. Пока ключом был узел Figma, стаплер CC-36 лежал
-# в базе четырьмя записями, на экране выглядел четырьмя товарами,
-# а сводка «Все языки» показывала ноль: у каждой записи был один язык.
-check("товар один, а не по записи на языковую страницу",
+# Товар определяется ИМЕНЕМ ФРЕЙМА: «B0G4S9SJ3M.PT01». Подпись даёт
+# только SKU и название, и одного шаблона на неё не хватает.
+check(f"товары собраны по фреймам ({len(R['products'])})",
       len(R["products"]) == 2)
 check("текст найден на глубине четырёх фреймов",
       any(l["layer_id"] == "1:5" for p in R["products"] for l in p["layers"]))
@@ -108,29 +130,32 @@ check("картинка в слои не попала",
       not any(l["layer_id"] == "1:6" for p in R["products"] for l in p["layers"]))
 
 _by_asin = {p["asin"]: p for p in R["products"]}
-check("ASIN, SKU и название разобраны из имени секции",
+check("SKU и название подставлены из подписи",
       _by_asin["B0G4S9SJ3M"]["sku"] == "54225000"
-      and _by_asin["B0G4S9SJ3M"]["name"] == "Battery stapler Dnipro-M CC-36")
-check("тип секции различается",
-      _by_asin["B0GTRY26HB"]["section_type"] == "A+ Premium Content")
-# «carousel 2.2» встречается у многих товаров — товар определяет секция
-check("фрейм с повторяющимся именем привязан к своему товару",
-      any(l["frame_name"] == "carousel 2.2"
-          for l in _by_asin["B0GTRY26HB"]["layers"]))
+      and _by_asin["B0G4S9SJ3M"]["name"] == "Battery stapler CC-36")
+check("товар с подписью другого формата тоже нашёлся",
+      _by_asin["B0DG2Y9MSS"]["sku"] == "41500000")
 
-# испанская страница — не отдельный товар, а второй язык того же
+# A+ отложен целиком и попадает в отчёт ЧИСЛОМ, а не молча
+check("модули A+ в слои не попали",
+      not any(l["layer_id"] == "1:10" for p in R["products"] for l in p["layers"]))
+check(f"и они посчитаны ({R['aplus_frames']})", R["aplus_frames"] == 1)
+
+# --- slot: то, чем строки разных языков связываются между собой
 _stapler = _by_asin["B0G4S9SJ3M"]
 check(f"языки собраны на одном товаре ({_stapler['langs']})",
       set(_stapler["langs"]) == {"en", "es"})
-check("слой знает свой язык, а товар — нет",
-      {l["lang"] for l in _stapler["layers"]} == {"en", "es"}
-      and "lang" not in _stapler)
-check("испанский слой приехал к тому же товару",
-      any(l["layer_id"] == "2:2" and l["lang"] == "es"
-          for l in _stapler["layers"]))
-# страница и узел описывают ИСХОДНИК: по ним ищут секцию в Figma руками
-check("узел и страница взяты с английской страницы",
-      _stapler["figma_node_id"] == "1:1"
+_en = {l["slot"] for l in _stapler["layers"] if l["lang"] == "en"}
+_es = {l["slot"] for l in _stapler["layers"] if l["lang"] == "es"}
+check(f"место испанской строки совпало с английской ({_es})",
+      _es and _es <= _en)
+check("slot называет фрейм и путь внутри него",
+      any(s.startswith("B0G4S9SJ3M.PT01#") for s in _es))
+# id узла на каждой странице свой — связывать по нему нельзя
+check("id узлов у пары разные, а место одно",
+      {l["layer_id"] for l in _stapler["layers"]} >= {"1:5", "2:2"})
+check("узел товара взят с английской страницы",
+      _stapler["figma_node_id"] == "1:7"
       and _stapler["page_name"] == "UK/US")
 
 # --- что не разобралось: в отчёт, а не в тишину
@@ -158,7 +183,7 @@ check("на нормальной ширине английский влезае�
       R["source_over"] == 0)
 
 _narrow = {"document": {"children": [{"name": "UK/US", "children": [
-    {"id": "3:1", "name": "Main Images_B0G4S9SJ3M 54225000 Stapler",
+    {"id": "3:1", "type": "FRAME", "name": "B0G4S9SJ3M.PT01",
      "children": [text_node("3:2", "t", "USB-C Charging", 40, 20, 20)]}]}]}}
 _r2 = fg.parse_document(_narrow)
 check("а при заниженном коэффициенте это видно по исходнику",

@@ -134,38 +134,66 @@ CONFLICT = re.compile(
 
 
 def unique_keys() -> set[tuple[str, tuple[str, ...]]]:
-    """Уникальные ключи: снимок базы плюс таблицы, которых в нём ещё нет.
+    """Уникальные ключи: снимок базы, к которому ПРИМЕНЕНЫ миграции.
 
-    Миграции подмешиваются ТОЛЬКО для таблиц, отсутствующих в снимке.
-    Иначе множество копит историю: миграция 07.09 объявила
-    `figma_products UNIQUE (figma_file_key, figma_node_id)`, миграция
-    08.09 этот ключ снесла — но объявление осталось в файле, и проверка
-    считала бы снесённый ключ живым. Первая версия этой функции так
-    и делала, и мутация прошла мимо неё.
+    Снимок отстаёт от репозитория по определению: код и миграция едут
+    в одном PR, а база меняется руками через Databricks. Поэтому
+    миграции проигрываются на снимке по порядку дат — и добавления,
+    и УДАЛЕНИЯ.
+
+    Удаления обязательны, иначе множество копит историю: миграция
+    07.09 объявила `figma_products UNIQUE (figma_file_key,
+    figma_node_id)`, миграция 08.09 этот ключ снесла — а проверка
+    без учёта DROP считала снесённый ключ живым и пропускала мутацию.
+    Ровно это и случилось: первая версия функции была ложно-зелёной.
+
+    Обратная сторона тоже важна: без учёта ADD свежая миграция
+    роняла бы тест до обновления снимка, и первым же действием тест
+    бы отключили.
     """
-    keys = set()
-    snapshot_tables = set()
+    by_name: dict[tuple[str, str], tuple[str, ...]] = {}
     for line in (ROOT / "schema/unique_keys.txt").read_text(
             encoding="utf-8").splitlines():
         line = line.strip()
         if line and not line.startswith("#"):
-            tbl, cols = line.split()
-            keys.add((tbl.lower(), tuple(c.strip() for c in cols.split(","))))
-            snapshot_tables.add(tbl.lower())
-    mig = re.compile(r"UNIQUE\s*\(([^)]*)\)", re.I)
-    tbl_pat = re.compile(
+            tbl, name, cols = line.split()
+            by_name[(tbl.lower(), name.lower())] = tuple(
+                c.strip() for c in cols.split(","))
+
+    add_named = re.compile(
+        r"ADD\s+CONSTRAINT\s+([a-zA-Z_][\w]*)\s+UNIQUE\s*\(([^)]*)\)", re.I)
+    drop_named = re.compile(
+        r"DROP\s+CONSTRAINT\s+(?:IF\s+EXISTS\s+)?([a-zA-Z_][\w]*)", re.I)
+    inline_unique = re.compile(r"UNIQUE\s*\(([^)]*)\)", re.I)
+    table_of = re.compile(
         r"(?:CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|ALTER\s+TABLE)\s+"
-        r"(?:listing_data\.)?([a-zA-Z_][a-zA-Z0-9_]*)", re.I)
-    for f in (ROOT / "migrations").glob("*.sql"):
-        text = f.read_text(encoding="utf-8")
+        r"(?:listing_data\.)?([a-zA-Z_][\w]*)", re.I)
+
+    # по имени файла: миграции датированы и применяются по порядку
+    for path in sorted((ROOT / "migrations").glob("*.sql")):
+        text = path.read_text(encoding="utf-8")
         for chunk in re.split(r";", text):
-            names = [n.lower() for n in tbl_pat.findall(chunk)
-                     if n.lower() not in snapshot_tables]
-            for cols in mig.findall(chunk):
-                for name in names:
-                    keys.add((name,
-                              tuple(c.strip() for c in cols.split(","))))
-    return keys
+            tbls = [t.lower() for t in table_of.findall(chunk)]
+            if not tbls:
+                continue
+            tbl = tbls[0]
+            for name, cols in add_named.findall(chunk):
+                by_name[(tbl, name.lower())] = tuple(
+                    c.strip() for c in cols.split(","))
+            for name in drop_named.findall(chunk):
+                by_name.pop((tbl, name.lower()), None)
+            # UNIQUE внутри CREATE TABLE имени в тексте не имеет, но
+            # Postgres даёт его по шаблону `таблица_колонки_key` — и
+            # сносят такой ключ потом именно по этому имени. Придумать
+            # своё имя здесь значит не увидеть последующий DROP: ровно
+            # на этом мутация «ON CONFLICT по снесённому ключу» и прошла
+            # мимо проверки.
+            if re.search(r"CREATE\s+TABLE", chunk, re.I):
+                for cols in inline_unique.findall(chunk):
+                    key = tuple(c.strip() for c in cols.split(","))
+                    generated = f"{tbl}_{'_'.join(key)}_key"
+                    by_name[(tbl, generated)] = key
+    return {(tbl, cols) for (tbl, _name), cols in by_name.items()}
 
 
 KEYS = unique_keys()
