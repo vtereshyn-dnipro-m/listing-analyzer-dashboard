@@ -31,6 +31,8 @@ from services.db import cfg
 API = "https://api.figma.com/v1"
 TIMEOUT = 60
 
+SOURCE_LANG = "en"
+
 # Страница файла = язык. Английский — источник, остальные цели.
 # Прочие страницы (OLD, Gazi, Tool Bundle Sets, For review, BD Print,
 # From The Brand, Brand Store, References, «ES - from ukranian») не наши:
@@ -199,7 +201,7 @@ def parse_document(doc: dict) -> dict:
     список как полный.
     """
     pages = (doc.get("document") or {}).get("children") or []
-    products: list[dict] = []
+    by_key: dict[tuple, dict] = {}
     skipped_sections: list[str] = []
     skipped_pages: list[str] = []
 
@@ -216,18 +218,44 @@ def parse_document(doc: dict) -> dict:
                 # секция чужого формата — в отчёт, а не в тишину
                 skipped_sections.append(f"{page_name}: {name[:60]}")
                 continue
-            layers: list = []
-            _walk_text(section, layers)
-            products.append({
-                "asin": m.group("asin"),
-                "sku": m.group("sku"),
-                "name": m.group("name").strip(),
-                "section_type": m.group("type"),
-                "page_name": page_name,
-                "lang": lang,
-                "figma_node_id": str(section.get("id")),
-                "layers": layers,
-            })
+            # Товар — это (ASIN, тип секции), а НЕ секция на странице.
+            # Один товар нарисован на каждой языковой странице своим
+            # узлом, и пока ключом был узел, стапler CC-36 лежал в базе
+            # четырьмя записями, а сводка «Все языки» показывала ноль:
+            # у каждой записи был ровно один язык.
+            key = (m.group("asin"), m.group("type"))
+            prod = by_key.get(key)
+            if prod is None:
+                prod = by_key[key] = {
+                    "asin": m.group("asin"),
+                    "sku": m.group("sku"),
+                    "name": m.group("name").strip(),
+                    "section_type": m.group("type"),
+                    # страница и узел описывают ИСХОДНИК; до того, как
+                    # встретится английская страница, держим первую
+                    "page_name": page_name,
+                    "figma_node_id": str(section.get("id")),
+                    "langs": [],
+                    "layers": [],
+                }
+            if lang == SOURCE_LANG:
+                prod["page_name"] = page_name
+                prod["figma_node_id"] = str(section.get("id"))
+                # имя товара берём с английской страницы: переводные
+                # страницы называют секции по-своему
+                prod["sku"] = m.group("sku")
+                prod["name"] = m.group("name").strip()
+            if lang not in prod["langs"]:
+                prod["langs"].append(lang)
+            found: list = []
+            _walk_text(section, found)
+            # язык принадлежит слою, а не товару: у товара их несколько
+            for layer in found:
+                layer["lang"] = lang
+                layer["page_name"] = page_name
+            prod["layers"].extend(found)
+
+    products = list(by_key.values())
     # Самопроверка коэффициента. Английский текст УЖЕ стоит в макете
     # и по определению в него влезает. Если расчётный предел говорит
     # обратное на заметной доле слоёв, занижен коэффициент, а не макет
@@ -235,9 +263,9 @@ def parse_document(doc: dict) -> dict:
     # которому мы пометили жёлтым половину исходных строк.
     src_total = src_over = 0
     for p in products:
-        if p["lang"] != "en":
-            continue
         for lr in p["layers"]:
+            if lr.get("lang") != SOURCE_LANG:
+                continue
             lim = lr.get("char_limit")
             if lim is None:
                 continue

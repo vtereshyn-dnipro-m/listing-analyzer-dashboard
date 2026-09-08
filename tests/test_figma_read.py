@@ -96,14 +96,18 @@ DOC = {"document": {"children": [
 R = fg.parse_document(DOC)
 
 # --- обход и связь
-check("товары собраны с двух страниц-языков", len(R["products"]) == 3)
+# Товар один на (ASIN, тип секции), даже если нарисован на четырёх
+# языковых страницах. Пока ключом был узел Figma, стаплер CC-36 лежал
+# в базе четырьмя записями, на экране выглядел четырьмя товарами,
+# а сводка «Все языки» показывала ноль: у каждой записи был один язык.
+check("товар один, а не по записи на языковую страницу",
+      len(R["products"]) == 2)
 check("текст найден на глубине четырёх фреймов",
       any(l["layer_id"] == "1:5" for p in R["products"] for l in p["layers"]))
 check("картинка в слои не попала",
       not any(l["layer_id"] == "1:6" for p in R["products"] for l in p["layers"]))
 
-_en = [p for p in R["products"] if p["lang"] == "en"]
-_by_asin = {p["asin"]: p for p in _en}
+_by_asin = {p["asin"]: p for p in R["products"]}
 check("ASIN, SKU и название разобраны из имени секции",
       _by_asin["B0G4S9SJ3M"]["sku"] == "54225000"
       and _by_asin["B0G4S9SJ3M"]["name"] == "Battery stapler Dnipro-M CC-36")
@@ -114,9 +118,20 @@ check("фрейм с повторяющимся именем привязан к
       any(l["frame_name"] == "carousel 2.2"
           for l in _by_asin["B0GTRY26HB"]["layers"]))
 
-_es = [p for p in R["products"] if p["lang"] == "es"]
-check("испанская страница даёт тот же товар отдельной записью",
-      len(_es) == 1 and _es[0]["asin"] == "B0G4S9SJ3M")
+# испанская страница — не отдельный товар, а второй язык того же
+_stapler = _by_asin["B0G4S9SJ3M"]
+check(f"языки собраны на одном товаре ({_stapler['langs']})",
+      set(_stapler["langs"]) == {"en", "es"})
+check("слой знает свой язык, а товар — нет",
+      {l["lang"] for l in _stapler["layers"]} == {"en", "es"}
+      and "lang" not in _stapler)
+check("испанский слой приехал к тому же товару",
+      any(l["layer_id"] == "2:2" and l["lang"] == "es"
+          for l in _stapler["layers"]))
+# страница и узел описывают ИСХОДНИК: по ним ищут секцию в Figma руками
+check("узел и страница взяты с английской страницы",
+      _stapler["figma_node_id"] == "1:1"
+      and _stapler["page_name"] == "UK/US")
 
 # --- что не разобралось: в отчёт, а не в тишину
 check("секция чужого формата попала в отчёт",

@@ -131,10 +131,12 @@ def save_parsed(parsed: dict) -> tuple[int, int, str | None]:
     """Разобранный документ → таблицы. (товаров, слоёв, ошибка).
 
     Английские секции дают исходный текст и ПРЕДЕЛ символов, секции
-    языковых страниц — уже существующие переводы. Один и тот же товар
-    приходит с разных страниц, поэтому запись идёт по паре
-    (файл, секция) с обновлением, а не вставкой заново: иначе каждое
-    чтение плодило бы дубли товаров.
+    языковых страниц — уже существующие переводы.
+
+    Ключ товара — (файл, ASIN, тип секции), а не узел Figma: узел свой
+    на каждой языковой странице, и по нему один товар ложился в базу
+    четырьмя строками с одним языком в каждой. Язык принадлежит слою,
+    поэтому и берётся со слоя.
     """
     products = parsed.get("products") or []
     if not products:
@@ -150,9 +152,11 @@ def save_parsed(parsed: dict) -> tuple[int, int, str | None]:
                         (asin, sku, name, section_type, page_name,
                          figma_file_key, figma_node_id, layers_count, synced_at)
                     VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now())
-                    ON CONFLICT (figma_file_key, figma_node_id) DO UPDATE
+                    ON CONFLICT (figma_file_key, asin, section_type) DO UPDATE
                         SET name = EXCLUDED.name,
                             sku = EXCLUDED.sku,
+                            page_name = EXCLUDED.page_name,
+                            figma_node_id = EXCLUDED.figma_node_id,
                             layers_count = EXCLUDED.layers_count,
                             synced_at = now()
                     RETURNING id
@@ -167,7 +171,8 @@ def save_parsed(parsed: dict) -> tuple[int, int, str | None]:
                     # текст со страницы-языка — это перевод, с английской —
                     # исходник; предел символов берётся у обоих, потому
                     # что ширина слоя своя на каждой странице
-                    is_source = p.get("lang") == SOURCE_LANG
+                    lang = lr.get("lang") or p.get("lang")
+                    is_source = lang == SOURCE_LANG
                     cur.execute(
                         """
                         INSERT INTO figma_layers
@@ -182,7 +187,7 @@ def save_parsed(parsed: dict) -> tuple[int, int, str | None]:
                                 updated_at = now()
                         """,
                         (pid, lr["layer_id"], lr.get("frame_name"),
-                         p.get("lang"), lr["source_text"],
+                         lang, lr["source_text"],
                          None if is_source else lr["source_text"],
                          lr.get("char_limit"),
                          ST_NONE if is_source else ST_APPLIED))
