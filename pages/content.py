@@ -30,7 +30,8 @@ from services import figma
 from services.localization import (
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
     demo_layers, demo_products, fits, load_layers, load_products, needs_sync,
-    over_rows, product_state, save_parsed, summarize, sync_age_hours,
+    over_rows, preview_url, product_state, save_parsed, summarize,
+    sync_age_hours,
 )
 from components.ui import inject_fonts, eyebrow
 
@@ -263,6 +264,39 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
         st.info(t("loc.no_layers"))
         return
 
+    # Слева макет, справа строки. Без картинки перевод — это список
+    # фраз без контекста: не видно, что одна строка — крупный заголовок
+    # на тёмном фоне, а соседняя — мелкая подпись под ней.
+    pane_img, pane_txt = st.columns([1, 1.9], gap="medium")
+    with pane_img:
+        render_preview(row, demo)
+    with pane_txt:
+        render_rows(layers, pid, lang)
+    render_actions()
+
+
+def render_preview(row, demo: bool) -> None:
+    """Картинка макета — только для ОТКРЫТОГО товара.
+
+    Миниатюры в списке стоили бы по запросу Figma на строку при сотнях
+    строк, а по названию там и так понятно, что за товар. Показывается
+    английский макет: превью отвечает на вопрос «куда встанет текст»,
+    и роль строки одинакова на всех языках.
+    """
+    node = str(row.get("figma_node_id") or "")
+    if demo or not node:
+        st.caption(t("loc.preview_none"))
+        return
+    url, err = preview_url(node)
+    if err:
+        # отказ рендера не должен выглядеть как «превью не бывает»
+        st.caption("⚠ " + t("loc.preview_failed", e=err))
+        return
+    st.image(url, width="stretch")
+    st.caption(t("loc.preview_note"))
+
+
+def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
     # Шапка таблицы: подписи колонок здесь, а не в каждой строке —
     # иначе на десяти строках они читаются как часть текста
     st.markdown(
@@ -303,6 +337,9 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
     if n_over:
         st.warning("⚠ " + t("loc.over_warning", n=n_over))
 
+
+def render_actions() -> None:
+    """Действия и оговорки — под обеими колонками, а не внутри одной."""
     a1, a2, a3 = st.columns([2.0, 2.0, 5], gap="small")
     a1.button(t("loc.apply_figma"), type="primary", key="loc-apply",
               disabled=True, help=t("loc.apply_soon"))
