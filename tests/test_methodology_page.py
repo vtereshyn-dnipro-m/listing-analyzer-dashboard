@@ -48,7 +48,7 @@ SKILL = pd.DataFrame([dict(
     skill_text="Ключевая фраза первой, бренд в тайтл не выносить.",
     created_at=pd.Timestamp("2026-08-29 10:00"), is_active=True)])
 
-MODE = {"fail": False}
+MODE = {"fail": False, "alerts_table": True, "alerts_fail": False}
 
 
 def fake_sql(sql, conn=None, **kw):
@@ -57,6 +57,14 @@ def fake_sql(sql, conn=None, **kw):
         if MODE["fail"]:
             raise RuntimeError("connection refused")
         return SKILL.copy()
+    # реестр политик: таблицы `policy_alerts` в базе может не быть вовсе
+    if "to_regclass" in s:
+        return pd.DataFrame([{"t": "policy_alerts"
+                              if MODE["alerts_table"] else None}])
+    if "FROM policy_alerts" in s:
+        if MODE["alerts_fail"]:
+            raise RuntimeError("connection refused")
+        return pd.DataFrame()
     return pd.DataFrame()
 
 
@@ -111,6 +119,35 @@ check("сохранение заблокировано, пока методол�
       b is None or b.disabled)
 check("редактор не предлагает пустой текст под запись",
       all(ta.disabled for ta in at.text_area) or not at.text_area)
+
+# --- реестр политик: «не следим» и «изменений нет» — разные вещи
+# Таблицы policy_alerts в базе нет (её должен заводить ноутбук, которого
+# пока не существует), а страница на пустом ответе говорила «Новых
+# изменений нет — все источники соответствуют текущим методологиям», то
+# есть утверждала про политики Amazon то, чего никто не проверял. Цена
+# такого утверждения конкретна: политика по тайтлам от 27.07.2026 меняет
+# то, что вообще можно отправить в листинг.
+MODE["fail"] = False
+
+MODE["alerts_table"] = True
+at = page()
+check("таблица есть и пуста — «изменений нет» законно",
+      "Новых изменений нет" in texts(at))
+
+MODE["alerts_table"] = False
+at = page()
+check("таблицы нет — сказано, что слежения нет",
+      "Слежение за политиками не ведётся" in texts(at))
+check("и НЕ сказано, что изменений нет",
+      "Новых изменений нет" not in texts(at))
+
+MODE["alerts_table"], MODE["alerts_fail"] = True, True
+at = page()
+check("сбой чтения алертов назван сбоем",
+      any("алерты политик" in str(e.value) for e in at.error))
+check("и тоже не выдаётся за «изменений нет»",
+      "Новых изменений нет" not in texts(at))
+MODE["alerts_fail"] = False
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
