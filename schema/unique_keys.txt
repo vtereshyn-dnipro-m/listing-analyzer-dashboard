@@ -1,0 +1,51 @@
+# Уникальные ключи listing_data — СНИМОК ЖИВОЙ БАЗЫ на 08.09.2026.
+#
+# Нужен ради одной проверки: `ON CONFLICT (колонки)` в коде работает
+# только при уникальном ключе ровно по этим колонкам, иначе Postgres
+# отвечает «there is no unique or exclusion constraint matching the ON
+# CONFLICT specification» — и падает не тест, а человек за экраном.
+# Ровно это чуть не случилось 08.09: миграция сменила ключ
+# figma_products, а save_parsed продолжал ссылаться на снесённый.
+#
+# Перечислены и ограничения, и уникальные ИНДЕКСЫ: для ON CONFLICT
+# годятся оба, и у sqp_reports ключ существует только индексом.
+#
+# Формат: <таблица> <колонки через запятую>
+
+app_settings             key
+asin_economics           asin,marketplace
+asin_economics           id
+catalog_source           asin,marketplace
+collection_schedule      id
+diagnosis                id
+figma_layers             id
+figma_layers             layer_id,lang
+figma_products           figma_file_key,asin,section_type
+figma_products           id
+flatfile_templates       id
+flatfile_templates       marketplace,slot
+listing_analysis         id
+listing_attributes       asin,marketplace
+listing_changes          id
+listing_issues           sku,marketplace,issue_code
+listing_push_log         id
+listing_snapshots        id
+photo_analysis           id
+policy_sources           id
+product_matrix           asin,marketplace
+product_matrix           id
+protected_keywords       asin,marketplace,phrase
+protected_keywords       id
+search_query_performance asin,marketplace,week_start,search_query
+search_query_performance id
+sku_economics            sku_group
+sqp_report_queue         asin,marketplace,reporting_date
+sqp_report_queue         report_id
+sqp_reports              asin,marketplace,reporting_date,search_query
+sqp_reports              id
+suppressed_listings      id
+suppressed_listings      marketplace,sku,snapshot_date
+synthesis_changes        id
+synthesis_coverage       id
+synthesis_drafts         id
+synthesis_skill          id

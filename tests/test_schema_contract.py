@@ -123,6 +123,67 @@ check(f"список известных расхождений не устаре
 check("известное расхождение действительно наблюдается в коде",
       all(n in USED for n in KNOWN_MISSING))
 
+# --- ON CONFLICT работает только при уникальном ключе по ТЕМ ЖЕ колонкам
+# Иначе Postgres отвечает «there is no unique or exclusion constraint
+# matching the ON CONFLICT specification», и падает не тест, а человек
+# за экраном. 08.09 это чуть не случилось: миграция сменила ключ
+# figma_products, а save_parsed ссылался на снесённый.
+CONFLICT = re.compile(
+    r"INSERT\s+INTO\s+([a-zA-Z_][a-zA-Z0-9_]*)(.*?)ON\s+CONFLICT\s*\(([^)]*)\)",
+    re.I | re.S)
+
+
+def unique_keys() -> set[tuple[str, tuple[str, ...]]]:
+    """Уникальные ключи: снимок базы плюс таблицы, которых в нём ещё нет.
+
+    Миграции подмешиваются ТОЛЬКО для таблиц, отсутствующих в снимке.
+    Иначе множество копит историю: миграция 07.09 объявила
+    `figma_products UNIQUE (figma_file_key, figma_node_id)`, миграция
+    08.09 этот ключ снесла — но объявление осталось в файле, и проверка
+    считала бы снесённый ключ живым. Первая версия этой функции так
+    и делала, и мутация прошла мимо неё.
+    """
+    keys = set()
+    snapshot_tables = set()
+    for line in (ROOT / "schema/unique_keys.txt").read_text(
+            encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            tbl, cols = line.split()
+            keys.add((tbl.lower(), tuple(c.strip() for c in cols.split(","))))
+            snapshot_tables.add(tbl.lower())
+    mig = re.compile(r"UNIQUE\s*\(([^)]*)\)", re.I)
+    tbl_pat = re.compile(
+        r"(?:CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?|ALTER\s+TABLE)\s+"
+        r"(?:listing_data\.)?([a-zA-Z_][a-zA-Z0-9_]*)", re.I)
+    for f in (ROOT / "migrations").glob("*.sql"):
+        text = f.read_text(encoding="utf-8")
+        for chunk in re.split(r";", text):
+            names = [n.lower() for n in tbl_pat.findall(chunk)
+                     if n.lower() not in snapshot_tables]
+            for cols in mig.findall(chunk):
+                for name in names:
+                    keys.add((name,
+                              tuple(c.strip() for c in cols.split(","))))
+    return keys
+
+
+KEYS = unique_keys()
+bad_conflicts = []
+for path in sorted(list((ROOT / "pages").glob("*.py"))
+                   + list((ROOT / "services").glob("*.py"))):
+    for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+        if not (isinstance(node, ast.Constant) and isinstance(node.value, str)):
+            continue
+        for table, _mid, cols in CONFLICT.findall(node.value):
+            want = tuple(c.strip() for c in cols.split(","))
+            if (table.lower(), want) not in KEYS:
+                bad_conflicts.append(f"{path.name}: {table} {want}")
+
+check(f"ON CONFLICT опирается на существующий ключ ({bad_conflicts or 'да'})",
+      not bad_conflicts)
+check("снимок ключей прочитан", len(KEYS) >= 30)
+
 # --- разбор SQL сам по себе: CTE и алиасы таблицами не считаются
 _probe = """
     WITH last_run AS (SELECT asin FROM diagnosis),
