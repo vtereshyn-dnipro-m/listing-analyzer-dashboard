@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t
-from services.db import get_conn, get_engine
+from services.db import get_conn, get_engine, safe_read, table_exists
 from services.settings import get_int, get_float, save_setting
 from components.ui import inject_fonts, eyebrow
 
@@ -311,24 +311,42 @@ _SEV = {"critical": ("#FCEBEB", "#A32D2D", "sev.red"),
 
 
 @st.cache_data(ttl=60)
-def load_alerts() -> pd.DataFrame:
-    try:
-        df_a = pd.read_sql(
+def load_alerts() -> tuple[pd.DataFrame, str | None, bool | None]:
+    """Новые алерты, причина сбоя и ЕСТЬ ЛИ вообще слежение.
+
+    Третье значение — не педантизм. Таблицы `policy_alerts` в базе
+    нет: её должен заводить и наполнять ноутбук, которого пока не
+    существует. А страница на пустом ответе говорила «Новых изменений
+    нет — все источники соответствуют текущим методологиям», то есть
+    утверждала про политики Amazon то, чего никто не проверял.
+
+    Цена этого утверждения — не абстрактная: политика по тайтлам
+    от 27.07.2026 меняет то, что вообще можно отправить в листинг.
+    «Мы не следим» и «изменений нет» человек читает по-разному,
+    и второе усыпляет.
+    """
+    watching = table_exists("policy_alerts")
+    if watching is not True:
+        return pd.DataFrame(), None, watching
+    df_a, err = safe_read(
             """
             SELECT a.*, s.title AS source_title, s.url AS source_url
             FROM policy_alerts a
             LEFT JOIN policy_sources s ON s.id = a.source_id
             WHERE a.status = 'new'
             ORDER BY a.detected_at DESC
-            """, get_engine())
-        return df_a
-    except Exception:
-        return pd.DataFrame()
+            """)
+    return df_a, err, watching
 
 
-alerts = load_alerts()
+alerts, alerts_error, watching = load_alerts()
 
-if alerts.empty:
+if alerts_error:
+    st.error("⚠ " + t("meth.policy_read_failed", e=alerts_error))
+elif watching is not True:
+    # «слежения нет» и «изменений нет» — разные вещи, и второе усыпляет
+    st.warning("⚠ " + t("meth.policy_not_watched"))
+elif alerts.empty:
     st.caption(t("meth.policy_none"))
 else:
     for _, a in alerts.iterrows():
