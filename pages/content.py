@@ -28,7 +28,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t
-from services import figma, translate
+from services import ai, figma, translate
 from services.localization import (
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
     demo_layers, demo_products, fits, glossary, load_layers, load_products,
@@ -391,7 +391,17 @@ def _store_edit(pid: int, slot: str, lang: str, key: str) -> None:
 
 
 def _translate_rows(pid: int, lang: str, rows: list) -> None:
-    """Перевод моделью: строка или весь товар — путь один."""
+    """Перевод моделью: строка или весь товар — путь один.
+
+    Вызывается ИЗ КОЛБЭКА кнопки, а из колбэка `st.error` на экран
+    не попадает — Streamlit рисует элементы позже. Поэтому всё, что
+    надо сказать человеку, кладётся в `session_state` и выводится
+    при отрисовке. Иначе выходит худший вид отказа: кнопка нажалась,
+    счётчики остались нулями, объяснения нет.
+    """
+    st.session_state.pop("loc-save-error", None)
+    st.session_state.pop("loc-model-note", None)
+
     prompt_text, _ver, err = load_prompt()
     if err:
         st.session_state["loc-save-error"] = err
@@ -400,13 +410,34 @@ def _translate_rows(pid: int, lang: str, rows: list) -> None:
         or translate.DEFAULT_PROMPT
     pairs_df, _ = glossary(lang)
     pairs = pairs_df.to_dict("records") if not pairs_df.empty else []
+
     got, model = translate.run(text, lang, rows, pairs)
     if not got:
-        # пусто здесь значит «не получилось», а не «перевод пустой»:
-        # ошибку показал слой вызова, затирать работу человека нечем
+        # три разных отказа, и все раньше выглядели одинаково — пустотой:
+        # провайдер не ответил, ответ не разобрался, ответ пустой
+        st.session_state["loc-save-error"] = (
+            ai.last_call_error() or t("loc.model_empty"))
         return
-    _n, err = save_model_translation(pid, lang, model, got)
-    st.session_state["loc-save-error"] = err
+
+    # модель может ответить местами, которых мы не спрашивали: тогда
+    # запись не найдёт строк и «успех» окажется нулём обновлённых
+    known = {str(r["slot"]) for r in rows}
+    useful = {k: v for k, v in got.items() if k in known}
+    if not useful:
+        st.session_state["loc-save-error"] = t(
+            "loc.model_slots_mismatch", n=len(got),
+            got=", ".join(list(got)[:3]))
+        return
+
+    n, err = save_model_translation(pid, lang, model, useful)
+    if err:
+        st.session_state["loc-save-error"] = err
+        return
+    # ноль обновлённых — это тоже не успех: строки уже правил человек,
+    # и перевод модели их намеренно не тронул
+    st.session_state["loc-model-note"] = (
+        t("loc.model_done", n=n, model=model) if n
+        else t("loc.model_kept_human", n=len(useful)))
     load_layers.clear()
     load_products.clear()
 
@@ -425,6 +456,8 @@ def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
     if st.session_state.get("loc-save-error"):
         st.error("⚠ " + t("loc.save_row_failed",
                           e=st.session_state["loc-save-error"]))
+    if st.session_state.get("loc-model-note"):
+        st.success(st.session_state["loc-model-note"])
 
     edited: dict = {}
     for _, lr in layers.iterrows():
