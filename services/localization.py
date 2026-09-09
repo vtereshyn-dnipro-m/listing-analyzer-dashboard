@@ -237,28 +237,48 @@ def save_translation(product_id: int, slot: str, lang: str,
                      text: str) -> str | None:
     """Правка человека. Возвращает причину сбоя или None.
 
+    Строки языка может НЕ БЫТЬ: перевод чаще всего делается туда, где
+    страницы в макете ещё нет. Поэтому вставка с обновлением, а не
+    UPDATE: голый UPDATE молча ничего не менял бы, и правка исчезала
+    вместе с вкладкой.
+
+    Исходник и `layer_id` берутся у английской строки того же места:
+    первое — чтобы строка осталась осмысленной без макета, второе —
+    чтобы плагин знал, откуда копировать слой.
+
     `edited_after_model` считается СРАВНЕНИЕМ с тем, что предложила
     модель, а не фактом открытия поля: иначе доля правок — мера того,
-    где автоматика возможна, — врала бы в обе стороны. Сравнение идёт
-    в самом UPDATE, потому что текст модели лежит в той же строке.
+    где автоматика возможна, — врала бы в обе стороны.
     """
     try:
         conn = get_conn()
         with conn, conn.cursor() as cur:
             cur.execute(
                 """
-                UPDATE figma_layers
-                   SET translated_text = %(text)s,
-                       status = CASE WHEN %(text)s = '' THEN %(none)s
-                                     ELSE %(done)s END,
-                       edited_after_model = (model_text IS NOT NULL
-                                             AND model_text <> %(text)s),
-                       updated_at = now()
-                 WHERE product_id = %(pid)s AND slot = %(slot)s
-                   AND lang = %(lang)s
+                INSERT INTO figma_layers
+                    (product_id, layer_id, slot, frame_name, lang,
+                     source_text, translated_text, char_limit, status,
+                     updated_at)
+                SELECT s.product_id, s.layer_id, s.slot, s.frame_name,
+                       %(lang)s, s.source_text,
+                       NULLIF(%(text)s, ''),
+                       s.char_limit,
+                       CASE WHEN %(text)s = '' THEN %(none)s ELSE %(done)s END,
+                       now()
+                  FROM figma_layers s
+                 WHERE s.product_id = %(pid)s AND s.slot = %(slot)s
+                   AND s.lang = %(src)s
+                ON CONFLICT (product_id, slot, lang) DO UPDATE
+                    SET translated_text = NULLIF(%(text)s, ''),
+                        status = CASE WHEN %(text)s = '' THEN %(none)s
+                                      ELSE %(done)s END,
+                        edited_after_model = (
+                            figma_layers.model_text IS NOT NULL
+                            AND figma_layers.model_text <> %(text)s),
+                        updated_at = now()
                 """,
                 {"text": (text or "").strip(), "pid": product_id,
-                 "slot": slot, "lang": lang,
+                 "slot": slot, "lang": lang, "src": SOURCE_LANG,
                  "none": ST_NONE, "done": ST_TRANSLATED})
         conn.close()
         return None
@@ -283,22 +303,32 @@ def save_model_translation(product_id: int, lang: str, model: str,
         conn = get_conn()
         with conn, conn.cursor() as cur:
             for slot, text in texts.items():
+                # вставка с обновлением по той же причине, что и в правке
+                # человека: строки языка может не быть вовсе
                 cur.execute(
                     """
-                    UPDATE figma_layers
-                       SET translated_text = %(text)s,
-                           model_text = %(text)s,
-                           model = %(model)s,
-                           translated_at = now(),
-                           edited_after_model = FALSE,
-                           status = %(done)s,
-                           updated_at = now()
-                     WHERE product_id = %(pid)s AND slot = %(slot)s
-                       AND lang = %(lang)s
-                       AND edited_after_model = FALSE
+                    INSERT INTO figma_layers
+                        (product_id, layer_id, slot, frame_name, lang,
+                         source_text, translated_text, model_text, model,
+                         char_limit, status, translated_at, updated_at)
+                    SELECT s.product_id, s.layer_id, s.slot, s.frame_name,
+                           %(lang)s, s.source_text, %(text)s, %(text)s,
+                           %(model)s, s.char_limit, %(done)s, now(), now()
+                      FROM figma_layers s
+                     WHERE s.product_id = %(pid)s AND s.slot = %(slot)s
+                       AND s.lang = %(src)s
+                    ON CONFLICT (product_id, slot, lang) DO UPDATE
+                        SET translated_text = %(text)s,
+                            model_text = %(text)s,
+                            model = %(model)s,
+                            translated_at = now(),
+                            status = %(done)s,
+                            updated_at = now()
+                        WHERE figma_layers.edited_after_model = FALSE
                     """,
                     {"text": text, "model": model, "pid": product_id,
-                     "slot": slot, "lang": lang, "done": ST_TRANSLATED})
+                     "slot": slot, "lang": lang, "src": SOURCE_LANG,
+                     "done": ST_TRANSLATED})
                 n += cur.rowcount or 0
         conn.close()
         return n, None
@@ -410,16 +440,44 @@ def preview_png(node_id: str, scale: float = figma.IMAGE_SCALE
 
 @st.cache_data(ttl=60)
 def load_layers(product_id: int, lang: str) -> tuple[pd.DataFrame, str | None]:
-    """Слои товара на выбранном языке — то, что правит дизайнер."""
+    """Строки товара на выбранном языке — то, что правит дизайнер.
+
+    Основа — АНГЛИЙСКИЕ строки, перевод подтягивается к ним по `slot`.
+    Не наоборот: строки языка существуют только там, где дизайнер уже
+    нарисовал эту страницу в макете, а переводить надо как раз туда,
+    где её нет. Прежний запрос читал `WHERE lang = <язык>` и на
+    непереведённом языке отдавал пусто — экран говорил «текстовых
+    слоёв нет» у товара, где их 33, и работать было нельзя.
+
+    Предел символов берётся у языковой строки, когда она есть: ширина
+    слоя своя на каждой странице. Когда её нет, берётся английский —
+    он и есть ближайшая правда о макете.
+    """
     try:
         df = pd.read_sql(
             """
-            SELECT id, layer_id, frame_name, source_text, translated_text,
-                   char_limit, status, updated_at
-            FROM figma_layers
-            WHERE product_id = %(pid)s AND lang = %(lang)s
-            ORDER BY frame_name, id
-            """, get_engine(), params={"pid": int(product_id), "lang": lang})
+            SELECT COALESCE(d.id, s.id)                AS id,
+                   COALESCE(d.layer_id, s.layer_id)    AS layer_id,
+                   s.layer_id                          AS source_layer_id,
+                   s.slot                              AS slot,
+                   COALESCE(d.frame_name, s.frame_name) AS frame_name,
+                   s.source_text                       AS source_text,
+                   d.translated_text                   AS translated_text,
+                   COALESCE(d.char_limit, s.char_limit) AS char_limit,
+                   COALESCE(d.status, %(none)s)        AS status,
+                   COALESCE(d.edited_after_model, FALSE) AS edited_after_model,
+                   d.model                             AS model,
+                   d.updated_at                        AS updated_at
+            FROM figma_layers s
+            LEFT JOIN figma_layers d
+                   ON d.product_id = s.product_id
+                  AND d.slot = s.slot
+                  AND d.lang = %(lang)s
+            WHERE s.product_id = %(pid)s AND s.lang = %(src)s
+            ORDER BY s.frame_name, s.id
+            """, get_engine(),
+            params={"pid": int(product_id), "lang": lang,
+                    "src": SOURCE_LANG, "none": ST_NONE})
         return df, None
     except Exception as e:
         return pd.DataFrame(), f"{type(e).__name__}: {e}"
