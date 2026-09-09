@@ -31,6 +31,7 @@ from __future__ import annotations
 import json
 
 SCOPE = "translate"
+TASK = "translate"
 
 # Языки целей — человеческими именами для промпта
 LANG_NAME = {
@@ -84,6 +85,21 @@ def build_prompt(prompt_text: str, lang: str, rows: list, pairs: list) -> str:
         cap = f"не больше {int(limit)} знаков" if limit else "предел неизвестен"
         parts.append(f'  slot={r["slot"]}  ({cap})  {r["source_text"]}')
     return "\n".join(parts)
+
+
+def run(prompt_text: str, lang: str, rows: list, pairs: list) -> tuple[dict, str]:
+    """Перевод строк моделью: ({slot: текст}, имя модели).
+
+    Модель зовётся тем же слоем, что и остальные задачи, — провайдер
+    выбирается в Настройках. Пустой ответ здесь не «перевод пустой»,
+    а «не получилось»: ошибка уже показана слоем вызова, и записывать
+    поверх работы человека нечего.
+    """
+    from services import ai                     # локально: тесты без сети
+    provider, model = ai.task_config(TASK)
+    reply = ai.generate_json(
+        TASK, build_prompt(prompt_text, lang, rows, pairs))
+    return parse_reply(reply), model
 
 
 def parse_reply(raw) -> dict:

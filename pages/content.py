@@ -22,16 +22,19 @@ pages/content.py — «Контент». Первая вкладка: «Пере
 """
 from __future__ import annotations
 
+import json
+
 import pandas as pd
 import streamlit as st
 
 from i18n import t
-from services import figma
+from services import figma, translate
 from services.localization import (
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
-    demo_layers, demo_products, fits, load_layers, load_products, needs_sync,
-    over_rows, preview_url, product_state, save_parsed, summarize,
-    sync_age_hours,
+    demo_layers, demo_products, fits, glossary, load_layers, load_products,
+    load_prompt, needs_sync, over_rows, preview_url, product_state,
+    save_model_translation, save_parsed, save_prompt, save_translation,
+    summarize, sync_age_hours,
 )
 from components.ui import inject_fonts, eyebrow
 
@@ -272,7 +275,8 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
         render_preview(row, demo)
     with pane_txt:
         render_rows(layers, pid, lang)
-    render_actions()
+    render_actions(layers, row, lang)
+    render_prompt_box()
 
 
 def render_preview(row, demo: bool) -> None:
@@ -296,6 +300,53 @@ def render_preview(row, demo: bool) -> None:
     st.caption(t("loc.preview_note"))
 
 
+def human_mark(row) -> str:
+    """Значок «строку правил человек после модели».
+
+    Через месяц по этому полю будет видно, где перевод можно отдать
+    автоматике, а где нет. Значок мелкий и стоит у ИСХОДНИКА, а не
+    у перевода: он про историю строки, а не про её текущий текст.
+    """
+    if not bool(row.get("edited_after_model")):
+        return ""
+    return (f'<span title="{t("loc.edited_by_human")}" style="color:{MUTED};'
+            f'font-size:11px;margin-left:6px;">✎</span>')
+
+
+def _store_edit(pid: int, slot: str, lang: str, key: str) -> None:
+    """Правка уезжает в базу сразу, без кнопки «Сохранить».
+
+    Кнопка означала бы, что часть работы живёт только в браузере:
+    вкладку закрыли — правки нет. Здесь же строка мелкая, правок много,
+    и подтверждать каждую бессмысленно.
+    """
+    err = save_translation(pid, slot, lang, st.session_state.get(key, ""))
+    st.session_state["loc-save-error"] = err
+    load_layers.clear()
+    load_products.clear()
+
+
+def _translate_rows(pid: int, lang: str, rows: list) -> None:
+    """Перевод моделью: строка или весь товар — путь один."""
+    prompt_text, _ver, err = load_prompt()
+    if err:
+        st.session_state["loc-save-error"] = err
+        return
+    text = st.session_state.get("loc-prompt-draft") or prompt_text \
+        or translate.DEFAULT_PROMPT
+    pairs_df, _ = glossary(lang)
+    pairs = pairs_df.to_dict("records") if not pairs_df.empty else []
+    got, model = translate.run(text, lang, rows, pairs)
+    if not got:
+        # пусто здесь значит «не получилось», а не «перевод пустой»:
+        # ошибку показал слой вызова, затирать работу человека нечем
+        return
+    _n, err = save_model_translation(pid, lang, model, got)
+    st.session_state["loc-save-error"] = err
+    load_layers.clear()
+    load_products.clear()
+
+
 def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
     # Шапка таблицы: подписи колонок здесь, а не в каждой строке —
     # иначе на десяти строках они читаются как часть текста
@@ -307,9 +358,14 @@ def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
         f'<div style="flex:0 0 86px;text-align:right;">'
         f'{t("loc.col_chars")}</div></div>', unsafe_allow_html=True)
 
+    if st.session_state.get("loc-save-error"):
+        st.error("⚠ " + t("loc.save_row_failed",
+                          e=st.session_state["loc-save-error"]))
+
     edited: dict = {}
     for _, lr in layers.iterrows():
-        key = f"loc-txt-{pid}-{lang}-{lr['layer_id']}"
+        slot = lr.get("slot") or lr["layer_id"]
+        key = f"loc-txt-{pid}-{lang}-{slot}"
         current = st.session_state.get(key, lr.get("translated_text") or "")
         n, lim, state = fits(current, lr.get("char_limit"))
         edited[lr["layer_id"]] = current
@@ -322,14 +378,24 @@ def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
                         f'border-radius:8px;padding:2px 6px;}}</style>',
                         unsafe_allow_html=True)
         with st.container(key=box):
-            c1, c2, c3 = st.columns([1, 1, 0.34], gap="small",
-                                    vertical_alignment="center")
+            c1, c2, c3, c4 = st.columns([1, 1, 0.34, 0.22], gap="small",
+                                        vertical_alignment="center")
             c1.markdown(
                 f'<div style="font-size:13px;color:{INK};padding-top:6px;">'
-                f'{lr["source_text"]}</div>', unsafe_allow_html=True)
+                f'{lr["source_text"]}{human_mark(lr)}</div>',
+                unsafe_allow_html=True)
             c2.text_input(lr["layer_id"], value=current, key=key,
-                          label_visibility="collapsed")
+                          label_visibility="collapsed",
+                          on_change=_store_edit, args=(pid, slot, lang, key))
             c3.markdown(counter_html(n, lim, state), unsafe_allow_html=True)
+            # перевод ОДНОЙ строки: чаще всего переделать надо именно её,
+            # а не весь товар — и это дешевле по времени и по деньгам
+            c4.button("↻", key=f"loc-tr-{pid}-{lang}-{slot}",
+                      help=t("loc.retranslate_row"),
+                      on_click=_translate_rows,
+                      args=(pid, lang, [{"slot": slot,
+                                         "source_text": lr["source_text"],
+                                         "char_limit": lr.get("char_limit")}]))
 
     check = layers.copy()
     check["translated_text"] = check["layer_id"].map(edited)
@@ -338,13 +404,63 @@ def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
         st.warning("⚠ " + t("loc.over_warning", n=n_over))
 
 
-def render_actions() -> None:
+def render_prompt_box() -> None:
+    """Промпт целиком на экране — то, что уйдёт модели, без добавок.
+
+    Скрытый промпт — это чужие решения, которые нельзя оспорить.
+    Дизайнер видит правила и дописывает своё («не переводить название
+    модели») туда же, а не пишет о них в чат.
+    """
+    saved, ver, err = load_prompt()
+    with st.expander(t("loc.prompt_open")):
+        if err:
+            st.error("⚠ " + t("loc.prompt_read_failed", e=err))
+            return
+        base = saved or translate.DEFAULT_PROMPT
+        if not saved:
+            # текст по умолчанию виден и назван таковым: подмены,
+            # из-за которой мы теряли методологию тайтлов, тут нет
+            st.caption(t("loc.prompt_default"))
+        else:
+            st.caption(t("loc.prompt_version", v=ver))
+        st.text_area(t("loc.prompt_open"), value=base, height=260,
+                     key="loc-prompt-draft", label_visibility="collapsed")
+        if st.button(t("loc.prompt_save"), key="loc-prompt-save"):
+            fail = save_prompt(st.session_state.get("loc-prompt-draft") or "")
+            if fail:
+                st.error("⚠ " + t("loc.prompt_save_failed", e=fail))
+            else:
+                st.success(t("loc.prompt_saved", v=ver + 1))
+                st.rerun()
+
+
+def render_actions(layers: pd.DataFrame, row, lang: str) -> None:
     """Действия и оговорки — под обеими колонками, а не внутри одной."""
-    a1, a2, a3 = st.columns([2.0, 2.0, 5], gap="small")
-    a1.button(t("loc.apply_figma"), type="primary", key="loc-apply",
-              disabled=True, help=t("loc.apply_soon"))
+    pid = int(row["id"])
+    rows = [{"slot": lr.get("slot") or lr["layer_id"],
+             "source_text": lr["source_text"],
+             "char_limit": lr.get("char_limit")}
+            for _, lr in layers.iterrows()]
+
+    a1, a2, a3 = st.columns([2.4, 2.0, 4.6], gap="small")
+    # Запись в Figma через REST невозможна, поэтому «Применить» отдаёт
+    # файл для плагина. Кнопка, которая ничего не делает и объясняет
+    # почему, — хуже кнопки, которая делает половину дела.
+    a1.download_button(
+        t("loc.apply_figma"), type="primary", key="loc-apply",
+        file_name=f"figma-{row.get('asin')}-{lang}.json", mime="application/json",
+        data=json.dumps({
+            "file_key": row.get("figma_file_key"),
+            "asin": row.get("asin"), "lang": lang,
+            "layers": [{"layer_id": lr["layer_id"],
+                        "slot": lr.get("slot"),
+                        "text": lr.get("translated_text") or ""}
+                       for _, lr in layers.iterrows()
+                       if (lr.get("translated_text") or "").strip()],
+        }, ensure_ascii=False, indent=2))
     a2.button(t("loc.retranslate"), key="loc-retry",
-              disabled=True, help=t("loc.model_soon"))
+              on_click=_translate_rows, args=(pid, lang, rows))
+    st.caption(t("loc.apply_json_note"))
     # Предел — расчётный, и об этом надо сказать прямо: ширина слоя
     # приходит в пикселях, а знаки разной ширины. Без этой строки текст,
     # не влезший на самой границе, выглядит ошибкой расчёта.
