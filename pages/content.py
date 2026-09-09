@@ -188,6 +188,7 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
                     "source_checked": parsed.get("source_checked", 0),
                     "source_over": parsed.get("source_over", 0),
                     "aplus_frames": parsed.get("aplus_frames", 0),
+                    "typo_frames": parsed.get("typo_frames", []),
                     "limited": bool(first_pass),
                 }
                 load_products.clear()
@@ -219,6 +220,15 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
                          n=len(figma.FIRST_PASS_ASINS)))
     if rep.get("aplus_frames"):
         st.caption(t("loc.aplus_skipped", n=int(rep["aplus_frames"])))
+    # опечатки разобраны, но названы: чинить их надо в Figma,
+    # а не держать поправку в коде вечно
+    if rep.get("typo_frames"):
+        with st.expander(t("loc.typo_n", n=len(rep["typo_frames"]))):
+            st.caption(t("loc.typo_hint"))
+            for line in rep["typo_frames"][:20]:
+                st.markdown(f'<div class="ls-mono" style="font-size:12px;'
+                            f'color:{MUTED};">{line}</div>',
+                            unsafe_allow_html=True)
     # английский текст уже стоит в макете и в него влезает; если расчёт
     # утверждает обратное на заметной доле слоёв — занижен коэффициент
     _checked, _over = rep.get("source_checked") or 0, rep.get("source_over") or 0

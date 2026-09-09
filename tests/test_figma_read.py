@@ -80,7 +80,8 @@ DOC = {"document": {"children": [
                      "absoluteBoundingBox": {"width": 4822, "height": 3709,
                                              "x": -964, "y": -893}},
                 ]}]}]},
-        {"id": "1:7", "type": "FRAME", "name": "B0G4S9SJ3M.MAIN", "children": [
+        # опечатка дизайнера: лишняя B перед ASIN (в живом файле их три)
+        {"id": "1:7", "type": "FRAME", "name": "BB0G4S9SJ3M.MAIN", "children": [
             text_node("1:8", "body",
                       "Charges from power banks and car adapters",
                       300, 66, 18, 22)]},
@@ -157,6 +158,21 @@ check("id узлов у пары разные, а место одно",
 check("узел товара взят с английской страницы",
       _stapler["figma_node_id"] == "1:7"
       and _stapler["page_name"] == "UK/US")
+
+# --- опечатка в имени фрейма: разобрать, но сказать вслух
+# «BB0GJMT58WT.MAIN» — лишняя B перед ASIN. Строгий шаблон терял такой
+# фрейм, а это `.MAIN`, то есть ГЛАВНОЕ изображение: в списке и превью
+# показывался бы слайд PT01 вместо фото товара. Текста в `.MAIN` нет,
+# поэтому перевод не страдал — страдало то, по чему товар узнают.
+check("фрейм с опечаткой разобран и привязан к своему товару",
+      any(l["layer_id"] == "1:8" for l in _stapler["layers"]))
+check(f"и опечатка названа в отчёте ({R['typo_frames']})",
+      any("BB0G4S9SJ3M.MAIN" in x for x in R["typo_frames"]))
+check("нормальные имена опечатками не считаются",
+      not any("B0G4S9SJ3M.PT01" in x for x in R["typo_frames"]))
+# терпимость не должна превращаться во «всё подряд»
+check("мусор перед ASIN длиннее двух букв не принимается",
+      fg.FRAME_RE.match("XXXB0G4S9SJ3M.MAIN") is None)
 
 # --- пробный заход: четыре товара вместо всего файла
 # Список из четырёх не должен выглядеть как весь файл — по нему

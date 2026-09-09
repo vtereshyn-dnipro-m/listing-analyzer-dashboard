@@ -64,7 +64,17 @@ SKU_RE = re.compile(r"(?<![\w-])(\d{6,10}(?:-[A-Za-z0-9]+)?)(?![\d])")
 
 # Макет товара: фрейм верхнего уровня с ASIN в имени — «B0G4S9SJ3M.PT01»,
 # «B0G4S9SJ3M.MAIN». Связь по имени однозначна, геометрия не нужна.
-FRAME_RE = re.compile(r"^(?P<asin>B0[A-Z0-9]{8})\.(?P<part>.+)$")
+#
+# Перед ASIN допускаются одна-две лишние буквы: в файле есть
+# «BB0GJMT58WT.MAIN», «BB0FXY75N5G.MAIN», «BB0DG616BXX.MAIN» — опечатка
+# дизайнера, лишняя B. Строгий шаблон терял у этих товаров фрейм
+# `.MAIN`, то есть ГЛАВНОЕ изображение: превью и миниатюра показывали
+# бы вместо него слайд PT01. Текста в `.MAIN` нет, поэтому перевод
+# не страдал — страдало то, по чему товар узнают в списке.
+#
+# Опечатки не проглатываются молча: имена попадают в отчёт (`typo_frames`),
+# чтобы их поправили в Figma, а не чинили разбором вечно.
+FRAME_RE = re.compile(r"^(?P<junk>[A-Z]{0,2})(?P<asin>B0[A-Z0-9]{8})\.(?P<part>.+)$")
 
 # Модули A+ называются «carousel 2.2» и ASIN в имени НЕ содержат:
 # на UK/US таких 365, и одно и то же имя встречается у разных товаров.
@@ -360,6 +370,7 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
     skipped_pages: list[str] = []
     aplus_frames = 0
     other_frames: list[str] = []
+    typo_frames: list[str] = []
 
     for page in pages:
         page_name = str(page.get("name") or "")
@@ -391,6 +402,9 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
                 other_frames.append(f"{page_name}: {name[:60]}")
                 continue
             asin = m.group("asin")
+            if m.group("junk"):
+                # разобрали, но сказали вслух: чинить надо в Figma
+                typo_frames.append(f"{page_name}: {name[:60]}")
             if only_asins and asin not in only_asins:
                 continue
 
@@ -449,6 +463,7 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
         "skipped_sections": skipped_labels + other_frames,
         "skipped_pages": skipped_pages,
         "aplus_frames": aplus_frames,
+        "typo_frames": typo_frames,
         "source_checked": src_total,
         "source_over": src_over,
         "read_at": time.time(),
