@@ -1,51 +1,54 @@
-# Уникальные ключи listing_data — СНИМОК ЖИВОЙ БАЗЫ на 08.09.2026.
+# Уникальные ключи listing_data — СНИМОК ЖИВОЙ БАЗЫ на 09.09.2026.
 #
 # Нужен ради одной проверки: `ON CONFLICT (колонки)` в коде работает
 # только при уникальном ключе ровно по этим колонкам, иначе Postgres
 # отвечает «there is no unique or exclusion constraint matching the ON
 # CONFLICT specification» — и падает не тест, а человек за экраном.
-# Ровно это чуть не случилось 08.09: миграция сменила ключ
-# figma_products, а save_parsed продолжал ссылаться на снесённый.
 #
 # Перечислены и ограничения, и уникальные ИНДЕКСЫ: для ON CONFLICT
 # годятся оба, и у sqp_reports ключ существует только индексом.
 #
-# Формат: <таблица> <колонки через запятую>
+# ИМЯ ограничения здесь не для красоты. Миграции удаляют ключи по
+# имени (`DROP CONSTRAINT figma_layers_layer_id_lang_key`), и без имён
+# проверка не смогла бы повторить это на снимке: снесённый ключ
+# считался бы живым, а новый — несуществующим.
+#
+# Формат: <таблица> <имя ключа> <колонки через запятую>
 
-app_settings             key
-asin_economics           asin,marketplace
-asin_economics           id
-catalog_source           asin,marketplace
-collection_schedule      id
-diagnosis                id
-figma_layers             id
-figma_layers             layer_id,lang
-figma_products           figma_file_key,asin,section_type
-figma_products           id
-flatfile_templates       id
-flatfile_templates       marketplace,slot
-listing_analysis         id
-listing_attributes       asin,marketplace
-listing_changes          id
-listing_issues           sku,marketplace,issue_code
-listing_push_log         id
-listing_snapshots        id
-photo_analysis           id
-policy_sources           id
-product_matrix           asin,marketplace
-product_matrix           id
-protected_keywords       asin,marketplace,phrase
-protected_keywords       id
-search_query_performance asin,marketplace,week_start,search_query
-search_query_performance id
-sku_economics            sku_group
-sqp_report_queue         asin,marketplace,reporting_date
-sqp_report_queue         report_id
-sqp_reports              asin,marketplace,reporting_date,search_query
-sqp_reports              id
-suppressed_listings      id
-suppressed_listings      marketplace,sku,snapshot_date
-synthesis_changes        id
-synthesis_coverage       id
-synthesis_drafts         id
-synthesis_skill          id
+app_settings             app_settings_pkey                                key
+asin_economics           asin_economics_asin_marketplace_key              asin,marketplace
+asin_economics           asin_economics_pkey                              id
+catalog_source           catalog_source_pkey                              asin,marketplace
+collection_schedule      collection_schedule_pkey                         id
+diagnosis                diagnosis_pkey                                   id
+figma_layers             figma_layers_product_slot_lang_key               product_id,slot,lang
+figma_layers             figma_layers_pkey                                id
+figma_products           figma_products_file_asin_type_key                figma_file_key,asin,section_type
+figma_products           figma_products_pkey                              id
+flatfile_templates       flatfile_templates_marketplace_slot_key          marketplace,slot
+flatfile_templates       flatfile_templates_pkey                          id
+listing_analysis         listing_analysis_pkey                            id
+listing_attributes       listing_attributes_pkey                          asin,marketplace
+listing_changes          listing_changes_pkey                             id
+listing_issues           listing_issues_pkey                              sku,marketplace,issue_code
+listing_push_log         listing_push_log_pkey                            id
+listing_snapshots        listing_snapshots_pkey                           id
+photo_analysis           photo_analysis_pkey                              id
+policy_sources           policy_sources_pkey                              id
+product_matrix           product_matrix_asin_marketplace_key              asin,marketplace
+product_matrix           product_matrix_pkey                              id
+protected_keywords       protected_keywords_asin_marketplace_phrase_key   asin,marketplace,phrase
+protected_keywords       protected_keywords_pkey                          id
+search_query_performance search_query_performance_asin_marketplace_week_start_search_key asin,marketplace,week_start,search_query
+search_query_performance search_query_performance_pkey                    id
+sku_economics            sku_economics_pkey                               sku_group
+sqp_report_queue         sqp_queue_target_idx                             asin,marketplace,reporting_date
+sqp_report_queue         sqp_report_queue_pkey                            report_id
+sqp_reports              sqp_reports_pkey                                 id
+sqp_reports              sqp_reports_uniq_idx                             asin,marketplace,reporting_date,search_query
+suppressed_listings      suppressed_listings_marketplace_sku_snapshot_date_key marketplace,sku,snapshot_date
+suppressed_listings      suppressed_listings_pkey                         id
+synthesis_changes        synthesis_changes_pkey                           id
+synthesis_coverage       synthesis_coverage_pkey                          id
+synthesis_drafts         synthesis_drafts_pkey                            id
+synthesis_skill          synthesis_skill_pkey                             id

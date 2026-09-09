@@ -29,7 +29,7 @@ import pandas as pd
 import streamlit as st
 
 from services import figma
-from services.db import get_conn, get_engine
+from services.db import get_conn, get_engine, safe_read
 
 # Порядок языков на экране: источник первым, дальше рынки.
 SOURCE_LANG = "en"
@@ -177,17 +177,19 @@ def save_parsed(parsed: dict) -> tuple[int, int, str | None]:
                     cur.execute(
                         """
                         INSERT INTO figma_layers
-                            (product_id, layer_id, frame_name, lang,
+                            (product_id, layer_id, slot, frame_name, lang,
                              source_text, translated_text, char_limit,
                              status, updated_at)
-                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now())
-                        ON CONFLICT (layer_id, lang) DO UPDATE
+                        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s, now())
+                        ON CONFLICT (product_id, slot, lang) DO UPDATE
                             SET source_text = EXCLUDED.source_text,
                                 char_limit = EXCLUDED.char_limit,
                                 frame_name = EXCLUDED.frame_name,
+                                layer_id = EXCLUDED.layer_id,
                                 updated_at = now()
                         """,
-                        (pid, lr["layer_id"], lr.get("frame_name"),
+                        (pid, lr["layer_id"], lr.get("slot"),
+                         lr.get("frame_name"),
                          lang, lr["source_text"],
                          None if is_source else lr["source_text"],
                          lr.get("char_limit"),
@@ -229,6 +231,38 @@ def load_products() -> tuple[pd.DataFrame, str | None]:
         return df, None
     except Exception as e:
         return pd.DataFrame(), f"{type(e).__name__}: {e}"
+
+
+@st.cache_data(ttl=120)
+def glossary(lang: str, limit: int = 60) -> tuple[pd.DataFrame, str | None]:
+    """Готовые пары «английский → перевод» как образец стиля.
+
+    Заводить их руками не нужно: если строка есть и на UK/US, и на DE,
+    это уже готовая пара — их связывает `slot`, место слоя в макете.
+    Пары идут в промпт, чтобы модель попадала в словарь дизайнера,
+    а не изобретала свой на каждой карточке.
+
+    Строки, совпадающие с исходником, ОСТАВЛЕНЫ намеренно: «1,500 mAh»
+    и коды моделей не переводятся, и модель должна видеть, что их
+    трогать не надо, — это половина смысла образца.
+    """
+    return safe_read(
+        """
+        SELECT src.source_text AS en,
+               dst.translated_text AS tr,
+               dst.char_limit AS char_limit
+        FROM figma_layers dst
+        JOIN figma_layers src
+          ON src.product_id = dst.product_id
+         AND src.slot = dst.slot
+         AND src.lang = %(src)s
+        WHERE dst.lang = %(dst)s
+          AND dst.translated_text IS NOT NULL
+          AND dst.translated_text <> ''
+        ORDER BY length(src.source_text) DESC
+        LIMIT %(lim)s
+        """,
+        params={"src": SOURCE_LANG, "dst": lang, "lim": int(limit)})
 
 
 @st.cache_data(ttl=figma.IMAGE_TTL, show_spinner=False)
