@@ -227,62 +227,85 @@ next(b for b in at.button if b.key == "loc-sync").click().run()
 check("без галочки читается весь файл", PARSED_WITH[-1] is None)
 fg_mod.parse_document = _real_parse
 
-# --- 6. превью макета: контекст рядом с текстом, но не ценой квоты
-# Список — это сотни строк, и миниатюра в каждой означала бы сотни
-# запросов к Figma при лимите, который закрывается от одного чтения
-# документа. Поэтому рендер запрашивается только для ОТКРЫТОГО товара.
+# --- 6. картинки: миниатюра в списке и превью в редакторе
+# По названию товары не различаются — «Blower DCB-201BC» и «Blower
+# DVB-200» читаются одинаково. Поэтому в списке миниатюра, но ОДНА
+# на товар (узел .MAIN), а не по картинке на слой: каждая стоит
+# запроса ссылки у API, и это квота.
+#
+# Кэшируются БАЙТЫ, а не ссылка: ссылку Figma держит около часа,
+# и суточный кэш ссылки означал бы битые картинки через час.
+import base64                                            # noqa: E402
 import services.figma as fg                               # noqa: E402
 
 CALLS: list = []
+# настоящий PNG 1×1: Streamlit отдаёт байты в PIL, и подделка из восьми
+# байт роняет страницу — ровно так и нашлось, что битый ответ Figma
+# уносил весь список
+PNG_1x1 = base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmM"
+    "IQAAAABJRU5ErkJggg==")
 
 
-def fake_image(node_id, key=None, scale=fg.IMAGE_SCALE):
-    CALLS.append(node_id)
-    return "https://figma.example/render.png", None
+def fake_png(node_id, key=None, scale=fg.IMAGE_SCALE):
+    CALLS.append((node_id, scale))
+    return PNG_1x1, None
 
 
-fg.node_image = fake_image
-loc.preview_url.clear()
+fg.node_png = fake_png
+loc.preview_png.clear()
 
+check("кэш картинок живёт сутки, а не час",
+      fg.IMAGE_TTL >= 24 * 60 * 60)
+check("миниатюра мельче превью", fg.THUMB_SCALE < fg.IMAGE_SCALE)
+
+# демо узла не имеет — рендер выдуманного был бы запросом в никуда
 st.cache_data.clear()
 at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/content.py").run()
-check("в списке превью не запрашивается ни разу", not CALLS)
+check("для демо-списка рендер не запрашивается", not CALLS)
 
-# демо объявлено плашкой и картинки не имеет: рендер выдуманного узла
-# был бы запросом в никуда
 at.session_state["loc-product"] = -1
 at.session_state["loc-lang"] = "es"
 at.run()
-check("для демо-товара рендер не запрашивается", not CALLS)
+check("для демо-товара рендер тоже не запрашивается", not CALLS)
 check("и сказано, почему превью нет",
       any("не прочитан из Figma" in str(c.value) for c in at.caption))
 
-# настоящий товар: превью есть, и запрашивается оно ОДИН раз — ссылка
-# живёт около часа, повторный запрос стоил бы квоты
+# настоящие данные: в списке ОДНА миниатюра на товар, мелкая
 MODE["real"] = True
 st.cache_data.clear()
 CALLS.clear()
 at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/content.py").run()
+check(f"в списке ровно одна картинка на товар ({CALLS})",
+      CALLS == [("1:1", fg.THUMB_SCALE)])
+check("и она на экране", len(at.get("image")) == 1)
+
+at.run()          # ещё одна отрисовка — кэш обязан удержать байты
+check(f"повторная отрисовка списка запроса не делает ({len(CALLS)})",
+      len(CALLS) == 1)
+
+# в редакторе — то же изображение, но крупнее
 at.session_state["loc-product"] = 7
 at.session_state["loc-lang"] = "es"
 at.run()
-check(f"у прочитанного товара превью запрошено ({CALLS})", CALLS == ["1:1"])
+check(f"превью в редакторе просит полный масштаб ({CALLS})",
+      CALLS == [("1:1", fg.THUMB_SCALE), ("1:1", fg.IMAGE_SCALE)])
 check("картинка действительно на экране", len(at.get("image")) == 1)
 check("и подпись объясняет, что макет английский",
       any("Английский макет" in str(c.value) for c in at.caption))
-at.run()          # ещё одна отрисовка — кэш обязан удержать ссылку
-check(f"повторная отрисовка запроса не делает ({CALLS})", CALLS == ["1:1"])
 
 # отказ рендера не должен уносить с собой таблицу текста
-fg.node_image = lambda node_id, key=None, scale=fg.IMAGE_SCALE: (
+fg.node_png = lambda node_id, key=None, scale=fg.IMAGE_SCALE: (
     None, "429, ждать 306 с")
-loc.preview_url.clear()
+loc.preview_png.clear()
 at.run()
 check("отказ превью назван отказом",
       any("Не удалось получить рендер" in str(c.value) for c in at.caption))
 check("а строки перевода остались на месте", len(at.text_input) > 0)
+fg.node_png = fake_png
+loc.preview_png.clear()
 
 # --- 7. правка, перевод строки и след модели
 # Правка уезжает в базу СРАЗУ: кнопка «Сохранить» означала бы, что

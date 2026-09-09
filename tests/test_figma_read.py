@@ -306,6 +306,42 @@ _url, _err = fg.node_image("1:1")
 check("лимит на превью назван лимитом и в секундах",
       _url is None and "306" in (_err or ""))
 
+# --- картинка байтами: битый ответ не должен ронять страницу
+# Streamlit отдаёт байты в PIL, и на обрезанном ответе падает ВСЯ
+# страница — список товаров уносит миниатюра, которая была удобством.
+# Поэтому подпись PNG проверяется здесь, до экрана.
+class _Bin:
+    def __init__(self, code, body=b""):
+        self.status_code, self.content, self.headers = code, body, {}
+        self.text = ""
+
+    def json(self):
+        return {"err": None, "images": {"1:1": "https://figma.example/x.png"}}
+
+
+def _png_ok(url, headers=None, timeout=None, params=None):
+    if "images" in url:
+        return _Bin(200)
+    return _Bin(200, b"\x89PNG\r\n\x1a\n" + b"body")
+
+
+fg.requests.get = _png_ok
+_png, _err = fg.node_png("1:1")
+check("картинка возвращается байтами",
+      _png and _png.startswith(b"\x89PNG") and _err is None)
+
+
+def _png_broken(url, headers=None, timeout=None, params=None):
+    if "images" in url:
+        return _Bin(200)
+    return _Bin(200, b"<html>rate limited</html>")
+
+
+fg.requests.get = _png_broken
+_png, _err = fg.node_png("1:1")
+check("не-PNG отбраковывается ДО экрана, а не роняет страницу",
+      _png is None and "не похож на PNG" in (_err or ""))
+
 # без секретов до сети дело не доходит вовсе
 fg.cfg = lambda name, default=None: default
 _url, _err = fg.node_image("1:1")

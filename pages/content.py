@@ -32,9 +32,9 @@ from services import figma, translate
 from services.localization import (
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
     demo_layers, demo_products, fits, glossary, load_layers, load_products,
-    load_prompt, needs_sync, over_rows, preview_url, product_state,
-    save_model_translation, save_parsed, save_prompt, save_translation,
-    summarize, sync_age_hours,
+    load_prompt, needs_sync, over_rows, product_state,
+    preview_png, save_model_translation, save_parsed, save_prompt,
+    save_translation, summarize, sync_age_hours,
 )
 from components.ui import inject_fonts, eyebrow
 
@@ -243,7 +243,9 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
     view = view.sort_values(["_o", "name"])
 
     for _, r in view.iterrows():
-        c1, c2 = st.columns([9, 2.6], gap="small", vertical_alignment="center")
+        c0, c1, c2 = st.columns([1.1, 8, 2.6], gap="small",
+                                vertical_alignment="center")
+        render_thumb(c0, r, demo)
         c1.markdown(product_row_html(r), unsafe_allow_html=True)
         done = set(r.get("langs_done") or ())
         missing = [lg for lg in TARGET_LANGS if lg not in done]
@@ -300,6 +302,31 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
     render_prompt_box()
 
 
+def render_thumb(col, row, demo: bool) -> None:
+    """Миниатюра главного изображения — чтобы различать товары.
+
+    По названию они не различаются: «Blower DCB-201BC» и «Blower
+    DVB-200» читаются одинаково, а на картинке видно сразу. Берётся
+    ОДНО изображение на товар (узел `.MAIN`), а не все слои: каждая
+    миниатюра стоит запроса ссылки, и при двадцати одном товаре это
+    двадцать один запрос — по одному в сутки на товар, дальше из кэша.
+    """
+    node = str(row.get("figma_node_id") or "")
+    if demo or not node:
+        return
+    png, err = preview_png(node, figma.THUMB_SCALE)
+    if err or not png:
+        # молчим: миниатюра — удобство, и её отказ не должен
+        # заслонять список, ради которого человек сюда пришёл
+        return
+    try:
+        col.image(png, width="stretch")
+    except Exception:
+        # битые байты Streamlit отдаёт в PIL, и падает ВСЯ страница.
+        # Список важнее картинки, поэтому здесь именно молчание.
+        pass
+
+
 def render_preview(row, demo: bool) -> None:
     """Картинка макета — только для ОТКРЫТОГО товара.
 
@@ -312,12 +339,18 @@ def render_preview(row, demo: bool) -> None:
     if demo or not node:
         st.caption(t("loc.preview_none"))
         return
-    url, err = preview_url(node)
-    if err:
+    png, err = preview_png(node)
+    if err or not png:
         # отказ рендера не должен выглядеть как «превью не бывает»
-        st.caption("⚠ " + t("loc.preview_failed", e=err))
+        st.caption("⚠ " + t("loc.preview_failed", e=err or "—"))
         return
-    st.image(url, width="stretch")
+    try:
+        st.image(png, width="stretch")
+    except Exception as e:
+        # здесь, в отличие от списка, отказ называется вслух: человек
+        # открыл товар ради контекста и должен знать, что его нет
+        st.caption("⚠ " + t("loc.preview_failed", e=f"{type(e).__name__}"))
+        return
     st.caption(t("loc.preview_note"))
 
 

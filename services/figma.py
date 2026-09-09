@@ -114,9 +114,17 @@ RETRY_MS_OVER = 86_400
 # заголовок на тёмном фоне или мелкая подпись, — а не для вычитки.
 IMAGE_SCALE = 0.5
 
-# Ссылку на рендер Figma держит около часа. Кэшируем с запасом: истёкшая
-# ссылка отдаёт битую картинку, а лишний запрос — это квота.
-IMAGE_TTL = 50 * 60
+# Ссылку на рендер Figma держит около часа, поэтому кэшируется не она,
+# а САМА КАРТИНКА — на сутки. Кэш ссылки на сутки означал бы битые
+# миниатюры через час: ссылка протухла, а мы её всё ещё раздаём.
+# Скачивание картинки идёт с файлового хранилища, а не с API, и квоту
+# не тратит — тратит её только запрос ссылки, раз в сутки на товар.
+IMAGE_TTL = 24 * 60 * 60
+
+# Миниатюра в списке: там важно отличить воздуходувку от степлера,
+# а не читать подписи. Четверть масштаба — это около 750 px по ширине
+# макета, с запасом под ретину.
+THUMB_SCALE = 0.25
 
 
 class FigmaError(Exception):
@@ -164,6 +172,31 @@ def node_image(node_id: str, key: str | None = None,
         return None, str(data["err"])
     url = (data.get("images") or {}).get(node_id)
     return (url, None) if url else (None, "рендер не пришёл")
+
+
+def node_png(node_id: str, key: str | None = None,
+             scale: float = IMAGE_SCALE) -> tuple[bytes | None, str | None]:
+    """Картинка узла байтами: (png, причина отказа).
+
+    Двухшаговая: сначала ссылка у API (это квота), потом сама картинка
+    с файлового хранилища (это не квота). Кэшировать имеет смысл именно
+    результат: ссылка живёт около часа, а макет меняется раз в недели.
+    """
+    url, err = node_image(node_id, key=key, scale=scale)
+    if err or not url:
+        return None, err or "рендер не пришёл"
+    try:
+        r = requests.get(url, timeout=TIMEOUT)
+    except requests.RequestException as e:
+        return None, f"{type(e).__name__}: {e}"
+    if r.status_code != 200:
+        return None, f"картинка не скачалась: HTTP {r.status_code}"
+    # Подпись PNG проверяется здесь, а не на экране: Streamlit отдаёт
+    # байты в PIL, и на обрезанном ответе страница падает целиком —
+    # список товаров уносит миниатюра, которая была лишь удобством.
+    if not r.content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None, f"ответ не похож на PNG ({len(r.content)} байт)"
+    return r.content, None
 
 
 def retry_seconds(raw) -> int | None:
