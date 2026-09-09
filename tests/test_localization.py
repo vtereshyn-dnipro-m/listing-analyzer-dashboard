@@ -370,6 +370,57 @@ next(b for b in at.button if b.key == "loc-retry").click().run()
 check(f"кнопка товара переводит ВСЕ строки ({len(MODEL_CALLS[-1]['rows'])})",
       len(MODEL_CALLS) == 2 and len(MODEL_CALLS[-1]["rows"]) == 2)
 
+# --- 7б. язык, которого в макете НЕТ, всё равно даёт работу
+# Перевод чаще всего делается туда, где страницы в макете ещё нет:
+# у B0G4S9SJ3M на ES не нарисовано ни одного слоя. Прежний запрос читал
+# `WHERE lang = 'es'`, получал пусто и говорил «текстовых слоёв нет»
+# у товара, где их 33, — то есть страница умела показывать только уже
+# переведённое, ровно наоборот своему назначению.
+NO_TRANSLATION = REAL_LAYERS.copy()
+NO_TRANSLATION["translated_text"] = None
+NO_TRANSLATION["status"] = "none"
+_prev = REAL_LAYERS.copy()
+REAL_LAYERS[:] = NO_TRANSLATION
+
+st.cache_data.clear()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/content.py").run()
+at.session_state["loc-product"] = 7
+at.session_state["loc-lang"] = "es"
+at.run()
+check("непереведённый язык показывает строки, а не «слоёв нет»",
+      len(at.text_input) == 2)
+check("и исходник на месте — переводить есть что",
+      any("USB-C Charging" in str(m.value) for m in at.markdown))
+check("плашки «слоёв нет» при этом нет",
+      not any("слоёв" in str(i.value) and "нет" in str(i.value)
+              for i in at.info))
+
+# правка по такому языку обязана СОЗДАТЬ строку, а не потеряться:
+# UPDATE несуществующей строки молча не делает ничего
+SAVED.clear()
+at.text_input[0].set_value("Carga USB-C").run()
+check(f"правка по новому языку ушла в базу ({SAVED})",
+      SAVED and SAVED[0][2] == "es" and SAVED[0][3] == "Carga USB-C")
+REAL_LAYERS[:] = _prev
+
+# Тесты подделывают pd.read_sql, поэтому UI-проверка выше прошла бы
+# и со старым запросом. Сам контракт запроса проверяется текстом:
+# основа — строки ИСТОЧНИКА, перевод подтягивается по языку.
+_src = (ROOT / "services/localization.py").read_text(encoding="utf-8")
+_ll = _src[_src.index("def load_layers"):_src.index("DEMO_PRODUCT")]
+check("основа выборки — английские строки, а не строки языка",
+      "s.lang = %(src)s" in _ll and "AND s.lang = %(lang)s" not in _ll)
+check("перевод подтягивается по слоту и языку",
+      "d.slot = s.slot" in _ll and "d.lang = %(lang)s" in _ll)
+# правка по языку без строк обязана ВСТАВЛЯТЬ, а не обновлять пустоту
+_st = _src[_src.index("def save_translation"):_src.index("def save_model_translation")]
+check("правка вставляет строку, если её ещё нет",
+      "INSERT INTO figma_layers" in _st and "ON CONFLICT" in _st)
+_sm = _src[_src.index("def save_model_translation"):_src.index("def load_prompt")]
+check("перевод модели тоже вставляет, а не только обновляет",
+      "INSERT INTO figma_layers" in _sm)
+
 # --- 8. след правки виден в строке
 REAL_LAYERS.loc[0, "edited_after_model"] = True
 st.cache_data.clear()
