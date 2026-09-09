@@ -145,6 +145,24 @@ if btn is not None:
           "529" in codes and "overloaded" in codes)
     check("названо, на каком товаре упало", "B0TEST0001" in codes)
 
+# --- задачи ИИ живут в ДВУХ местах и обязаны совпадать
+# `services/ai.py::DEFAULTS` знает провайдера и модель по умолчанию,
+# `pages/settings.py::TASKS` даёт человеку их выбрать. Разошлись —
+# и задача работает по умолчанию из кода, которое никто не выбирал
+# и изменить не может. Именно так появилась задача `translate`:
+# в коде была, в Настройках нет.
+import re                                                # noqa: E402
+import services.ai as ai_mod                             # noqa: E402
+
+_src = (ROOT / "pages/settings.py").read_text(encoding="utf-8")
+_block = _src[_src.index("TASKS = ["):]
+_block = _block[:_block.index("]")]
+_in_settings = set(re.findall(r'\(\s*"([a-z_]+)"', _block))
+_in_ai = set(ai_mod.DEFAULTS)
+check(f"задачи ИИ и Настроек совпадают (код: {sorted(_in_ai - _in_settings)}, "
+      f"экран: {sorted(_in_settings - _in_ai)})",
+      _in_ai == _in_settings)
+
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
       else f"{len(FAILS)} провалов: {FAILS}")
