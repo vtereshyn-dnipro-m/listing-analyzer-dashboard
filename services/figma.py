@@ -64,7 +64,17 @@ SKU_RE = re.compile(r"(?<![\w-])(\d{6,10}(?:-[A-Za-z0-9]+)?)(?![\d])")
 
 # Макет товара: фрейм верхнего уровня с ASIN в имени — «B0G4S9SJ3M.PT01»,
 # «B0G4S9SJ3M.MAIN». Связь по имени однозначна, геометрия не нужна.
-FRAME_RE = re.compile(r"^(?P<asin>B0[A-Z0-9]{8})\.(?P<part>.+)$")
+#
+# Перед ASIN допускаются одна-две лишние буквы: в файле есть
+# «BB0GJMT58WT.MAIN», «BB0FXY75N5G.MAIN», «BB0DG616BXX.MAIN» — опечатка
+# дизайнера, лишняя B. Строгий шаблон терял у этих товаров фрейм
+# `.MAIN`, то есть ГЛАВНОЕ изображение: превью и миниатюра показывали
+# бы вместо него слайд PT01. Текста в `.MAIN` нет, поэтому перевод
+# не страдал — страдало то, по чему товар узнают в списке.
+#
+# Опечатки не проглатываются молча: имена попадают в отчёт (`typo_frames`),
+# чтобы их поправили в Figma, а не чинили разбором вечно.
+FRAME_RE = re.compile(r"^(?P<junk>[A-Z]{0,2})(?P<asin>B0[A-Z0-9]{8})\.(?P<part>.+)$")
 
 # Модули A+ называются «carousel 2.2» и ASIN в имени НЕ содержат:
 # на UK/US таких 365, и одно и то же имя встречается у разных товаров.
@@ -114,9 +124,17 @@ RETRY_MS_OVER = 86_400
 # заголовок на тёмном фоне или мелкая подпись, — а не для вычитки.
 IMAGE_SCALE = 0.5
 
-# Ссылку на рендер Figma держит около часа. Кэшируем с запасом: истёкшая
-# ссылка отдаёт битую картинку, а лишний запрос — это квота.
-IMAGE_TTL = 50 * 60
+# Ссылку на рендер Figma держит около часа, поэтому кэшируется не она,
+# а САМА КАРТИНКА — на сутки. Кэш ссылки на сутки означал бы битые
+# миниатюры через час: ссылка протухла, а мы её всё ещё раздаём.
+# Скачивание картинки идёт с файлового хранилища, а не с API, и квоту
+# не тратит — тратит её только запрос ссылки, раз в сутки на товар.
+IMAGE_TTL = 24 * 60 * 60
+
+# Миниатюра в списке: там важно отличить воздуходувку от степлера,
+# а не читать подписи. Четверть масштаба — это около 750 px по ширине
+# макета, с запасом под ретину.
+THUMB_SCALE = 0.25
 
 
 class FigmaError(Exception):
@@ -164,6 +182,31 @@ def node_image(node_id: str, key: str | None = None,
         return None, str(data["err"])
     url = (data.get("images") or {}).get(node_id)
     return (url, None) if url else (None, "рендер не пришёл")
+
+
+def node_png(node_id: str, key: str | None = None,
+             scale: float = IMAGE_SCALE) -> tuple[bytes | None, str | None]:
+    """Картинка узла байтами: (png, причина отказа).
+
+    Двухшаговая: сначала ссылка у API (это квота), потом сама картинка
+    с файлового хранилища (это не квота). Кэшировать имеет смысл именно
+    результат: ссылка живёт около часа, а макет меняется раз в недели.
+    """
+    url, err = node_image(node_id, key=key, scale=scale)
+    if err or not url:
+        return None, err or "рендер не пришёл"
+    try:
+        r = requests.get(url, timeout=TIMEOUT)
+    except requests.RequestException as e:
+        return None, f"{type(e).__name__}: {e}"
+    if r.status_code != 200:
+        return None, f"картинка не скачалась: HTTP {r.status_code}"
+    # Подпись PNG проверяется здесь, а не на экране: Streamlit отдаёт
+    # байты в PIL, и на обрезанном ответе страница падает целиком —
+    # список товаров уносит миниатюра, которая была лишь удобством.
+    if not r.content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return None, f"ответ не похож на PNG ({len(r.content)} байт)"
+    return r.content, None
 
 
 def retry_seconds(raw) -> int | None:
@@ -327,6 +370,7 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
     skipped_pages: list[str] = []
     aplus_frames = 0
     other_frames: list[str] = []
+    typo_frames: list[str] = []
 
     for page in pages:
         page_name = str(page.get("name") or "")
@@ -358,6 +402,9 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
                 other_frames.append(f"{page_name}: {name[:60]}")
                 continue
             asin = m.group("asin")
+            if m.group("junk"):
+                # разобрали, но сказали вслух: чинить надо в Figma
+                typo_frames.append(f"{page_name}: {name[:60]}")
             if only_asins and asin not in only_asins:
                 continue
 
@@ -416,6 +463,7 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
         "skipped_sections": skipped_labels + other_frames,
         "skipped_pages": skipped_pages,
         "aplus_frames": aplus_frames,
+        "typo_frames": typo_frames,
         "source_checked": src_total,
         "source_over": src_over,
         "read_at": time.time(),

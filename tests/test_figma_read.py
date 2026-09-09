@@ -80,7 +80,8 @@ DOC = {"document": {"children": [
                      "absoluteBoundingBox": {"width": 4822, "height": 3709,
                                              "x": -964, "y": -893}},
                 ]}]}]},
-        {"id": "1:7", "type": "FRAME", "name": "B0G4S9SJ3M.MAIN", "children": [
+        # опечатка дизайнера: лишняя B перед ASIN (в живом файле их три)
+        {"id": "1:7", "type": "FRAME", "name": "BB0G4S9SJ3M.MAIN", "children": [
             text_node("1:8", "body",
                       "Charges from power banks and car adapters",
                       300, 66, 18, 22)]},
@@ -157,6 +158,21 @@ check("id узлов у пары разные, а место одно",
 check("узел товара взят с английской страницы",
       _stapler["figma_node_id"] == "1:7"
       and _stapler["page_name"] == "UK/US")
+
+# --- опечатка в имени фрейма: разобрать, но сказать вслух
+# «BB0GJMT58WT.MAIN» — лишняя B перед ASIN. Строгий шаблон терял такой
+# фрейм, а это `.MAIN`, то есть ГЛАВНОЕ изображение: в списке и превью
+# показывался бы слайд PT01 вместо фото товара. Текста в `.MAIN` нет,
+# поэтому перевод не страдал — страдало то, по чему товар узнают.
+check("фрейм с опечаткой разобран и привязан к своему товару",
+      any(l["layer_id"] == "1:8" for l in _stapler["layers"]))
+check(f"и опечатка названа в отчёте ({R['typo_frames']})",
+      any("BB0G4S9SJ3M.MAIN" in x for x in R["typo_frames"]))
+check("нормальные имена опечатками не считаются",
+      not any("B0G4S9SJ3M.PT01" in x for x in R["typo_frames"]))
+# терпимость не должна превращаться во «всё подряд»
+check("мусор перед ASIN длиннее двух букв не принимается",
+      fg.FRAME_RE.match("XXXB0G4S9SJ3M.MAIN") is None)
 
 # --- пробный заход: четыре товара вместо всего файла
 # Список из четырёх не должен выглядеть как весь файл — по нему
@@ -305,6 +321,42 @@ fg.requests.get = lambda *a, **k: _ImgResp({}, 429, {"Retry-After": "306325"})
 _url, _err = fg.node_image("1:1")
 check("лимит на превью назван лимитом и в секундах",
       _url is None and "306" in (_err or ""))
+
+# --- картинка байтами: битый ответ не должен ронять страницу
+# Streamlit отдаёт байты в PIL, и на обрезанном ответе падает ВСЯ
+# страница — список товаров уносит миниатюра, которая была удобством.
+# Поэтому подпись PNG проверяется здесь, до экрана.
+class _Bin:
+    def __init__(self, code, body=b""):
+        self.status_code, self.content, self.headers = code, body, {}
+        self.text = ""
+
+    def json(self):
+        return {"err": None, "images": {"1:1": "https://figma.example/x.png"}}
+
+
+def _png_ok(url, headers=None, timeout=None, params=None):
+    if "images" in url:
+        return _Bin(200)
+    return _Bin(200, b"\x89PNG\r\n\x1a\n" + b"body")
+
+
+fg.requests.get = _png_ok
+_png, _err = fg.node_png("1:1")
+check("картинка возвращается байтами",
+      _png and _png.startswith(b"\x89PNG") and _err is None)
+
+
+def _png_broken(url, headers=None, timeout=None, params=None):
+    if "images" in url:
+        return _Bin(200)
+    return _Bin(200, b"<html>rate limited</html>")
+
+
+fg.requests.get = _png_broken
+_png, _err = fg.node_png("1:1")
+check("не-PNG отбраковывается ДО экрана, а не роняет страницу",
+      _png is None and "не похож на PNG" in (_err or ""))
 
 # без секретов до сети дело не доходит вовсе
 fg.cfg = lambda name, default=None: default
