@@ -186,6 +186,47 @@ check("и сказано, что это для плагина",
 _retry = next((b for b in at.button if b.key == "loc-retry"), None)
 check("«Перевести заново» работает", _retry is not None and not _retry.disabled)
 
+# --- 5б. пробный заход виден на экране
+# Четыре товара не должны выглядеть как весь файл: по такому списку
+# начнут считать объём работы — та же ошибка, что с демо-данными.
+st.cache_data.clear()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/content.py").run()
+_box = next((c for c in at.checkbox if c.key == "loc-first-pass"), None)
+check("галочка пробного захода есть и включена",
+      _box is not None and _box.value is True)
+check("в подписи названо число товаров",
+      _box is not None and "4" in str(_box.label))
+
+at.session_state["loc-sync-report"] = {"limited": True, "skipped_sections": [],
+                                       "skipped_pages": [], "aplus_frames": 564}
+at.run()
+check("после чтения сказано, что прочитан не весь файл",
+      any("не весь файл" in str(i.value) for i in at.info))
+check("и сказано, сколько модулей A+ отложено",
+      any("A+ пропущено: 564" in str(c.value) for c in at.caption))
+at.session_state["loc-sync-report"] = {}
+
+# и главное — что галочка ДЕЙСТВУЕТ, а не украшает экран
+PARSED_WITH: list = []
+fg_mod = __import__("services.figma", fromlist=["figma"])
+_real_parse = fg_mod.parse_document
+fg_mod.fetch_document = lambda key=None: {"document": {"children": []}}
+fg_mod.parse_document = lambda doc, only_asins=None: (
+    PARSED_WITH.append(only_asins) or _real_parse(doc, only_asins))
+
+st.cache_data.clear()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/content.py").run()
+next(b for b in at.button if b.key == "loc-sync").click().run()
+check(f"с галочкой читаются только пробные товары ({PARSED_WITH})",
+      PARSED_WITH and PARSED_WITH[-1] == set(fg_mod.FIRST_PASS_ASINS))
+
+at.checkbox[0].set_value(False).run()
+next(b for b in at.button if b.key == "loc-sync").click().run()
+check("без галочки читается весь файл", PARSED_WITH[-1] is None)
+fg_mod.parse_document = _real_parse
+
 # --- 6. превью макета: контекст рядом с текстом, но не ценой квоты
 # Список — это сотни строк, и миниатюра в каждой означала бы сотни
 # запросов к Figma при лимите, который закрывается от одного чтения
