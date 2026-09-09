@@ -21,7 +21,7 @@ asin_economics           asin_economics_pkey                              id
 catalog_source           catalog_source_pkey                              asin,marketplace
 collection_schedule      collection_schedule_pkey                         id
 diagnosis                diagnosis_pkey                                   id
-figma_layers             figma_layers_layer_id_lang_key                   layer_id,lang
+figma_layers             figma_layers_product_slot_lang_key               product_id,slot,lang
 figma_layers             figma_layers_pkey                                id
 figma_products           figma_products_file_asin_type_key                figma_file_key,asin,section_type
 figma_products           figma_products_pkey                              id
