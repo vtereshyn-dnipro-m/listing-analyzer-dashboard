@@ -421,6 +421,54 @@ _sm = _src[_src.index("def save_model_translation"):_src.index("def load_prompt"
 check("перевод модели тоже вставляет, а не только обновляет",
       "INSERT INTO figma_layers" in _sm)
 
+# --- 7в. отказ модели обязан доходить до экрана
+# Кнопка вызывается КОЛБЭКОМ, а из колбэка st.error на экран не
+# попадает: Streamlit рисует элементы позже. Поэтому раньше выходило
+# худшее — кнопка нажата, счётчики нули, объяснения нет. Три разных
+# отказа выглядели одинаково: провайдер молчит, ответ не разобрался,
+# места не совпали.
+import services.ai as ai_mod                              # noqa: E402
+
+
+def page_editor():
+    st.cache_data.clear()
+    a = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+    a.switch_page("pages/content.py").run()
+    a.session_state["loc-product"] = 7
+    a.session_state["loc-lang"] = "es"
+    a.run()
+    return a
+
+
+# 1. провайдер не ответил — причина известна слою вызова
+tr.run = lambda *a, **k: ({}, "claude-sonnet-5")
+ai_mod.last_call_error = lambda: "Anthropic: HTTP 401 — invalid x-api-key"
+at = page_editor()
+next(b for b in at.button if str(b.key or "").startswith("loc-tr-")).click().run()
+check("отказ провайдера назван на экране",
+      any("401" in str(e.value) for e in at.error))
+
+# 2. ответ пустой, причины нет — всё равно не молчим
+ai_mod.last_call_error = lambda: None
+at = page_editor()
+next(b for b in at.button if str(b.key or "").startswith("loc-tr-")).click().run()
+check("пустой ответ назван отказом, а не пустым переводом",
+      any("не вернула ничего" in str(e.value) for e in at.error))
+
+# 3. модель ответила про ЧУЖИЕ места — записывать нечего
+tr.run = lambda *a, **k: ({"выдуманный.slot#9": "Texto"}, "claude-sonnet-5")
+at = page_editor()
+next(b for b in at.button if str(b.key or "").startswith("loc-tr-")).click().run()
+check("несовпадение мест названо прямо",
+      any("места не совпадают" in str(e.value) for e in at.error))
+
+# 4. удача тоже называется: сколько строк и какой моделью
+tr.run = fake_run
+at = page_editor()
+next(b for b in at.button if str(b.key or "").startswith("loc-tr-")).click().run()
+check("успех виден числом строк и именем модели",
+      any("Переведено моделью" in str(x.value) for x in at.success))
+
 # --- 8. след правки виден в строке
 REAL_LAYERS.loc[0, "edited_after_model"] = True
 st.cache_data.clear()
