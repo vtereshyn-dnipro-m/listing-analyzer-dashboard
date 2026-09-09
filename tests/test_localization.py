@@ -51,18 +51,35 @@ REAL_PRODUCT = pd.DataFrame([dict(
     section_type="Main Images", page_name="UK/US", figma_file_key="ZZJ9",
     figma_node_id="1:1", layers_count=2, synced_at=pd.Timestamp.utcnow(),
     langs_done=["de"])])
+# Двух строк достаточно и обязательно: при одной «перевести строку»
+# и «перевести товар» дают одинаковый результат, и проверка размера
+# выборки ничего не проверяет.
 REAL_LAYERS = pd.DataFrame([
-    dict(layer_id="1:5", frame_name="title", lang="es",
-         source_text="USB-C Charging", translated_text="Carga USB-C",
-         char_limit=20, status="translated"),
+    dict(layer_id="1:5", slot="B0G4S9SJ3M.PT01#0.0", frame_name="title",
+         lang="es", source_text="USB-C Charging",
+         translated_text="Carga USB-C", char_limit=20, status="translated",
+         edited_after_model=False),
+    dict(layer_id="1:8", slot="B0G4S9SJ3M.PT01#0.1", frame_name="body",
+         lang="es", source_text="Charges from power banks",
+         translated_text="", char_limit=44, status="none",
+         edited_after_model=False),
 ])
+GLOSSARY = pd.DataFrame([{"en": "Fabric fastening", "tr": "Stoffbefestigung",
+                          "char_limit": 30}])
 
 
 def fake_sql(sql, con=None, **kw):
     if MODE["fail"]:
         raise RuntimeError("relation figma_products does not exist")
+    q = str(sql)
+    if "synthesis_skill" in q:
+        # своего промпта ещё нет: страница обязана показать текст
+        # по умолчанию и сказать, что он не сохранён
+        return pd.DataFrame()
     if MODE["real"]:
-        if "FROM figma_layers" in str(sql):
+        if "JOIN figma_layers src" in q:
+            return GLOSSARY.copy()
+        if "FROM figma_layers" in q:
             return REAL_LAYERS.copy()
         return REAL_PRODUCT.copy()
     return pd.DataFrame()
@@ -157,13 +174,17 @@ check("под таблицей сказано, сколько строк пра�
 check("экспорт остаётся в Figma — это сказано на экране",
       any("Экспорт PNG" in str(c.value) for c in at.caption))
 
-# кнопки, которых ещё нет за спиной, не должны выглядеть работающими
-_apply = next((b for b in at.button if b.key == "loc-apply"), None)
+# «Применить в Figma» не заглушка: REST в Figma не пишет, поэтому
+# кнопка отдаёт файл для плагина. Кнопка, которая ничего не делает
+# и объясняет почему, хуже кнопки, которая делает половину дела.
+_apply = next((b for b in at.get("download_button") if b.key == "loc-apply"),
+              None)
+check("«Применить в Figma» отдаёт файл, а не пустоту",
+      _apply is not None and not _apply.disabled)
+check("и сказано, что это для плагина",
+      any("для плагина" in str(c.value) for c in at.caption))
 _retry = next((b for b in at.button if b.key == "loc-retry"), None)
-check("«Применить в Figma» заблокирована и объясняет почему",
-      _apply is not None and _apply.disabled and "REST" in str(_apply.help))
-check("«Перевести заново» заблокирована до подключения модели",
-      _retry is not None and _retry.disabled)
+check("«Перевести заново» работает", _retry is not None and not _retry.disabled)
 
 # --- 6. превью макета: контекст рядом с текстом, но не ценой квоты
 # Список — это сотни строк, и миниатюра в каждой означала бы сотни
@@ -221,6 +242,89 @@ at.run()
 check("отказ превью назван отказом",
       any("Не удалось получить рендер" in str(c.value) for c in at.caption))
 check("а строки перевода остались на месте", len(at.text_input) > 0)
+
+# --- 7. правка, перевод строки и след модели
+# Правка уезжает в базу СРАЗУ: кнопка «Сохранить» означала бы, что
+# часть работы живёт только в браузере, а строк здесь десятки.
+SAVED: list = []
+MODEL_CALLS: list = []
+
+
+def fake_save(pid, slot, lang, text):
+    SAVED.append((pid, slot, lang, text))
+    return None
+
+
+def fake_run(prompt_text, lang, rows, pairs):
+    MODEL_CALLS.append({"lang": lang, "rows": rows, "prompt": prompt_text,
+                        "pairs": pairs})
+    return {r["slot"]: "Akku-Tacker" for r in rows}, "claude-sonnet-5"
+
+
+WROTE: list = []
+
+
+def fake_save_model(pid, lang, model, texts):
+    WROTE.append((pid, lang, model, texts))
+    return len(texts), None
+
+
+import services.translate as tr                            # noqa: E402
+loc.save_translation = fake_save
+loc.save_model_translation = fake_save_model
+tr.run = fake_run
+
+MODE["real"] = True
+st.cache_data.clear()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/content.py").run()
+at.session_state["loc-product"] = 7
+at.session_state["loc-lang"] = "es"
+at.run()
+
+check(f"строк перевода на экране ({len(at.text_input)})", len(at.text_input) == 2)
+at.text_input[0].set_value("Carga rápida USB-C").run()
+check(f"правка ушла в базу сразу ({SAVED})",
+      SAVED and SAVED[0][3] == "Carga rápida USB-C")
+check("и записана по МЕСТУ слоя, а не по id узла",
+      SAVED and SAVED[0][1] == "B0G4S9SJ3M.PT01#0.0")
+
+# перевод ОДНОЙ строки: переделать чаще надо именно её
+_row_btn = next((b for b in at.button
+                 if str(b.key or "").startswith("loc-tr-")), None)
+check("у строки есть своя кнопка перевода", _row_btn is not None)
+_row_btn.click().run()
+check(f"модель позвана на ОДНУ строку ({len(MODEL_CALLS[-1]['rows'])})",
+      len(MODEL_CALLS) == 1 and len(MODEL_CALLS[-1]["rows"]) == 1)
+check("в промпт уехал предел этой строки",
+      MODEL_CALLS[-1]["rows"][0]["char_limit"] == 20)
+check("результат модели записан со следом модели",
+      WROTE and WROTE[-1][2] == "claude-sonnet-5")
+
+# перевод всего товара — та же дорога, но со всеми строками
+next(b for b in at.button if b.key == "loc-retry").click().run()
+check(f"кнопка товара переводит ВСЕ строки ({len(MODEL_CALLS[-1]['rows'])})",
+      len(MODEL_CALLS) == 2 and len(MODEL_CALLS[-1]["rows"]) == 2)
+
+# --- 8. след правки виден в строке
+REAL_LAYERS.loc[0, "edited_after_model"] = True
+st.cache_data.clear()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/content.py").run()
+at.session_state["loc-product"] = 7
+at.session_state["loc-lang"] = "es"
+at.run()
+check("правленная человеком строка помечена",
+      any("правил человек" in str(m.value) for m in at.markdown))
+REAL_LAYERS.loc[0, "edited_after_model"] = False
+
+# --- 9. промпт виден и правится
+_areas = [a for a in at.text_area if a.key == "loc-prompt-draft"]
+check("промпт на экране, а не спрятан в коде", len(_areas) == 1)
+check("и это ровно текст по умолчанию, пока своего нет",
+      _areas and "CC-36" in str(_areas[0].value))
+check("сказано, что текст не сохранён",
+      any("не сохранён" in str(c.value) for c in at.caption))
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS

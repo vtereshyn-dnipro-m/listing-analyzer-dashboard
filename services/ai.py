@@ -29,6 +29,9 @@ DEFAULTS = {
     "title_split": ("gemini", "gemini-3.5-flash"),
     "photo_audit": ("gemini", "gemini-3.5-flash"),
     "agents": ("anthropic", "claude-sonnet-5"),
+    # перевод макетов: строк много и они короткие, но попасть надо
+    # в словарь дизайнера, а не «примерно» — отсюда модель посильнее
+    "translate": ("anthropic", "claude-sonnet-5"),
 }
 
 

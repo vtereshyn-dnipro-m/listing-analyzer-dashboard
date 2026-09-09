@@ -28,7 +28,7 @@ import datetime as dt
 import pandas as pd
 import streamlit as st
 
-from services import figma
+from services import figma, translate
 from services.db import get_conn, get_engine, safe_read
 
 # Порядок языков на экране: источник первым, дальше рынки.
@@ -231,6 +231,132 @@ def load_products() -> tuple[pd.DataFrame, str | None]:
         return df, None
     except Exception as e:
         return pd.DataFrame(), f"{type(e).__name__}: {e}"
+
+
+def save_translation(product_id: int, slot: str, lang: str,
+                     text: str) -> str | None:
+    """Правка человека. Возвращает причину сбоя или None.
+
+    `edited_after_model` считается СРАВНЕНИЕМ с тем, что предложила
+    модель, а не фактом открытия поля: иначе доля правок — мера того,
+    где автоматика возможна, — врала бы в обе стороны. Сравнение идёт
+    в самом UPDATE, потому что текст модели лежит в той же строке.
+    """
+    try:
+        conn = get_conn()
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                UPDATE figma_layers
+                   SET translated_text = %(text)s,
+                       status = CASE WHEN %(text)s = '' THEN %(none)s
+                                     ELSE %(done)s END,
+                       edited_after_model = (model_text IS NOT NULL
+                                             AND model_text <> %(text)s),
+                       updated_at = now()
+                 WHERE product_id = %(pid)s AND slot = %(slot)s
+                   AND lang = %(lang)s
+                """,
+                {"text": (text or "").strip(), "pid": product_id,
+                 "slot": slot, "lang": lang,
+                 "none": ST_NONE, "done": ST_TRANSLATED})
+        conn.close()
+        return None
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+
+
+def save_model_translation(product_id: int, lang: str, model: str,
+                           texts: dict) -> tuple[int, str | None]:
+    """Ответ модели по слоям: (сколько записано, причина сбоя).
+
+    Пишется и перевод, и то, ЧТО предложила модель. Второе — не дубль:
+    как только человек поправит строку, `translated_text` разойдётся
+    с `model_text`, и разница покажет, где автоматика справляется,
+    а где нет. Правка человека при этом не затирается: переводом
+    от модели перезаписывается только строка, которую он не трогал.
+    """
+    if not texts:
+        return 0, None
+    n = 0
+    try:
+        conn = get_conn()
+        with conn, conn.cursor() as cur:
+            for slot, text in texts.items():
+                cur.execute(
+                    """
+                    UPDATE figma_layers
+                       SET translated_text = %(text)s,
+                           model_text = %(text)s,
+                           model = %(model)s,
+                           translated_at = now(),
+                           edited_after_model = FALSE,
+                           status = %(done)s,
+                           updated_at = now()
+                     WHERE product_id = %(pid)s AND slot = %(slot)s
+                       AND lang = %(lang)s
+                       AND edited_after_model = FALSE
+                    """,
+                    {"text": text, "model": model, "pid": product_id,
+                     "slot": slot, "lang": lang, "done": ST_TRANSLATED})
+                n += cur.rowcount or 0
+        conn.close()
+        return n, None
+    except Exception as e:
+        return n, f"{type(e).__name__}: {e}"
+
+
+@st.cache_data(ttl=120)
+def load_prompt() -> tuple[str, int, str | None]:
+    """Промпт перевода из `synthesis_skill`: (текст, версия, причина).
+
+    Версия 0 и пустой текст означают «своего промпта ещё нет» —
+    страница покажет текст по умолчанию и прямо скажет, что он
+    не сохранён. Молчаливой подстановки, как было с методологией
+    тайтлов, здесь не происходит: человек видит ровно то, что уйдёт
+    модели, ещё до нажатия кнопки.
+    """
+    df, err = safe_read(
+        """
+        SELECT skill_text, version FROM synthesis_skill
+         WHERE scope = %(scope)s AND is_active = TRUE
+         ORDER BY version DESC LIMIT 1
+        """, params={"scope": translate.SCOPE})
+    if err:
+        return "", 0, err
+    if df.empty:
+        return "", 0, None
+    row = df.iloc[0]
+    return str(row["skill_text"] or ""), int(row["version"] or 0), None
+
+
+def save_prompt(text: str) -> str | None:
+    """Новая версия промпта. Правки без коммитов, откат — на «Методологии»."""
+    # версия читается своим запросом, а не через кэшированный load_prompt:
+    # кэш может отдать значение до чужой правки, и версии столкнутся
+    df, err = safe_read(
+        "SELECT COALESCE(MAX(version), 0) AS v FROM synthesis_skill "
+        "WHERE scope = %(scope)s", params={"scope": translate.SCOPE})
+    if err:
+        return err
+    ver = int(df.iloc[0]["v"]) if not df.empty else 0
+    try:
+        conn = get_conn()
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE synthesis_skill SET is_active = FALSE "
+                "WHERE scope = %s AND is_active = TRUE", (translate.SCOPE,))
+            cur.execute(
+                """
+                INSERT INTO synthesis_skill
+                    (version, marketplace, scope, skill_text, is_active)
+                VALUES (%s, 'all', %s, %s, TRUE)
+                """, (ver + 1, translate.SCOPE, (text or "").strip()))
+        conn.close()
+        load_prompt.clear()
+        return None
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
 
 
 @st.cache_data(ttl=120)
