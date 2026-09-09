@@ -158,6 +158,19 @@ check("узел товара взят с английской страницы",
       _stapler["figma_node_id"] == "1:7"
       and _stapler["page_name"] == "UK/US")
 
+# --- пробный заход: четыре товара вместо всего файла
+# Список из четырёх не должен выглядеть как весь файл — по нему
+# начнут считать объём работы, ровно как по демо-данным. Поэтому
+# ограничение видно на экране, а не только в коде.
+_lim = fg.parse_document(DOC, only_asins={"B0G4S9SJ3M"})
+check(f"ограничение режет выборку ({len(_lim['products'])})",
+      len(_lim["products"]) == 1
+      and _lim["products"][0]["asin"] == "B0G4S9SJ3M")
+check("без ограничения читается всё", len(R["products"]) == 2)
+check("пробный набор непустой и состоит из ASIN",
+      len(fg.FIRST_PASS_ASINS) >= 3
+      and all(a.startswith("B0") for a in fg.FIRST_PASS_ASINS))
+
 # --- что не разобралось: в отчёт, а не в тишину
 check("секция чужого формата попала в отчёт",
       any("Random frame" in s for s in R["skipped_sections"]))

@@ -153,6 +153,15 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
     age = sync_age_hours(products) if not demo else None
     c1, c2 = st.columns([2.2, 7], gap="small", vertical_alignment="center")
 
+    # Пробный заход по умолчанию: четыре товара вместо двадцати одного.
+    # Галочка, а не константа в коде, потому что решение «идём на весь
+    # файл» принимает человек, когда убедится, что перевод годный.
+    first_pass = c2.checkbox(
+        t("loc.first_pass", n=len(figma.FIRST_PASS_ASINS)),
+        value=True, key="loc-first-pass",
+        help=t("loc.first_pass_help",
+               asins=", ".join(figma.FIRST_PASS_ASINS)))
+
     if c1.button(t("loc.resync"), key="loc-sync", type="primary",
                  disabled=bool(miss),
                  help=t("loc.no_secrets", keys=", ".join(miss)) if miss else None):
@@ -160,7 +169,10 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
             try:
                 doc = figma.fetch_document()
                 status.write("· " + t("loc.sync_parsing"))
-                parsed = figma.parse_document(doc)
+                parsed = figma.parse_document(
+                    doc,
+                    only_asins=set(figma.FIRST_PASS_ASINS) if first_pass
+                    else None)
                 for p in parsed["products"]:
                     p["file_key"] = figma.file_key()
                 n_p, n_l, err = save_parsed(parsed)
@@ -175,6 +187,8 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
                     "skipped_pages": parsed["skipped_pages"],
                     "source_checked": parsed.get("source_checked", 0),
                     "source_over": parsed.get("source_over", 0),
+                    "aplus_frames": parsed.get("aplus_frames", 0),
+                    "limited": bool(first_pass),
                 }
                 load_products.clear()
                 st.rerun()
@@ -198,6 +212,13 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
 
     # что не разобралось при последнем чтении — видно, а не потеряно
     rep = st.session_state.get("loc-sync-report") or {}
+    # список из четырёх товаров не должен выглядеть как весь файл:
+    # по нему начнут считать объём работы, как по демо-данным
+    if rep.get("limited"):
+        st.info("ℹ " + t("loc.first_pass_notice",
+                         n=len(figma.FIRST_PASS_ASINS)))
+    if rep.get("aplus_frames"):
+        st.caption(t("loc.aplus_skipped", n=int(rep["aplus_frames"])))
     # английский текст уже стоит в макете и в него влезает; если расчёт
     # утверждает обратное на заметной доле слоёв — занижен коэффициент
     _checked, _over = rep.get("source_checked") or 0, rep.get("source_over") or 0
