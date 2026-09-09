@@ -216,6 +216,7 @@ TASKS = [
     ("title_split", t("set.task_split"), "gemini"),
     ("photo_audit", t("set.task_photo"), "gemini"),
     ("agents", t("set.task_agents"), "anthropic"),
+    ("translate", t("set.task_translate"), "anthropic"),
 ]
 
 for task, label, prov_default in TASKS:
