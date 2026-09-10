@@ -13,6 +13,7 @@ import streamlit as st
 from config import APP_NAME, days_to_deadline
 import i18n as i18n_mod
 from i18n import t, lang_selector
+from services import memprobe   # ВРЕМЕННО: замер памяти, снять после ответа
 
 st.set_page_config(
     page_title=APP_NAME,
@@ -129,4 +130,11 @@ with st.sidebar:
         st.markdown(t("sidebar.deadline_passed"))
 
 # ---------------------------------------------------------------- запуск
-nav.run()  
+# ВРЕМЕННО: панель замера памяти. Ставится ДО nav.run(), чтобы показать
+# то, что накоплено предыдущими заходами, — сайдбар рисуется раньше
+# страницы, и панель после run() отставала бы на один прогон.
+memprobe.panel()
+nav.run()
+# ВРЕМЕННО: замер после отрисовки — здесь страница уже построила свои
+# таблицы и кэши, то есть RSS отражает её настоящую цену.
+memprobe.note(nav)          # имя страницы достаётся внутри, безотказно  

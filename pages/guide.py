@@ -83,7 +83,7 @@ def load_flow_status() -> dict:
         if not df.empty:
             lf = df.iloc[0]["last_fetch"]
             if lf is not None and not pd.isna(lf):
-                age_h = (pd.Timestamp.utcnow() - pd.to_datetime(lf, utc=True)
+                age_h = (pd.Timestamp.now("UTC") - pd.to_datetime(lf, utc=True)
                          ).total_seconds() / 3600
                 out["fresh_collect"] = age_h <= 24
                 out["last_fetch"] = pd.to_datetime(lf).strftime("%d.%m %H:%M")
