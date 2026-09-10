@@ -50,6 +50,8 @@ REAL_PRODUCT = pd.DataFrame([dict(
     id=7, asin="B0G4S9SJ3M", sku="54225000", name="Stapler CC-36",
     section_type="Main Images", page_name="UK/US", figma_file_key="ZZJ9",
     figma_node_id="1:1", layers_count=2, synced_at=pd.Timestamp.utcnow(),
+    # у этого товара дизайнер уже сделал немецкий макет в самой Figma
+    lang_nodes={"de": "9:9"},
     langs_done=["de"])])
 # Двух строк достаточно и обязательно: при одной «перевести строку»
 # и «перевести товар» дают одинаковый результат, и проверка размера
@@ -316,8 +318,9 @@ at.run()
 check(f"превью в редакторе просит полный масштаб ({CALLS})",
       CALLS == [("1:1", fg.THUMB_SCALE), ("1:1", fg.IMAGE_SCALE)])
 check("картинка действительно на экране", len(at.get("image")) == 1)
-check("и подпись объясняет, что макет английский",
-      any("Английский макет" in str(c.value) for c in at.caption))
+check("и подпись называет, ЧЕЙ это макет",
+      any(("уже переведён в Figma" in str(c.value))
+          or ("показан английский" in str(c.value)) for c in at.caption))
 
 # отказ рендера не должен уносить с собой таблицу текста
 fg.node_png = lambda node_id, key=None, scale=fg.IMAGE_SCALE: (
@@ -359,6 +362,47 @@ def page_editor():
     a.run()
     return a
 
+
+# --- 6б. языковой макет вместо английского, когда он есть
+# Часть товаров переведена прямо в Figma, и для них существует
+# НАСТОЯЩАЯ карточка на языке — с текстом на картинке. Показывать
+# вместо неё английскую значит прятать готовую работу.
+check("для языка со своим макетом берётся ЕГО узел",
+      loc.preview_node({"lang_nodes": {"de": "9:9"},
+                                "figma_node_id": "1:1"}, "de") == ("9:9", "de"))
+check("для языка без макета — английский, и это ВИДНО в ответе",
+      loc.preview_node({"lang_nodes": {"de": "9:9"},
+                                "figma_node_id": "1:1"}, "es") == ("1:1", "en"))
+check("jsonb приходит строкой — разбирается",
+      loc.preview_node({"lang_nodes": '{"it": "7:7"}',
+                                "figma_node_id": "1:1"}, "it") == ("7:7", "it"))
+check("мусор вместо jsonb не роняет экран",
+      loc.preview_node({"lang_nodes": "не json",
+                                "figma_node_id": "1:1"}, "it") == ("1:1", "en"))
+
+# на экране: свой макет назван своим, чужой — чужим
+CALLS.clear()
+loc._png_cached.clear()
+MODE["real"] = True
+at = page_editor()
+at.session_state["loc-lang"] = "de"
+for lg in ("de", "es", "it", "fr"):
+    at.session_state[f"loc-lang-0-{lg}"] = (lg == "de")
+at.run()
+check(f"немецкий макет запрошен по своему узлу ({CALLS})",
+      any(c[0] == "9:9" for c in CALLS))
+check("и подпись говорит, что макет уже переведён",
+      any("уже переведён в Figma" in str(c.value) for c in at.caption))
+
+at.session_state["loc-lang"] = "es"
+for lg in ("de", "es", "it", "fr"):
+    at.session_state[f"loc-lang-0-{lg}"] = (lg == "es")
+at.run()
+check("для испанского показан английский макет",
+      any(c[0] == "1:1" for c in CALLS))
+check("и сказано, что своего макета ещё нет",
+      any("ещё нет" in str(c.value) for c in at.caption))
+MODE["layers"] = None
 
 # --- 7. правка, перевод строки и след модели
 # Правка уезжает в базу СРАЗУ: кнопка «Сохранить» означала бы, что

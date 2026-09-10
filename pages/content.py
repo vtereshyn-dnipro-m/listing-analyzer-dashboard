@@ -32,7 +32,7 @@ from services import ai, figma, translate
 from services.localization import (
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
     demo_layers, demo_products, fits, glossary, load_layers, load_products,
-    load_prompt, needs_sync, over_rows, product_state,
+    load_prompt, needs_sync, over_rows, preview_node, product_state,
     preview_png, save_model_translation, save_parsed, save_prompt,
     save_translation, summarize, sync_age_hours,
 )
@@ -344,7 +344,7 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
 
     pane_img, pane_txt = st.columns([1, 1.9], gap="medium")
     with pane_img:
-        render_preview(row, demo)
+        render_preview(row, demo, lang)
     with pane_txt:
         render_rows(layers, pid, lang)
     render_notes()
@@ -419,7 +419,7 @@ def render_thumb(col, row, demo: bool) -> None:
         pass
 
 
-def render_preview(row, demo: bool) -> None:
+def render_preview(row, demo: bool, lang: str) -> None:
     """Картинка макета — только для ОТКРЫТОГО товара.
 
     Миниатюры в списке стоили бы по запросу Figma на строку при сотнях
@@ -427,7 +427,7 @@ def render_preview(row, demo: bool) -> None:
     английский макет: превью отвечает на вопрос «куда встанет текст»,
     и роль строки одинакова на всех языках.
     """
-    node = cell_text(row, "figma_node_id")
+    node, shown = preview_node(row, lang)
     if demo or not node:
         st.caption(t("loc.preview_none"))
         return
@@ -443,7 +443,9 @@ def render_preview(row, demo: bool) -> None:
         # открыл товар ради контекста и должен знать, что его нет
         st.caption("⚠ " + t("loc.preview_failed", e=f"{type(e).__name__}"))
         return
-    st.caption(t("loc.preview_note"))
+    # какой макет на экране: свой или английский за неимением своего
+    st.caption(t("loc.preview_lang", lang=shown.upper()) if shown == lang
+               else t("loc.preview_fallback", lang=lang.upper()))
 
 
 def human_mark(row) -> str:

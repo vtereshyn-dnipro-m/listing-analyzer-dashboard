@@ -24,6 +24,7 @@ services/localization.py — переводы текстовых слоёв ма
 from __future__ import annotations
 
 import datetime as dt
+import json
 
 import pandas as pd
 import streamlit as st
@@ -151,13 +152,15 @@ def save_parsed(parsed: dict) -> tuple[int, int, str | None]:
                     """
                     INSERT INTO figma_products
                         (asin, sku, name, section_type, page_name,
-                         figma_file_key, figma_node_id, layers_count, synced_at)
-                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s, now())
+                         figma_file_key, figma_node_id, lang_nodes,
+                         layers_count, synced_at)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s, now())
                     ON CONFLICT (figma_file_key, asin, section_type) DO UPDATE
                         SET name = EXCLUDED.name,
                             sku = EXCLUDED.sku,
                             page_name = EXCLUDED.page_name,
                             figma_node_id = EXCLUDED.figma_node_id,
+                            lang_nodes = EXCLUDED.lang_nodes,
                             layers_count = EXCLUDED.layers_count,
                             synced_at = now()
                     RETURNING id
@@ -165,6 +168,7 @@ def save_parsed(parsed: dict) -> tuple[int, int, str | None]:
                     (p["asin"], p.get("sku"), p.get("name"),
                      p.get("section_type"), p.get("page_name"),
                      p.get("file_key") or "", p["figma_node_id"],
+                     json.dumps(p.get("lang_nodes") or {}),
                      len(p.get("layers") or [])))
                 pid = cur.fetchone()[0]
                 n_p += 1
@@ -216,7 +220,7 @@ def load_products() -> tuple[pd.DataFrame, str | None]:
             """
             SELECT p.id, p.asin, p.sku, p.name, p.section_type,
                    p.page_name, p.figma_file_key, p.figma_node_id,
-                   p.layers_count, p.synced_at,
+                   p.lang_nodes, p.layers_count, p.synced_at,
                    COALESCE(array_agg(DISTINCT l.lang)
                             FILTER (WHERE l.translated_text IS NOT NULL
                                       AND l.translated_text <> ''), '{}') AS langs_done
@@ -419,6 +423,32 @@ def glossary(lang: str, limit: int = 60) -> tuple[pd.DataFrame, str | None]:
         LIMIT %(lim)s
         """,
         params={"src": SOURCE_LANG, "dst": lang, "lim": int(limit)})
+
+
+def preview_node(row, lang: str) -> tuple[str, str]:
+    """(узел для рендера, язык этого макета).
+
+    Часть товаров дизайнер уже перевёл в самой Figma, и для них есть
+    НАСТОЯЩИЙ макет на языке — с переведённым текстом прямо на
+    картинке. Показывать вместо него английский значит прятать
+    готовую работу.
+
+    Английский остаётся запасным: языковых макетов одиннадцать
+    на двадцать один товар, и там, где своего нет, английский —
+    единственный способ увидеть роль строки. Но подпись обязана
+    сказать, ЧТО показано: иначе «немецкая карточка» и «английская,
+    потому что немецкой нет» выглядят одинаково.
+    """
+    nodes = row.get("lang_nodes")
+    if isinstance(nodes, str):
+        try:
+            nodes = json.loads(nodes or "{}")
+        except ValueError:
+            nodes = {}
+    node = str((nodes or {}).get(lang) or "")
+    if node:
+        return node, lang
+    return '' if pd.isna(row.get('figma_node_id')) else str(row.get('figma_node_id') or ''), SOURCE_LANG
 
 
 @st.cache_data(ttl=figma.IMAGE_TTL, show_spinner=False)
