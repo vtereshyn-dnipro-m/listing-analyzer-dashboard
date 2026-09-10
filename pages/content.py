@@ -446,6 +446,14 @@ def _translate_rows(pid: int, lang: str, rows: list) -> None:
     if err:
         st.session_state["loc-save-error"] = err
         return
+
+    # Поле ввода объявлено с key, а при существующем ключе Streamlit
+    # берёт значение из session_state и value ИГНОРИРУЕТ. Ключ появился,
+    # когда строка впервые отрисовалась пустой, — и перевод, уже лежащий
+    # в базе, экран продолжал бы прятать за старым пустым значением.
+    # Снимаем ключи переведённых строк: пусть перечитаются из базы.
+    for slot in useful:
+        st.session_state.pop(f"loc-txt-{pid}-{lang}-{slot}", None)
     # ноль обновлённых — это тоже не успех: строки уже правил человек,
     # и перевод модели их намеренно не тронул
     st.session_state["loc-model-note"] = (
