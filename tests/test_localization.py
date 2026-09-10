@@ -50,8 +50,9 @@ REAL_PRODUCT = pd.DataFrame([dict(
     id=7, asin="B0G4S9SJ3M", sku="54225000", name="Stapler CC-36",
     section_type="Main Images", page_name="UK/US", figma_file_key="ZZJ9",
     figma_node_id="1:1", layers_count=2, synced_at=pd.Timestamp.utcnow(),
-    # у этого товара дизайнер уже сделал немецкий макет в самой Figma
-    lang_nodes={"de": "9:9"},
+    # узлы СЛАЙДОВ по языкам: текст живёт на слайдах, а не в .MAIN
+    lang_nodes={"en": {"MAIN": "1:1", "PT01": "1:5"},
+                "de": {"MAIN": "9:9", "PT01": "9:5"}},
     langs_done=["de"])])
 # Двух строк достаточно и обязательно: при одной «перевести строку»
 # и «перевести товар» дают одинаковый результат, и проверка размера
@@ -316,7 +317,7 @@ at.session_state["loc-product"] = 7
 at.session_state["loc-lang"] = "es"
 at.run()
 check(f"превью в редакторе просит полный масштаб ({CALLS})",
-      CALLS == [("1:1", fg.THUMB_SCALE), ("1:1", fg.IMAGE_SCALE)])
+      [c[1] for c in CALLS] == [fg.THUMB_SCALE, fg.IMAGE_SCALE])
 check("картинка действительно на экране", len(at.get("image")) == 1)
 check("и подпись называет, ЧЕЙ это макет",
       any(("уже переведён в Figma" in str(c.value))
@@ -367,18 +368,29 @@ def page_editor():
 # Часть товаров переведена прямо в Figma, и для них существует
 # НАСТОЯЩАЯ карточка на языке — с текстом на картинке. Показывать
 # вместо неё английскую значит прятать готовую работу.
+NODES = {"lang_nodes": {"en": {"MAIN": "1:1", "PT01": "1:5"},
+                        "de": {"MAIN": "9:9", "PT01": "9:5"}},
+         "figma_node_id": "1:1"}
 check("для языка со своим макетом берётся ЕГО узел",
-      loc.preview_node({"lang_nodes": {"de": "9:9"},
-                                "figma_node_id": "1:1"}, "de") == ("9:9", "de"))
+      loc.preview_node(NODES, "de") == ("9:9", "de"))
+check("узел берётся по СЛАЙДУ, а не только по главному фото",
+      loc.preview_node(NODES, "de", "PT01") == ("9:5", "de"))
 check("для языка без макета — английский, и это ВИДНО в ответе",
+      loc.preview_node(NODES, "es", "PT01") == ("1:5", "en"))
+check("слайда нет ни на одном языке — превью не выдумывается",
+      loc.preview_node(NODES, "de", "PT09") == ("", "en"))
+check("имя слайда достаётся из места слоя",
+      loc.slide_of("B0G4S9SJ3M.PT01#3") == "PT01"
+      and loc.slide_of("B0G4S9SJ3M.MAIN#0") == "MAIN")
+check("прежний плоский формат не роняет экран",
       loc.preview_node({"lang_nodes": {"de": "9:9"},
-                                "figma_node_id": "1:1"}, "es") == ("1:1", "en"))
+                        "figma_node_id": "1:1"}, "de") == ("9:9", "de"))
 check("jsonb приходит строкой — разбирается",
-      loc.preview_node({"lang_nodes": '{"it": "7:7"}',
-                                "figma_node_id": "1:1"}, "it") == ("7:7", "it"))
+      loc.preview_node({"lang_nodes": '{"it": {"MAIN": "7:7"}}',
+                        "figma_node_id": "1:1"}, "it") == ("7:7", "it"))
 check("мусор вместо jsonb не роняет экран",
       loc.preview_node({"lang_nodes": "не json",
-                                "figma_node_id": "1:1"}, "it") == ("1:1", "en"))
+                        "figma_node_id": "1:1"}, "it") == ("1:1", "en"))
 
 # на экране: свой макет назван своим, чужой — чужим
 CALLS.clear()
@@ -390,7 +402,7 @@ for lg in ("de", "es", "it", "fr"):
     at.session_state[f"loc-lang-0-{lg}"] = (lg == "de")
 at.run()
 check(f"немецкий макет запрошен по своему узлу ({CALLS})",
-      any(c[0] == "9:9" for c in CALLS))
+      any(c[0] == "9:5" for c in CALLS))
 check("и подпись говорит, что макет уже переведён",
       any("уже переведён в Figma" in str(c.value) for c in at.caption))
 
@@ -403,6 +415,19 @@ check("для испанского показан английский маке�
 check("и сказано, что своего макета ещё нет",
       any("ещё нет" in str(c.value) for c in at.caption))
 MODE["layers"] = None
+
+# --- 6в. карточка идёт слайдами, а не одной таблицей
+# Текст живёт на слайдах PT01…PT09, и одна таблица на 33 строки
+# заставляла держать в голове, к какому слайду относится строка.
+CALLS.clear()
+loc._png_cached.clear()
+MODE["real"] = True
+at = page_editor()
+_heads = " ".join(str(m.value) for m in at.markdown)
+check("слайд назван в заголовке блока", "PT01" in _heads)
+check("и сказано, сколько в нём строк", "строк: 2" in _heads)
+check(f"превью запрошено по узлу СЛАЙДА, а не главного фото ({CALLS})",
+      any(c[0] == "1:5" for c in CALLS))
 
 # --- 7. правка, перевод строки и след модели
 # Правка уезжает в базу СРАЗУ: кнопка «Сохранить» означала бы, что

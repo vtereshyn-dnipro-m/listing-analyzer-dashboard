@@ -30,6 +30,7 @@ import streamlit as st
 from i18n import t
 from services import ai, figma, translate
 from services.localization import (
+    slide_of,
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
     demo_layers, demo_products, fits, glossary, load_layers, load_products,
     load_prompt, needs_sync, over_rows, preview_node, product_state,
@@ -342,11 +343,11 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
     # Ровно поэтому «Перевести заново» и считали пропавшей.
     render_actions(layers, row, lang)
 
-    pane_img, pane_txt = st.columns([1, 1.9], gap="medium")
-    with pane_img:
-        render_preview(row, demo, lang)
-    with pane_txt:
-        render_rows(layers, pid, lang)
+    # Карточка — это девять слайдов, и текст живёт на них, а не
+    # в главном фото. Одна таблица на 33 строки заставляла дизайнера
+    # держать в голове, к какому слайду относится строка; теперь
+    # рядом со строками стоит тот слайд, на котором они написаны.
+    render_slides(layers, row, pid, lang, demo)
     render_notes()
     render_prompt_box()
 
@@ -419,7 +420,8 @@ def render_thumb(col, row, demo: bool) -> None:
         pass
 
 
-def render_preview(row, demo: bool, lang: str) -> None:
+def render_preview(row, demo: bool, lang: str,
+                   part: str = "MAIN") -> None:
     """Картинка макета — только для ОТКРЫТОГО товара.
 
     Миниатюры в списке стоили бы по запросу Figma на строку при сотнях
@@ -427,7 +429,7 @@ def render_preview(row, demo: bool, lang: str) -> None:
     английский макет: превью отвечает на вопрос «куда встанет текст»,
     и роль строки одинакова на всех языках.
     """
-    node, shown = preview_node(row, lang)
+    node, shown = preview_node(row, lang, part)
     if demo or not node:
         st.caption(t("loc.preview_none"))
         return
@@ -558,19 +560,49 @@ def _translate_rows(pid: int, langs, rows: list) -> None:
     load_products.clear()
 
 
-def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
+def render_slides(layers: pd.DataFrame, row, pid: int, lang: str,
+                  demo: bool) -> None:
+    """Блок на слайд: заголовок, слева его превью, справа его строки."""
+    slides = layers.assign(_slide=layers["slot"].map(slide_of)
+                           if "slot" in layers else "")
+    order = sorted({s for s in slides["_slide"] if s})
+    if not order:                       # демо и старые данные без slot
+        pane_img, pane_txt = st.columns([1, 1.9], gap="medium")
+        with pane_img:
+            render_preview(row, demo, lang)
+        with pane_txt:
+            render_rows(layers, pid, lang)
+        return
+
+    for name in order:
+        part = slides[slides["_slide"] == name]
+        # в заголовке — переводимые строки: служебные лежат внутри
+        # свёрнутыми, и считать их работой значит завышать объём
+        work_n = int((~part["source_text"].map(translate.is_boilerplate)).sum())
+        st.markdown(eyebrow(f'{name} · {t("loc.slide_rows", n=work_n)}'),
+                    unsafe_allow_html=True)
+        pane_img, pane_txt = st.columns([1, 1.9], gap="medium")
+        with pane_img:
+            render_preview(row, demo, lang, part=name)
+        with pane_txt:
+            render_rows(part, pid, lang, header=False)
+
+
+def render_rows(layers: pd.DataFrame, pid: int, lang: str,
+                header: bool = True) -> None:
     # поколение данных: растёт после каждой записи модели, и поля
     # пересоздаются вместо того, чтобы показывать прошлое
     gen = int(st.session_state.get(f"loc-gen-{pid}-{lang}", 0))
     # Шапка таблицы: подписи колонок здесь, а не в каждой строке —
     # иначе на десяти строках они читаются как часть текста
-    st.markdown(
-        f'<div style="display:flex;gap:10px;font-size:11px;'
-        f'letter-spacing:.06em;text-transform:uppercase;color:{MUTED};'
-        f'padding:0 2px 4px;"><div style="flex:1;">{t("loc.col_src")}</div>'
-        f'<div style="flex:1;">{t("loc.col_dst")}</div>'
-        f'<div style="flex:0 0 86px;text-align:right;">'
-        f'{t("loc.col_chars")}</div></div>', unsafe_allow_html=True)
+    if header:
+        st.markdown(
+            f'<div style="display:flex;gap:10px;font-size:11px;'
+            f'letter-spacing:.06em;text-transform:uppercase;color:{MUTED};'
+            f'padding:0 2px 4px;"><div style="flex:1;">{t("loc.col_src")}</div>'
+            f'<div style="flex:1;">{t("loc.col_dst")}</div>'
+            f'<div style="flex:0 0 86px;text-align:right;">'
+            f'{t("loc.col_chars")}</div></div>', unsafe_allow_html=True)
 
     if st.session_state.get("loc-save-error"):
         st.error("⚠ " + t("loc.save_row_failed",
