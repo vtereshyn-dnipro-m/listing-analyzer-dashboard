@@ -418,11 +418,22 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
                     # превью и по ним ищут макет в Figma руками
                     "page_name": page_name,
                     "figma_node_id": str(node.get("id")),
+                    # узлы .MAIN по языкам: часть товаров дизайнер уже
+                    # перевёл в самой Figma, и для них есть НАСТОЯЩИЙ
+                    # макет на языке — показывать вместо него английский
+                    # значит прятать готовую работу
+                    "lang_nodes": {},
                     "langs": [], "layers": [],
                 }
-            if lang == SOURCE_LANG and m.group("part").upper().startswith("MAIN"):
-                prod["page_name"] = page_name
-                prod["figma_node_id"] = str(node.get("id"))
+            if m.group("part").upper().startswith("MAIN"):
+                # `.MAIN` — главное изображение товара. В слоях его нет
+                # и быть не может: текста в нём нет ни у одного товара
+                # из двадцати одного, обход текстовых слоёв его не видит.
+                if lang == SOURCE_LANG:
+                    prod["page_name"] = page_name
+                    prod["figma_node_id"] = str(node.get("id"))
+                else:
+                    prod["lang_nodes"][lang] = str(node.get("id"))
             if lang not in prod["langs"]:
                 prod["langs"].append(lang)
 
