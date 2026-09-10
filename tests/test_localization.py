@@ -473,6 +473,24 @@ next(b for b in at.button if str(b.key or "").startswith("loc-tr-")).click().run
 check("несовпадение мест названо прямо",
       any("места не совпадают" in str(e.value) for e in at.error))
 
+# перевод обязан ПОЯВИТЬСЯ в поле, а не остаться за старым значением
+# session_state: text_input с key игнорирует value, и строка, впервые
+# отрисованная пустой, прятала бы уже записанный в базу перевод
+TRANSLATED = REAL_LAYERS.assign(
+    translated_text=["Carga USB-C", "Carga desde power banks"])
+tr.run = lambda prompt, lang, rows, pairs: (
+    {r["slot"]: "Carga desde power banks" for r in rows}, "claude-opus-5")
+at = page_editor()
+_key = "loc-txt-7-es-B0G4S9SJ3M.PT01#0.1"
+check("до перевода поле пустое",
+      str(at.session_state[_key] if _key in at.session_state else "") == "")
+MODE["layers"] = TRANSLATED          # база уже отдаёт перевод
+next(b for b in at.button if str(b.key or "").endswith("#0.1")).click().run()
+_after = (at.session_state[_key] if _key in at.session_state else None)
+check(f"после перевода поле показывает результат ({_after!r})",
+      _after == "Carga desde power banks")
+MODE["layers"] = None
+
 # 4. удача тоже называется: сколько строк и какой моделью
 tr.run = fake_run
 at = page_editor()
