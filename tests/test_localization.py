@@ -501,6 +501,15 @@ def lang_boxes(a):
             if str(c.key or "").startswith("loc-lang-")}
 
 
+# Ряд языков собирается ФЛЕКСОМ, а не долями колонок (правило 0):
+# доли делят ширину поровну и сжимают содержимое — пять контролов
+# в узкой колонке обрезали подписи до одной буквы, «D» вместо «DE».
+# Обрезку тестом не увидеть, поэтому проверяется способ вёрстки.
+_css = " ".join(str(m.value) for m in at.markdown)
+check("ряд языков свёрстан флексом, а не долями",
+      ".st-key-loc-head" in _css and "flex:0 0 auto" in _css)
+check("и подписи не переносятся", "white-space:nowrap" in _css)
+
 _boxes = lang_boxes(at)
 check(f"языки выбираются чекбоксами ({sorted(_boxes)})",
       set(_boxes) == {"de", "es", "it", "fr"})
