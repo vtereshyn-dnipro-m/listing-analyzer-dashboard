@@ -163,6 +163,48 @@ check(f"задачи ИИ и Настроек совпадают (код: {sorte
       f"экран: {sorted(_in_settings - _in_ai)})",
       _in_ai == _in_settings)
 
+# --- модель, отвечающая картинкой, не должна попасть в задачу с JSON
+# С 17.08.2026 Imagen выключен, вместо него Nano Banana
+# (`gemini-*-image`). Зовутся они тем же `generateContent`, что и
+# текстовые модели, поэтому фильтр Настроек по методу их не отсеивает:
+# они приезжают в те же списки, что title_split и translate.
+#
+# Цена ошибки не «неудобно», а МОЛЧАЛИВЫЙ ОТКАЗ: картинка вместо JSON,
+# `generate_json` отдаёт None, на экране «модель не ответила» без
+# причины. Проверяется на НАСТОЯЩИХ именах из документации Google,
+# а не на выдуманных: выдуманное имя проверило бы регулярку, а не факт.
+LIVE_GEMINI = [
+    # текстовые
+    "gemini-3.8-flash", "gemini-3.5-flash", "gemini-3.1-pro-preview",
+    "gemini-2.5-pro", "gemini-2.5-flash-lite",
+    # отвечают картинкой или видео
+    "gemini-3-pro-image", "gemini-3.1-flash-image",
+    "gemini-3.1-flash-lite-image", "gemini-2.5-flash-image",
+    "imagen-4.0-generate-001", "veo-3.1-generate-preview",
+]
+_text, _pic = ai_mod.split_kinds(LIVE_GEMINI)
+check(f"Nano Banana не попадает в текстовые ({sorted(set(_pic))})",
+      set(_pic) == {"gemini-3-pro-image", "gemini-3.1-flash-image",
+                    "gemini-3.1-flash-lite-image", "gemini-2.5-flash-image",
+                    "imagen-4.0-generate-001", "veo-3.1-generate-preview"})
+# Обратная сторона: похожие по написанию текстовые модели обязаны
+# остаться. `gemini-3.1-flash-image` отличается от `gemini-3.1-pro`
+# только хвостом, и слишком жадное правило унесло бы половину списка.
+check(f"текстовые остались все ({len(_text)} из 5)",
+      _text == ["gemini-3.8-flash", "gemini-3.5-flash",
+                "gemini-3.1-pro-preview", "gemini-2.5-pro",
+                "gemini-2.5-flash-lite"])
+# Незнакомое имя считается ТЕКСТОВЫМ: пропустить лишнюю модель в список
+# дешевле, чем молча спрятать рабочую.
+check("незнакомая модель остаётся в списке",
+      not ai_mod.is_picture_model("gemini-4-ultra-preview"))
+check("пустое имя не роняет фильтр",
+      not ai_mod.is_picture_model(None) and not ai_mod.is_picture_model(""))
+
+# Страница обязана брать фильтр ИЗ services/ai, а не держать свою копию.
+check("Настройки зовут общий фильтр, а не свой список",
+      "ai.split_kinds(" in _src)
+
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
       else f"{len(FAILS)} провалов: {FAILS}")

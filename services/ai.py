@@ -35,6 +35,39 @@ DEFAULTS = {
 }
 
 
+# Модели, отвечающие КАРТИНКОЙ или видео, а не текстом. С 17.08.2026
+# Imagen выключен, на смену пришло семейство Nano Banana
+# (`gemini-3-pro-image`, `gemini-3.1-flash-image`,
+# `gemini-3.1-flash-lite-image`). Зовутся они тем же `generateContent`,
+# что и текстовые, поэтому фильтр по методу их НЕ отсеивает и они
+# приезжают в те же выпадающие списки Настроек.
+#
+# Почему это надо отсекать. Все четыре задачи ждут от модели
+# РАЗОБРАННЫЙ JSON. Выбранная по ошибке `gemini-3-pro-image` вернёт
+# изображение, `generate_json` не найдёт разметки и отдаст None — на
+# экране это «модель не ответила», отказ без причины. Тот самый класс
+# молчаливых поломок, который здесь стоит дороже всего.
+#
+# Различаем по ИМЕНИ: `supportedGenerationMethods` у них совпадает
+# с текстовыми, отличать нечем. Признак грубый — потому и безопасный:
+# незнакомая модель считается текстовой и остаётся в списке, а не
+# исчезает молча. Ошибиться в эту сторону дешевле.
+PICTURE_MARKS = ("-image", "imagen-", "veo-", "-tts", "embedding")
+
+
+def is_picture_model(name: str) -> bool:
+    """Модель отвечает картинкой/видео/звуком, а не текстом."""
+    return any(m in str(name or "").lower() for m in PICTURE_MARKS)
+
+
+def split_kinds(names) -> tuple[list[str], list[str]]:
+    """(текстовые, отвечающие картинкой) — в порядке исходного списка."""
+    text, picture = [], []
+    for n in names or []:
+        (picture if is_picture_model(n) else text).append(n)
+    return text, picture
+
+
 PROVIDER_NAME = {"gemini": "Gemini", "anthropic": "Anthropic"}
 
 # маркеры «кончились деньги/квота» в теле ошибки провайдера

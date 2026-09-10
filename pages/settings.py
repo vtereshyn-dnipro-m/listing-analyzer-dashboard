@@ -19,6 +19,7 @@ import requests
 import streamlit as st
 
 from i18n import t
+from services import ai
 from services.ai import reset_last_error
 from services.db import get_conn, cfg, cfg_source, get_engine
 from services.flatfile_template import (
@@ -163,7 +164,17 @@ st.caption(t("set.models_hint"))
 
 
 @st.cache_data(ttl=600)
-def gemini_models() -> list[str]:
+def gemini_models(kind: str = "text") -> list[str]:
+    """Модели Google: kind="text" — для задач ниже, "image" — генерация.
+
+    Какие модели отвечают картинкой, знает `services/ai.py`: там же
+    живут сами вызовы, и держать этот список на странице значило бы
+    иметь вторую его копию — расходятся такие пары всегда.
+
+    Списка генерации сейчас никто не спрашивает: задачи с картинкой
+    на выходе в приложении нет. Ветка оставлена заготовкой, чтобы её
+    добавление не начиналось с переписывания этой функции.
+    """
     key = cfg("GEMINI_API_KEY")
     if not key:
         return []
@@ -173,13 +184,15 @@ def gemini_models() -> list[str]:
             headers={"x-goog-api-key": str(key).strip()}, timeout=30)
         if r.status_code != 200:
             return []
-        return sorted(
+        names = sorted(
             str(m["name"]).replace("models/", "")
             for m in r.json().get("models", [])
             if "generateContent" in (m.get("supportedGenerationMethods") or [])
         )
     except Exception:
         return []
+    text, picture = ai.split_kinds(names)
+    return picture if kind == "image" else text
 
 
 @st.cache_data(ttl=600)
