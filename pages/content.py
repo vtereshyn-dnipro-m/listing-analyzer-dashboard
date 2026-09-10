@@ -126,6 +126,18 @@ def product_row_html(r: pd.Series) -> str:
         f'{t("loc.layers_n", n=int(r.get("layers_count") or 0))}</div></div>')
 
 
+def cell_text(row, col: str) -> str:
+    """Значение ячейки строкой — с NaN вместо пустоты.
+
+    Правило 4 проекта: NaN в Python ИСТИННЫЙ, поэтому `x or ""`
+    возвращает не пустую строку, а сам NaN, и `.strip()` на нём падает
+    с AttributeError. Непереведённые строки приходят из LEFT JOIN
+    именно как NaN, а не как None, — на этом и упала страница.
+    """
+    val = row.get(col)
+    return "" if pd.isna(val) else str(val)
+
+
 def counter_html(n: int, lim: int | None, state: str) -> str:
     """«18 / 22» — длина перевода и предел слоя.
 
@@ -321,7 +333,7 @@ def render_thumb(col, row, demo: bool) -> None:
     миниатюра стоит запроса ссылки, и при двадцати одном товаре это
     двадцать один запрос — по одному в сутки на товар, дальше из кэша.
     """
-    node = str(row.get("figma_node_id") or "")
+    node = cell_text(row, "figma_node_id")
     if demo or not node:
         return
     png, err = preview_png(node, figma.THUMB_SCALE)
@@ -345,7 +357,7 @@ def render_preview(row, demo: bool) -> None:
     английский макет: превью отвечает на вопрос «куда встанет текст»,
     и роль строки одинакова на всех языках.
     """
-    node = str(row.get("figma_node_id") or "")
+    node = cell_text(row, "figma_node_id")
     if demo or not node:
         st.caption(t("loc.preview_none"))
         return
@@ -371,7 +383,8 @@ def human_mark(row) -> str:
     автоматике, а где нет. Значок мелкий и стоит у ИСХОДНИКА, а не
     у перевода: он про историю строки, а не про её текущий текст.
     """
-    if not bool(row.get("edited_after_model")):
+    flag = row.get("edited_after_model")
+    if pd.isna(flag) or not bool(flag):
         return ""
     return (f'<span title="{t("loc.edited_by_human")}" style="color:{MUTED};'
             f'font-size:11px;margin-left:6px;">✎</span>')
@@ -461,9 +474,9 @@ def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
 
     edited: dict = {}
     for _, lr in layers.iterrows():
-        slot = lr.get("slot") or lr["layer_id"]
+        slot = cell_text(lr, "slot") or cell_text(lr, "layer_id")
         key = f"loc-txt-{pid}-{lang}-{slot}"
-        current = st.session_state.get(key, lr.get("translated_text") or "")
+        current = st.session_state.get(key, cell_text(lr, "translated_text"))
         n, lim, state = fits(current, lr.get("char_limit"))
         edited[lr["layer_id"]] = current
 
@@ -534,7 +547,7 @@ def render_prompt_box() -> None:
 def render_actions(layers: pd.DataFrame, row, lang: str) -> None:
     """Действия и оговорки — под обеими колонками, а не внутри одной."""
     pid = int(row["id"])
-    rows = [{"slot": lr.get("slot") or lr["layer_id"],
+    rows = [{"slot": cell_text(lr, "slot") or cell_text(lr, "layer_id"),
              "source_text": lr["source_text"],
              "char_limit": lr.get("char_limit")}
             for _, lr in layers.iterrows()]
@@ -550,10 +563,10 @@ def render_actions(layers: pd.DataFrame, row, lang: str) -> None:
             "file_key": row.get("figma_file_key"),
             "asin": row.get("asin"), "lang": lang,
             "layers": [{"layer_id": lr["layer_id"],
-                        "slot": lr.get("slot"),
-                        "text": lr.get("translated_text") or ""}
+                        "slot": cell_text(lr, "slot"),
+                        "text": cell_text(lr, "translated_text")}
                        for _, lr in layers.iterrows()
-                       if (lr.get("translated_text") or "").strip()],
+                       if cell_text(lr, "translated_text").strip()],
         }, ensure_ascii=False, indent=2))
     a2.button(t("loc.retranslate"), key="loc-retry",
               on_click=_translate_rows, args=(pid, lang, rows))

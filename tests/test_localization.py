@@ -42,7 +42,7 @@ def check(name: str, cond: bool) -> None:
         FAILS.append(name)
 
 
-MODE = {"fail": False, "real": False}
+MODE = {"fail": False, "real": False, "layers": None}
 
 # Настоящий товар, прочитанный из Figma: у него есть узел, а значит
 # и превью макета. Демо узла не имеет намеренно.
@@ -59,10 +59,14 @@ REAL_LAYERS = pd.DataFrame([
          lang="es", source_text="USB-C Charging",
          translated_text="Carga USB-C", char_limit=20, status="translated",
          edited_after_model=False),
+    # NaN, а не "": непереведённая строка приходит из LEFT JOIN именно
+    # так. Пустая строка в фикстуре скрывала правило 4 — NaN истинный,
+    # и `x or ""` отдаёт float, на котором .strip() падает. Ровно на
+    # этом страница и упала после ребута.
     dict(layer_id="1:8", slot="B0G4S9SJ3M.PT01#0.1", frame_name="body",
          lang="es", source_text="Charges from power banks",
-         translated_text="", char_limit=44, status="none",
-         edited_after_model=False),
+         translated_text=float("nan"), char_limit=44, status="none",
+         edited_after_model=float("nan")),
 ])
 GLOSSARY = pd.DataFrame([{"en": "Fabric fastening", "tr": "Stoffbefestigung",
                           "char_limit": 30}])
@@ -80,7 +84,10 @@ def fake_sql(sql, con=None, **kw):
         if "JOIN figma_layers src" in q:
             return GLOSSARY.copy()
         if "FROM figma_layers" in q:
-            return REAL_LAYERS.copy()
+            # подмена целым кадром, а не срезом: pandas 3 не кладёт NaN
+            # в строковую колонку через `df[:] = other`
+            return (MODE["layers"] if MODE.get("layers") is not None
+                    else REAL_LAYERS).copy()
         return REAL_PRODUCT.copy()
     return pd.DataFrame()
 
@@ -346,6 +353,12 @@ at.session_state["loc-product"] = 7
 at.session_state["loc-lang"] = "es"
 at.run()
 
+# Первым делом — что страница вообще жива на РЕАЛЬНОЙ форме данных.
+# Непереведённая строка приходит как NaN, а NaN истинный: `x or ""`
+# отдаёт float, и `.strip()` на нём роняет весь экран. Проверка стоит
+# до всех остальных, иначе они падают каскадом и причина теряется.
+check(f"редактор не падает на непереведённых строках "
+      f"({[str(e.value)[:60] for e in at.exception]})", not at.exception)
 check(f"строк перевода на экране ({len(at.text_input)})", len(at.text_input) == 2)
 at.text_input[0].set_value("Carga rápida USB-C").run()
 check(f"правка ушла в базу сразу ({SAVED})",
@@ -376,11 +389,9 @@ check(f"кнопка товара переводит ВСЕ строки ({len(M
 # `WHERE lang = 'es'`, получал пусто и говорил «текстовых слоёв нет»
 # у товара, где их 33, — то есть страница умела показывать только уже
 # переведённое, ровно наоборот своему назначению.
-NO_TRANSLATION = REAL_LAYERS.copy()
-NO_TRANSLATION["translated_text"] = None
-NO_TRANSLATION["status"] = "none"
-_prev = REAL_LAYERS.copy()
-REAL_LAYERS[:] = NO_TRANSLATION
+NO_TRANSLATION = REAL_LAYERS.assign(
+    translated_text=[float("nan")] * len(REAL_LAYERS), status="none")
+MODE["layers"] = NO_TRANSLATION
 
 st.cache_data.clear()
 at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
@@ -402,7 +413,7 @@ SAVED.clear()
 at.text_input[0].set_value("Carga USB-C").run()
 check(f"правка по новому языку ушла в базу ({SAVED})",
       SAVED and SAVED[0][2] == "es" and SAVED[0][3] == "Carga USB-C")
-REAL_LAYERS[:] = _prev
+MODE["layers"] = None
 
 # Тесты подделывают pd.read_sql, поэтому UI-проверка выше прошла бы
 # и со старым запросом. Сам контракт запроса проверяется текстом:
@@ -470,7 +481,8 @@ check("успех виден числом строк и именем модел�
       any("Переведено моделью" in str(x.value) for x in at.success))
 
 # --- 8. след правки виден в строке
-REAL_LAYERS.loc[0, "edited_after_model"] = True
+MODE["layers"] = REAL_LAYERS.assign(
+    edited_after_model=[True] * len(REAL_LAYERS))
 st.cache_data.clear()
 at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/content.py").run()
@@ -479,7 +491,7 @@ at.session_state["loc-lang"] = "es"
 at.run()
 check("правленная человеком строка помечена",
       any("правил человек" in str(m.value) for m in at.markdown))
-REAL_LAYERS.loc[0, "edited_after_model"] = False
+MODE["layers"] = None
 
 # --- 9. промпт виден и правится
 _areas = [a for a in at.text_area if a.key == "loc-prompt-draft"]
