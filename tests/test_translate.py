@@ -77,6 +77,42 @@ check("правки человека доезжают до модели",
       tr.build_prompt(tr.DEFAULT_PROMPT + "\n7. НЕ ПЕРЕВОДИТЬ СЛОВО ЛАЗЕР",
                       "de", ROWS, PAIRS))
 
+# --- служебные строки: числа и коды моделей
+# Проверено по живым макетам: из 153 английских строк 44 дизайнер
+# не тронул ни на одном языке. Отправлять их в модель — платить
+# за подтверждение, что «2 Ah» это «2 Ah», а на экране это треть
+# таблицы шума.
+for probe in ("2 Ah", "11 min", "11–13 min", "19 min 45 s", "240 km/h",
+              "156 m³/h", "1,500 mAh", "3.6 V", "BP-220", "BP-240/240N",
+              "CC-36"):
+    check(f"не переводим: {probe}", tr.is_boilerplate(probe))
+
+# Граница здесь не «список слов», а признаки — иначе теряется работа
+# человека. «Capacity» и «Speed I» выглядят служебными, но в макетах
+# ПЕРЕВЕДЕНЫ: «Capacidad», «Velocidad I».
+for probe in ("Capacity", "Speed I", "Battery Capacity", "3 Speed Modes",
+              "Charge indicator", "Li-ion 2000 mAh", "Blower TJF-36"):
+    check(f"переводим: {probe}", not tr.is_boilerplate(probe))
+
+# Единицы — списком, а не «любые буквы после числа»: «30 shots/min»
+# в макетах стало «30 Schuss/min» и «30 colpi/min», потому что
+# единица здесь СЛОВО.
+check("единица словом переводится (30 shots/min)",
+      not tr.is_boilerplate("30 shots/min"))
+
+_work, _skip = tr.split_rows([
+    {"slot": "a", "source_text": "Cordless Freedom"},
+    {"slot": "b", "source_text": "2 Ah"},
+    {"slot": "c", "source_text": "30 shots/min"},
+])
+check(f"разделение сохраняет порядок и состав ({len(_work)}/{len(_skip)})",
+      [r["slot"] for r in _work] == ["a", "c"]
+      and [r["slot"] for r in _skip] == ["b"])
+
+# и главное — служебные строки не попадают в промпт
+_txt = tr.build_prompt(tr.DEFAULT_PROMPT, "de", _work, [])
+check("служебная строка в промпт не ушла", "2 Ah" not in _txt.split("Правила")[-1])
+
 # --- ответ модели
 check("нормальный ответ разбирается",
       tr.parse_reply('[{"slot":"a","text":"Akku"}]') == {"a": "Akku"})

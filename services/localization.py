@@ -422,6 +422,21 @@ def glossary(lang: str, limit: int = 60) -> tuple[pd.DataFrame, str | None]:
 
 
 @st.cache_data(ttl=figma.IMAGE_TTL, show_spinner=False)
+def _png_cached(node_id: str, scale: float) -> bytes:
+    """Только УДАЧНЫЙ рендер. Отказ уходит исключением и не кэшируется.
+
+    Кэш здесь суточный, и запомнить в нём отказ значит держать пустую
+    картинку сутки: так вчерашний 403 по истёкшему токену пережил
+    замену токена — код и права были уже в порядке, а экран показывал
+    прошлое. `st.cache_data` запоминает только то, что функция ВЕРНУЛА,
+    поэтому отказ обязан быть исключением.
+    """
+    png, err = figma.node_png(node_id, scale=scale)
+    if err or not png:
+        raise RuntimeError(err or "рендер не пришёл")
+    return png
+
+
 def preview_png(node_id: str, scale: float = figma.IMAGE_SCALE
                 ) -> tuple[bytes | None, str | None]:
     """Картинка макета байтами: (png, причина отказа).
@@ -435,7 +450,11 @@ def preview_png(node_id: str, scale: float = figma.IMAGE_SCALE
     картинку заново не просит: превью показывает английский макет,
     по нему и видно роль строки.
     """
-    return figma.node_png(node_id, scale=scale)
+    try:
+        return _png_cached(node_id, scale), None
+    except Exception as e:
+        # отказ наружу, но НЕ в кэш: иначе он переживёт починку причины
+        return None, str(e)
 
 
 @st.cache_data(ttl=60)
