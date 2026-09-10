@@ -49,7 +49,7 @@ MODE = {"fail": False, "real": False, "layers": None}
 REAL_PRODUCT = pd.DataFrame([dict(
     id=7, asin="B0G4S9SJ3M", sku="54225000", name="Stapler CC-36",
     section_type="Main Images", page_name="UK/US", figma_file_key="ZZJ9",
-    figma_node_id="1:1", layers_count=2, synced_at=pd.Timestamp.utcnow(),
+    figma_node_id="1:1", layers_count=2, synced_at=pd.Timestamp.now("UTC"),
     # узлы СЛАЙДОВ по языкам: текст живёт на слайдах, а не в .MAIN
     lang_nodes={"en": {"MAIN": "1:1", "PT01": "1:5"},
                 "de": {"MAIN": "9:9", "PT01": "9:5"}},

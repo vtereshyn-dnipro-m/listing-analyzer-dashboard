@@ -527,7 +527,7 @@ else:
     if mp_sel:
         view = view[view["marketplace"].isin(mp_sel)]
     if only_stale:
-        cutoff = pd.Timestamp.utcnow() - pd.Timedelta(hours=48)
+        cutoff = pd.Timestamp.now("UTC") - pd.Timedelta(hours=48)
         lf = pd.to_datetime(view["last_fetch"], utc=True, errors="coerce")
         view = view[lf.isna() | (lf < cutoff) | (view["last_ok"] == False)]  # noqa: E712
 

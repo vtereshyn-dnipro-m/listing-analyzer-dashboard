@@ -79,6 +79,34 @@ engine_reads = sum(len(re.findall(r"pd\.read_sql\(", p.read_text(encoding="utf-8
                    for p in CODE)
 check(f"чтения остались на месте ({engine_reads} вызовов)", engine_reads >= 20)
 
+# --- 2б. время в UTC: Timestamp.utcnow снят с вооружения
+# pandas 3 отвечает на него Pandas4Warning, то есть вызов исчезнет
+# в следующей мажорной версии. Замена буквальная: обе формы отдают
+# ОСВЕДОМЛЁННЫЙ о зоне UTC-момент, поэтому вычитание из
+# `pd.to_datetime(..., utc=True)` считает то же самое. Разница только
+# в том, что `datetime.utcnow()` из стандартной библиотеки отдаёт
+# НАИВНЫЙ момент — эту форму сюда возвращать нельзя тем более:
+# вычитание наивного из осведомлённого падает с TypeError.
+#
+# Проверяются и tests/ тоже: предупреждение шумит откуда угодно.
+# Сам этот файл из обхода исключён: в нём слово стоит в комментарии
+# и в строке поиска, и без исключения проверка ловила бы себя.
+SELF = pathlib.Path(__file__).resolve()
+SCAN = [p for p in CODE + sorted((ROOT / "tests").glob("*.py"))
+        if p.resolve() != SELF]
+stale_now = [f"{p.relative_to(ROOT)}:{i}"
+             for p in SCAN
+             for i, ln in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+             if ".utcnow(" in ln]
+check(f"utcnow нигде не осталось ({stale_now or '—'})", not stale_now)
+
+utc_now_uses = sum(p.read_text(encoding="utf-8").count('Timestamp.now("UTC")')
+                   for p in SCAN)
+# Порог сторожит замену, а не число мест: он падает, если время
+# в UTC вырежут целиком, и не даёт вернуть utcnow под видом правки.
+check(f"на замену пришло Timestamp.now(\"UTC\") ({utc_now_uses} мест)",
+      utc_now_uses >= 3)
+
 # --- 3. сам движок
 import services.db as db                                # noqa: E402
 
