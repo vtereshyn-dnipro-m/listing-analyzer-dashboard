@@ -315,12 +315,17 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
     # Слева макет, справа строки. Без картинки перевод — это список
     # фраз без контекста: не видно, что одна строка — крупный заголовок
     # на тёмном фоне, а соседняя — мелкая подпись под ней.
+    # Действия — НАД таблицей, как массовые действия на Синтезе:
+    # строк здесь три десятка, и кнопка под ними уезжает за экран.
+    # Ровно поэтому «Перевести заново» и считали пропавшей.
+    render_actions(layers, row, lang)
+
     pane_img, pane_txt = st.columns([1, 1.9], gap="medium")
     with pane_img:
         render_preview(row, demo)
     with pane_txt:
         render_rows(layers, pid, lang)
-    render_actions(layers, row, lang)
+    render_notes()
     render_prompt_box()
 
 
@@ -447,13 +452,18 @@ def _translate_rows(pid: int, lang: str, rows: list) -> None:
         st.session_state["loc-save-error"] = err
         return
 
-    # Поле ввода объявлено с key, а при существующем ключе Streamlit
-    # берёт значение из session_state и value ИГНОРИРУЕТ. Ключ появился,
-    # когда строка впервые отрисовалась пустой, — и перевод, уже лежащий
-    # в базе, экран продолжал бы прятать за старым пустым значением.
-    # Снимаем ключи переведённых строк: пусть перечитаются из базы.
-    for slot in useful:
-        st.session_state.pop(f"loc-txt-{pid}-{lang}-{slot}", None)
+    # Поле ввода объявлено с key, и одного `pop` тут МАЛО: ключ из
+    # session_state снимается, но состояние самого виджета живёт
+    # в браузере — на следующем прогоне оттуда приезжает прежнее
+    # пустое значение и ложится поверх `value=`. Видно это было по
+    # счётчику: он считал от базы и показывал «50 / 56», а поле рядом
+    # оставалось пустым.
+    #
+    # Поэтому меняется КЛЮЧ: поля становятся новыми виджетами и берут
+    # текст из базы. Поколение — на пару (товар, язык), чтобы правки
+    # в других языках не сбрасывались.
+    gen_key = f"loc-gen-{pid}-{lang}"
+    st.session_state[gen_key] = int(st.session_state.get(gen_key, 0)) + 1
     # ноль обновлённых — это тоже не успех: строки уже правил человек,
     # и перевод модели их намеренно не тронул
     st.session_state["loc-model-note"] = (
@@ -464,6 +474,9 @@ def _translate_rows(pid: int, lang: str, rows: list) -> None:
 
 
 def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
+    # поколение данных: растёт после каждой записи модели, и поля
+    # пересоздаются вместо того, чтобы показывать прошлое
+    gen = int(st.session_state.get(f"loc-gen-{pid}-{lang}", 0))
     # Шапка таблицы: подписи колонок здесь, а не в каждой строке —
     # иначе на десяти строках они читаются как часть текста
     st.markdown(
@@ -483,7 +496,7 @@ def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
     edited: dict = {}
     for _, lr in layers.iterrows():
         slot = cell_text(lr, "slot") or cell_text(lr, "layer_id")
-        key = f"loc-txt-{pid}-{lang}-{slot}"
+        key = f"loc-txt-{pid}-{lang}-{gen}-{slot}"
         current = st.session_state.get(key, cell_text(lr, "translated_text"))
         n, lim, state = fits(current, lr.get("char_limit"))
         edited[lr["layer_id"]] = current
@@ -576,9 +589,13 @@ def render_actions(layers: pd.DataFrame, row, lang: str) -> None:
                        for _, lr in layers.iterrows()
                        if cell_text(lr, "translated_text").strip()],
         }, ensure_ascii=False, indent=2))
-    a2.button(t("loc.retranslate"), key="loc-retry",
+    a2.button(f'{t("loc.retranslate")} · {len(rows)}', key="loc-retry",
               on_click=_translate_rows, args=(pid, lang, rows))
     st.caption(t("loc.apply_json_note"))
+
+
+def render_notes() -> None:
+    """Оговорки — под таблицей: они поясняют колонку длины."""
     # Предел — расчётный, и об этом надо сказать прямо: ширина слоя
     # приходит в пикселях, а знаки разной ширины. Без этой строки текст,
     # не влезший на самой границе, выглядит ошибкой расчёта.
