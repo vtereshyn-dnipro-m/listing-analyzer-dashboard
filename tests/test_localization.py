@@ -192,6 +192,16 @@ check("и сказано, что это для плагина",
       any("для плагина" in str(c.value) for c in at.caption))
 _retry = next((b for b in at.button if b.key == "loc-retry"), None)
 check("«Перевести заново» работает", _retry is not None and not _retry.disabled)
+# Кнопка стоит НАД таблицей: под тремя десятками строк её не видно,
+# и её уже считали пропавшей. Проверяется порядок, а не наличие.
+_ids = [e.key or "" for e in at.get("button") + at.get("text_input")]
+check(f"кнопка товара выше строк перевода ({_ids[:3]})",
+      "loc-retry" in _ids
+      and _ids.index("loc-retry") < min(
+          (i for i, k in enumerate(_ids) if str(k).startswith("loc-txt-")),
+          default=10 ** 6))
+check("и в подписи названо число строк",
+      _retry is not None and str(len(at.text_input)) in str(_retry.label))
 
 # --- 5б. пробный заход виден на экране
 # Четыре товара не должны выглядеть как весь файл: по такому списку
@@ -481,12 +491,27 @@ TRANSLATED = REAL_LAYERS.assign(
 tr.run = lambda prompt, lang, rows, pairs: (
     {r["slot"]: "Carga desde power banks" for r in rows}, "claude-opus-5")
 at = page_editor()
-_key = "loc-txt-7-es-B0G4S9SJ3M.PT01#0.1"
+
+
+def field_value(a, slot):
+    """Значение поля строки — по КЛЮЧУ ТЕКУЩЕГО поколения.
+
+    Ключ включает поколение данных: снять его из session_state мало,
+    состояние виджета живёт в браузере и возвращается оттуда поверх
+    `value=`. Пересоздание виджета — единственный способ показать
+    то, что записано в базу.
+    """
+    gen = int(a.session_state["loc-gen-7-es"]
+              if "loc-gen-7-es" in a.session_state else 0)
+    key = f"loc-txt-7-es-{gen}-{slot}"
+    return (str(a.session_state[key]) if key in a.session_state else None)
+
+
 check("до перевода поле пустое",
-      str(at.session_state[_key] if _key in at.session_state else "") == "")
+      (field_value(at, "B0G4S9SJ3M.PT01#0.1") or "") == "")
 MODE["layers"] = TRANSLATED          # база уже отдаёт перевод
 next(b for b in at.button if str(b.key or "").endswith("#0.1")).click().run()
-_after = (at.session_state[_key] if _key in at.session_state else None)
+_after = field_value(at, "B0G4S9SJ3M.PT01#0.1")
 check(f"после перевода поле показывает результат ({_after!r})",
       _after == "Carga desde power banks")
 MODE["layers"] = None
