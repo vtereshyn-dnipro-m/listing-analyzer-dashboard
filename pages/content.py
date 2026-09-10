@@ -295,10 +295,13 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
         for k in ("loc-product", "loc-lang"):
             st.session_state.pop(k, None)
         st.rerun()
-    lang = b2.radio(
-        "lang", list(TARGET_LANGS), horizontal=True,
-        index=list(TARGET_LANGS).index(lang) if lang in TARGET_LANGS else 0,
-        format_func=str.upper, label_visibility="collapsed", key="loc-lang")
+    # Языки выбираются НЕСКОЛЬКО сразу: перевод на четыре рынка — одна
+    # работа, а не четыре захода. Подписи здесь коды (DE, ES…), они
+    # не переводятся, поэтому правило 7 про sticky-виджеты не нужно.
+    done = set(row.get("langs_done") or ())
+    picked = pick_langs(b2, lang, done)
+    lang = picked[0] if picked else lang
+    st.session_state["loc-lang"] = lang
 
     st.markdown(eyebrow(f'{row.get("name") or row.get("asin")} · '
                         f'{row.get("asin")} · {lang.upper()}'),
@@ -327,6 +330,47 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
         render_rows(layers, pid, lang)
     render_notes()
     render_prompt_box()
+
+
+def pick_langs(box, current: str, done: set) -> list:
+    """Чекбоксы языков и кнопка «все, где нет перевода».
+
+    Возвращает выбранные коды в порядке TARGET_LANGS. Первый из них —
+    язык таблицы: смотреть на два языка одновременно всё равно нельзя,
+    а переводить на несколько нужно одним нажатием.
+
+    Кнопка НЕ пишет в ключи чекбоксов: Streamlit запрещает менять
+    `session_state` ключа после того, как виджет создан, и падает
+    с StreamlitWidgetAlreadyInstantiatedError — кнопка стоит ниже
+    чекбоксов, то есть всегда «после». Поэтому она кладёт НАБОР
+    и растит поколение, а чекбоксы следующего прогона создаются
+    с новыми ключами и берут значения из набора. Тот же приём, что
+    у полей перевода, и по той же причине (правило 7б).
+    """
+    gen = int(st.session_state.get("loc-langs-gen", 0))
+    preset = st.session_state.get("loc-langs-preset")
+    chosen = set(preset if preset is not None
+                 else st.session_state.get("loc-langs") or [current])
+
+    cols = box.columns(len(TARGET_LANGS) + 1, gap="small",
+                       vertical_alignment="center")
+    picked = []
+    for i, lg in enumerate(TARGET_LANGS):
+        if cols[i].checkbox(lg.upper(), key=f"loc-lang-{gen}-{lg}",
+                            value=lg in chosen):
+            picked.append(lg)
+
+    # «все, где нет перевода» — это и есть очередь работы по товару
+    if cols[-1].button(t("loc.langs_missing"), key="loc-langs-missing",
+                       help=t("loc.langs_missing_help")):
+        st.session_state["loc-langs-preset"] = [
+            lg for lg in TARGET_LANGS if lg not in done]
+        st.session_state["loc-langs-gen"] = gen + 1
+        st.rerun()
+
+    st.session_state.pop("loc-langs-preset", None)
+    st.session_state["loc-langs"] = picked or [current]
+    return st.session_state["loc-langs"]
 
 
 def render_thumb(col, row, demo: bool) -> None:
@@ -408,7 +452,7 @@ def _store_edit(pid: int, slot: str, lang: str, key: str) -> None:
     load_products.clear()
 
 
-def _translate_rows(pid: int, lang: str, rows: list) -> None:
+def _translate_rows(pid: int, langs, rows: list) -> None:
     """Перевод моделью: строка или весь товар — путь один.
 
     Вызывается ИЗ КОЛБЭКА кнопки, а из колбэка `st.error` на экран
@@ -419,6 +463,7 @@ def _translate_rows(pid: int, lang: str, rows: list) -> None:
     """
     st.session_state.pop("loc-save-error", None)
     st.session_state.pop("loc-model-note", None)
+    langs = [langs] if isinstance(langs, str) else list(langs)
 
     prompt_text, _ver, err = load_prompt()
     if err:
@@ -426,49 +471,66 @@ def _translate_rows(pid: int, lang: str, rows: list) -> None:
         return
     text = st.session_state.get("loc-prompt-draft") or prompt_text \
         or translate.DEFAULT_PROMPT
-    pairs_df, _ = glossary(lang)
-    pairs = pairs_df.to_dict("records") if not pairs_df.empty else []
 
-    got, model = translate.run(text, lang, rows, pairs)
-    if not got:
-        # три разных отказа, и все раньше выглядели одинаково — пустотой:
-        # провайдер не ответил, ответ не разобрался, ответ пустой
-        st.session_state["loc-save-error"] = (
-            ai.last_call_error() or t("loc.model_empty"))
+    work, _skip = translate.split_rows(rows)
+    if not work:
+        st.session_state["loc-model-note"] = t("loc.model_all_skipped")
         return
 
-    # модель может ответить местами, которых мы не спрашивали: тогда
-    # запись не найдёт строк и «успех» окажется нулём обновлённых
-    known = {str(r["slot"]) for r in rows}
-    useful = {k: v for k, v in got.items() if k in known}
-    if not useful:
-        st.session_state["loc-save-error"] = t(
-            "loc.model_slots_mismatch", n=len(got),
-            got=", ".join(list(got)[:3]))
-        return
+    done_total, model_used, fails = 0, "", []
+    for lang in langs:
+        # глоссарий свой на каждый язык: словарь дизайнера у немецкого
+        # и итальянского разный, и общий образец сбил бы оба
+        pairs_df, _ = glossary(lang)
+        pairs = pairs_df.to_dict("records") if not pairs_df.empty else []
 
-    n, err = save_model_translation(pid, lang, model, useful)
-    if err:
-        st.session_state["loc-save-error"] = err
-        return
+        got, model = translate.run(text, lang, work, pairs)
+        if not got:
+            # три разных отказа, и все раньше выглядели одинаково —
+            # пустотой: провайдер не ответил, ответ не разобрался, пусто
+            fails.append(f"{lang.upper()}: "
+                         + (ai.last_call_error() or t("loc.model_empty")))
+            continue
 
-    # Поле ввода объявлено с key, и одного `pop` тут МАЛО: ключ из
-    # session_state снимается, но состояние самого виджета живёт
-    # в браузере — на следующем прогоне оттуда приезжает прежнее
-    # пустое значение и ложится поверх `value=`. Видно это было по
-    # счётчику: он считал от базы и показывал «50 / 56», а поле рядом
-    # оставалось пустым.
-    #
-    # Поэтому меняется КЛЮЧ: поля становятся новыми виджетами и берут
-    # текст из базы. Поколение — на пару (товар, язык), чтобы правки
-    # в других языках не сбрасывались.
-    gen_key = f"loc-gen-{pid}-{lang}"
-    st.session_state[gen_key] = int(st.session_state.get(gen_key, 0)) + 1
-    # ноль обновлённых — это тоже не успех: строки уже правил человек,
-    # и перевод модели их намеренно не тронул
-    st.session_state["loc-model-note"] = (
-        t("loc.model_done", n=n, model=model) if n
-        else t("loc.model_kept_human", n=len(useful)))
+        # модель может ответить местами, которых мы не спрашивали: тогда
+        # запись не найдёт строк и «успех» окажется нулём обновлённых
+        known = {str(r["slot"]) for r in work}
+        useful = {k: v for k, v in got.items() if k in known}
+        if not useful:
+            fails.append(f"{lang.upper()}: " + t(
+                "loc.model_slots_mismatch", n=len(got),
+                got=", ".join(list(got)[:3])))
+            continue
+
+        n, err = save_model_translation(pid, lang, model, useful)
+        if err:
+            fails.append(f"{lang.upper()}: {err}")
+            continue
+        done_total += n
+        model_used = model
+
+        # Поле ввода объявлено с key, и одного `pop` тут МАЛО: ключ из
+        # session_state снимается, но состояние самого виджета живёт
+        # в браузере — на следующем прогоне оттуда приезжает прежнее
+        # пустое значение и ложится поверх `value=`. Видно это было по
+        # счётчику: он считал от базы и показывал «50 / 56», а поле
+        # рядом оставалось пустым. Поэтому меняется КЛЮЧ: поля
+        # становятся новыми виджетами и берут текст из базы.
+        gen_key = f"loc-gen-{pid}-{lang}"
+        st.session_state[gen_key] = int(st.session_state.get(gen_key, 0)) + 1
+
+    # Отказ по одному языку не должен выглядеть отказом по всем: сказать
+    # надо и про сделанное, и про несделанное, каждое своим числом.
+    if fails:
+        st.session_state["loc-save-error"] = " · ".join(fails)
+    if done_total:
+        st.session_state["loc-model-note"] = t(
+            "loc.model_done_langs", n=done_total, model=model_used,
+            langs=", ".join(l.upper() for l in langs if
+                            f"{l.upper()}:" not in " ".join(fails)))
+    elif not fails:
+        st.session_state["loc-model-note"] = t("loc.model_kept_human",
+                                               n=len(work))
     load_layers.clear()
     load_products.clear()
 
@@ -493,8 +555,11 @@ def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
     if st.session_state.get("loc-model-note"):
         st.success(st.session_state["loc-model-note"])
 
+    work = layers[~layers["source_text"].map(translate.is_boilerplate)]
+    skip = layers[layers["source_text"].map(translate.is_boilerplate)]
+
     edited: dict = {}
-    for _, lr in layers.iterrows():
+    for _, lr in work.iterrows():
         slot = cell_text(lr, "slot") or cell_text(lr, "layer_id")
         key = f"loc-txt-{pid}-{lang}-{gen}-{slot}"
         current = st.session_state.get(key, cell_text(lr, "translated_text"))
@@ -524,11 +589,24 @@ def render_rows(layers: pd.DataFrame, pid: int, lang: str) -> None:
             c4.button("↻", key=f"loc-tr-{pid}-{lang}-{slot}",
                       help=t("loc.retranslate_row"),
                       on_click=_translate_rows,
-                      args=(pid, lang, [{"slot": slot,
+                      args=(pid, st.session_state.get("loc-langs") or [lang],
+                            [{"slot": slot,
                                          "source_text": lr["source_text"],
                                          "char_limit": lr.get("char_limit")}]))
 
-    check = layers.copy()
+    # Служебные строки — числа и коды моделей — свёрнуты: они одинаковы
+    # на всех языках, и в общем списке это треть таблицы шума, в котором
+    # теряется настоящая работа.
+    if not skip.empty:
+        with st.expander(t("loc.skip_rows_n", n=len(skip))):
+            st.caption(t("loc.skip_rows_hint"))
+            for _, lr in skip.iterrows():
+                st.markdown(
+                    f'<div class="ls-mono" style="font-size:12px;'
+                    f'color:{MUTED};padding:1px 2px;">{lr["source_text"]}</div>',
+                    unsafe_allow_html=True)
+
+    check = work.copy()
     check["translated_text"] = check["layer_id"].map(edited)
     n_over = over_rows(check)
     if n_over:
@@ -573,12 +651,22 @@ def render_actions(layers: pd.DataFrame, row, lang: str) -> None:
              "char_limit": lr.get("char_limit")}
             for _, lr in layers.iterrows()]
 
-    a1, a2, a3 = st.columns([2.4, 2.0, 4.6], gap="small")
+    a1, a2, a3 = st.columns([3.0, 2.4, 3.6], gap="small")
+    # Перевод — главное действие экрана, поэтому он основной и первый.
+    # «Применить в Figma» вторично: применяют то, что уже переведено.
+    langs = st.session_state.get("loc-langs") or [lang]
+    work, _skip = translate.split_rows(rows)
+    a1.button(f'{t("loc.retranslate")} · {len(work)} × {len(langs)}',
+              key="loc-retry", type="primary",
+              disabled=not work,
+              help=t("loc.retranslate_help",
+                     langs=", ".join(l.upper() for l in langs)),
+              on_click=_translate_rows, args=(pid, langs, rows))
     # Запись в Figma через REST невозможна, поэтому «Применить» отдаёт
     # файл для плагина. Кнопка, которая ничего не делает и объясняет
     # почему, — хуже кнопки, которая делает половину дела.
-    a1.download_button(
-        t("loc.apply_figma"), type="primary", key="loc-apply",
+    a2.download_button(
+        t("loc.apply_figma"), key="loc-apply",
         file_name=f"figma-{row.get('asin')}-{lang}.json", mime="application/json",
         data=json.dumps({
             "file_key": row.get("figma_file_key"),
@@ -589,8 +677,6 @@ def render_actions(layers: pd.DataFrame, row, lang: str) -> None:
                        for _, lr in layers.iterrows()
                        if cell_text(lr, "translated_text").strip()],
         }, ensure_ascii=False, indent=2))
-    a2.button(f'{t("loc.retranslate")} · {len(rows)}', key="loc-retry",
-              on_click=_translate_rows, args=(pid, lang, rows))
     st.caption(t("loc.apply_json_note"))
 
 

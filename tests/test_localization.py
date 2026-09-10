@@ -67,6 +67,12 @@ REAL_LAYERS = pd.DataFrame([
          lang="es", source_text="Charges from power banks",
          translated_text=float("nan"), char_limit=44, status="none",
          edited_after_model=float("nan")),
+    # служебная: число с единицей. В модель не уходит и в таблице
+    # лежит свёрнутой — иначе треть экрана это шум.
+    dict(layer_id="1:9", slot="B0G4S9SJ3M.PT01#0.2", frame_name="spec",
+         lang="es", source_text="2 Ah",
+         translated_text=float("nan"), char_limit=12, status="none",
+         edited_after_model=float("nan")),
 ])
 GLOSSARY = pd.DataFrame([{"en": "Fabric fastening", "tr": "Stoffbefestigung",
                           "char_limit": 30}])
@@ -270,7 +276,7 @@ def fake_png(node_id, key=None, scale=fg.IMAGE_SCALE):
 
 
 fg.node_png = fake_png
-loc.preview_png.clear()
+loc._png_cached.clear()
 
 check("кэш картинок живёт сутки, а не час",
       fg.IMAGE_TTL >= 24 * 60 * 60)
@@ -316,13 +322,43 @@ check("и подпись объясняет, что макет английск�
 # отказ рендера не должен уносить с собой таблицу текста
 fg.node_png = lambda node_id, key=None, scale=fg.IMAGE_SCALE: (
     None, "429, ждать 306 с")
-loc.preview_png.clear()
+loc._png_cached.clear()
 at.run()
 check("отказ превью назван отказом",
       any("Не удалось получить рендер" in str(c.value) for c in at.caption))
 check("а строки перевода остались на месте", len(at.text_input) > 0)
 fg.node_png = fake_png
-loc.preview_png.clear()
+loc._png_cached.clear()
+
+# отказ рендера НЕ должен кэшироваться: кэш суточный, и запомненный
+# отказ переживает починку причины — вчерашний 403 по истёкшему токену
+# так и пережил замену токена, права были уже в порядке.
+CALLS.clear()
+loc._png_cached.clear()
+fg.node_png = lambda node_id, key=None, scale=fg.IMAGE_SCALE: (None, "403")
+_p1, _e1 = loc.preview_png("1:1", fg.THUMB_SCALE)
+_p2, _e2 = loc.preview_png("1:1", fg.THUMB_SCALE)
+check(f"отказ рендера не залипает в кэше ({_e1})",
+      _p1 is None and _p2 is None and "403" in str(_e1))
+fg.node_png = fake_png
+_p3, _e3 = loc.preview_png("1:1", fg.THUMB_SCALE)
+check("после починки причины картинка приходит сразу",
+      _p3 is not None and _e3 is None)
+_p4, _e4 = loc.preview_png("1:1", fg.THUMB_SCALE)
+check("а удачный рендер кэшируется и запроса не делает",
+      _p4 is not None and len([c for c in CALLS if c[0] == "1:1"]) == 1)
+loc._png_cached.clear()
+CALLS.clear()
+
+def page_editor():
+    st.cache_data.clear()
+    a = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+    a.switch_page("pages/content.py").run()
+    a.session_state["loc-product"] = 7
+    a.session_state["loc-lang"] = "es"
+    a.run()
+    return a
+
 
 # --- 7. правка, перевод строки и след модели
 # Правка уезжает в базу СРАЗУ: кнопка «Сохранить» означала бы, что
@@ -442,6 +478,65 @@ _sm = _src[_src.index("def save_model_translation"):_src.index("def load_prompt"
 check("перевод модели тоже вставляет, а не только обновляет",
       "INSERT INTO figma_layers" in _sm)
 
+# --- 7б². служебные строки не мешают работе
+check(f"в таблице только переводимые строки ({len(at.text_input)})",
+      len(at.text_input) == 2)
+check("служебные свёрнуты и посчитаны",
+      any("Перевод не нужен: 1" in str(e.label) for e in at.get("expander")))
+check("и сказано, почему их не переводят",
+      any("одинаковы на всех языках" in str(c.value) for c in at.caption))
+
+# --- 7б³. несколько языков одним нажатием
+# Перевод на четыре рынка — одна работа, а не четыре захода.
+LANG_CALLS: list = []
+tr.run = lambda prompt, lang, rows, pairs: (
+    LANG_CALLS.append((lang, len(rows)))
+    or ({r["slot"]: f"[{lang}] текст" for r in rows}, "claude-opus-5"))
+
+at = page_editor()
+def lang_boxes(a):
+    """Чекбоксы языков текущего поколения: ключ включает поколение,
+    иначе кнопка «все без перевода» не смогла бы их переставить."""
+    return {str(c.key).rsplit("-", 1)[-1]: c for c in a.checkbox
+            if str(c.key or "").startswith("loc-lang-")}
+
+
+_boxes = lang_boxes(at)
+check(f"языки выбираются чекбоксами ({sorted(_boxes)})",
+      set(_boxes) == {"de", "es", "it", "fr"})
+check("открытый язык отмечен", _boxes["es"].value is True)
+
+_boxes["de"].set_value(True).run()
+LANG_CALLS.clear()
+next(b for b in at.button if b.key == "loc-retry").click().run()
+check(f"перевод ушёл на ОБА выбранных языка ({[c[0] for c in LANG_CALLS]})",
+      sorted(c[0] for c in LANG_CALLS) == ["de", "es"])
+check("и в каждый язык ушли только переводимые строки",
+      all(c[1] == 2 for c in LANG_CALLS))
+check("в подписи кнопки видно строки и языки",
+      any("2 × 2" in str(b.label) for b in at.button if b.key == "loc-retry"))
+
+# «все без перевода» — это очередь работы по товару
+next(b for b in at.button if b.key == "loc-langs-missing").click().run()
+_after = {k: b.value for k, b in lang_boxes(at).items()}
+check(f"кнопка отметила языки без перевода ({_after})",
+      _after["es"] and _after["it"] and _after["fr"] and not _after["de"])
+check("и сделала это без падения виджета", not at.exception)
+
+# перевод — основное действие экрана, выгрузка вторична
+def weight(b):
+    """Вес кнопки из protobuf, а не из подписи — как в test_card_states."""
+    return str(getattr(getattr(b, "proto", None), "type", "") or "secondary")
+
+
+_retry = next(b for b in at.button if b.key == "loc-retry")
+check(f"кнопка перевода основная ({weight(_retry)})",
+      weight(_retry) == "primary")
+_apply = next(b for b in at.get("download_button") if b.key == "loc-apply")
+check(f"а «Применить в Figma» вторичная ({weight(_apply)})",
+      weight(_apply) != "primary")
+tr.run = fake_run
+
 # --- 7в. отказ модели обязан доходить до экрана
 # Кнопка вызывается КОЛБЭКОМ, а из колбэка st.error на экран не
 # попадает: Streamlit рисует элементы позже. Поэтому раньше выходило
@@ -449,16 +544,6 @@ check("перевод модели тоже вставляет, а не толь
 # отказа выглядели одинаково: провайдер молчит, ответ не разобрался,
 # места не совпали.
 import services.ai as ai_mod                              # noqa: E402
-
-
-def page_editor():
-    st.cache_data.clear()
-    a = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
-    a.switch_page("pages/content.py").run()
-    a.session_state["loc-product"] = 7
-    a.session_state["loc-lang"] = "es"
-    a.run()
-    return a
 
 
 # 1. провайдер не ответил — причина известна слою вызова
@@ -486,8 +571,11 @@ check("несовпадение мест названо прямо",
 # перевод обязан ПОЯВИТЬСЯ в поле, а не остаться за старым значением
 # session_state: text_input с key игнорирует value, и строка, впервые
 # отрисованная пустой, прятала бы уже записанный в базу перевод
+# третье значение — служебной строке «2 Ah»: она в таблицу не попадает,
+# но длина списка обязана совпадать с числом строк фикстуры
 TRANSLATED = REAL_LAYERS.assign(
-    translated_text=["Carga USB-C", "Carga desde power banks"])
+    translated_text=["Carga USB-C", "Carga desde power banks",
+                     float("nan")])
 tr.run = lambda prompt, lang, rows, pairs: (
     {r["slot"]: "Carga desde power banks" for r in rows}, "claude-opus-5")
 at = page_editor()
