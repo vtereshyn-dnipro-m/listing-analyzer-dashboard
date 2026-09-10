@@ -425,7 +425,40 @@ def glossary(lang: str, limit: int = 60) -> tuple[pd.DataFrame, str | None]:
         params={"src": SOURCE_LANG, "dst": lang, "lim": int(limit)})
 
 
-def preview_node(row, lang: str) -> tuple[str, str]:
+def slide_of(slot: str) -> str:
+    """Имя слайда из места слоя: «B0G4S9SJ3M.PT01#3» → «PT01».
+
+    Текст живёт в слайдах, а не в главном фото: у стаплера девять
+    слайдов и на каждом свой текст. Группировка по слайду — это то,
+    как карточку видит дизайнер.
+    """
+    head = str(slot or "").split("#", 1)[0]
+    return head.rsplit(".", 1)[-1].upper() if "." in head else ""
+
+
+def lang_nodes_of(row) -> dict:
+    """Узлы слайдов по языкам, в каком бы виде ни пришли из jsonb.
+
+    Формат: {"en": {"MAIN": "1445:541", "PT01": …}, "de": {…}}.
+    Понимается и прежний плоский вид ({"de": "1482:33161"}) — база
+    могла быть прочитана до появления слайдов, и падать из-за этого
+    экран не должен.
+    """
+    nodes = row.get("lang_nodes")
+    if isinstance(nodes, str):
+        try:
+            nodes = json.loads(nodes or "{}")
+        except ValueError:
+            return {}
+    if not isinstance(nodes, dict):
+        return {}
+    out = {}
+    for lang, val in nodes.items():
+        out[lang] = val if isinstance(val, dict) else {"MAIN": str(val)}
+    return out
+
+
+def preview_node(row, lang: str, part: str = "MAIN") -> tuple[str, str]:
     """(узел для рендера, язык этого макета).
 
     Часть товаров дизайнер уже перевёл в самой Figma, и для них есть
@@ -439,16 +472,18 @@ def preview_node(row, lang: str) -> tuple[str, str]:
     сказать, ЧТО показано: иначе «немецкая карточка» и «английская,
     потому что немецкой нет» выглядят одинаково.
     """
-    nodes = row.get("lang_nodes")
-    if isinstance(nodes, str):
-        try:
-            nodes = json.loads(nodes or "{}")
-        except ValueError:
-            nodes = {}
-    node = str((nodes or {}).get(lang) or "")
-    if node:
-        return node, lang
-    return '' if pd.isna(row.get('figma_node_id')) else str(row.get('figma_node_id') or ''), SOURCE_LANG
+    nodes = lang_nodes_of(row)
+    part = (part or "MAIN").upper()
+    own = (nodes.get(lang) or {}).get(part)
+    if own:
+        return str(own), lang
+    src = (nodes.get(SOURCE_LANG) or {}).get(part)
+    if src:
+        return str(src), SOURCE_LANG
+    # у товара, прочитанного до появления слайдов, есть только .MAIN
+    fallback = ("" if pd.isna(row.get("figma_node_id"))
+                else str(row.get("figma_node_id") or ""))
+    return (fallback, SOURCE_LANG) if part == "MAIN" else ("", SOURCE_LANG)
 
 
 @st.cache_data(ttl=figma.IMAGE_TTL, show_spinner=False)

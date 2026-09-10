@@ -418,22 +418,22 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
                     # превью и по ним ищут макет в Figma руками
                     "page_name": page_name,
                     "figma_node_id": str(node.get("id")),
-                    # узлы .MAIN по языкам: часть товаров дизайнер уже
-                    # перевёл в самой Figma, и для них есть НАСТОЯЩИЙ
-                    # макет на языке — показывать вместо него английский
-                    # значит прятать готовую работу
+                    # узлы ВСЕХ слайдов по языкам:
+                    #   {"en": {"MAIN": "1445:541", "PT01": "1445:575"}, …}
+                    # Текст живёт в слайдах PT01…PT09, а не в .MAIN —
+                    # там фото на белом фоне. Чтобы дизайнер видел, что
+                    # написано на КАЖДОМ слайде, нужен узел каждого.
                     "lang_nodes": {},
                     "langs": [], "layers": [],
                 }
-            if m.group("part").upper().startswith("MAIN"):
-                # `.MAIN` — главное изображение товара. В слоях его нет
-                # и быть не может: текста в нём нет ни у одного товара
-                # из двадцати одного, обход текстовых слоёв его не видит.
-                if lang == SOURCE_LANG:
-                    prod["page_name"] = page_name
-                    prod["figma_node_id"] = str(node.get("id"))
-                else:
-                    prod["lang_nodes"][lang] = str(node.get("id"))
+            # Узлы слайдов в базе не выводятся из слоёв: `.MAIN` текста
+            # не содержит вовсе, а у остальных в figma_layers лежит id
+            # ТЕКСТОВОГО слоя, не фрейма. Поэтому запоминаются здесь.
+            part = m.group("part").upper()
+            prod["lang_nodes"].setdefault(lang, {})[part] = str(node.get("id"))
+            if part.startswith("MAIN") and lang == SOURCE_LANG:
+                prod["page_name"] = page_name
+                prod["figma_node_id"] = str(node.get("id"))
             if lang not in prod["langs"]:
                 prod["langs"].append(lang)
 
