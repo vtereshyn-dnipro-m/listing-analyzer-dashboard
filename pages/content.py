@@ -290,16 +290,35 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
     row = row.iloc[0]
     lang = st.session_state.get("loc-lang") or TARGET_LANGS[0]
 
-    b1, b2, b3 = st.columns([1.4, 2.0, 6], gap="small")
-    if b1.button("← " + t("loc.back"), key="loc-back"):
-        for k in ("loc-product", "loc-lang"):
-            st.session_state.pop(k, None)
-        st.rerun()
-    # Языки выбираются НЕСКОЛЬКО сразу: перевод на четыре рынка — одна
-    # работа, а не четыре захода. Подписи здесь коды (DE, ES…), они
-    # не переводятся, поэтому правило 7 про sticky-виджеты не нужно.
-    done = set(row.get("langs_done") or ())
-    picked = pick_langs(b2, lang, done)
+    # Ряд собирается ФЛЕКСОМ, а не долями колонок (правило 0). Доли
+    # делят ширину поровну и сжимают содержимое: пять контролов в узкой
+    # колонке обрезали подписи языков до одной буквы — «D», «E», «I».
+    head_key = "loc-head"
+    st.markdown(
+        f'<style>.st-key-{head_key} div[data-testid="stHorizontalBlock"]'
+        '{gap:10px !important;align-items:center;flex-wrap:wrap;}'
+        f'.st-key-{head_key} div[data-testid="stColumn"]'
+        '{flex:0 0 auto !important;width:auto !important;'
+        'min-width:0 !important;}'
+        f'.st-key-{head_key} div[data-testid="stColumn"]:last-child'
+        '{flex:1 1 auto !important;}'
+        f'.st-key-{head_key} .stButton button'
+        '{white-space:nowrap !important;width:auto !important;}'
+        f'.st-key-{head_key} label{{white-space:nowrap !important;}}</style>',
+        unsafe_allow_html=True)
+
+    with st.container(key=head_key):
+        # Языки выбираются НЕСКОЛЬКО сразу: перевод на четыре рынка —
+        # одна работа, а не четыре захода. Подписи здесь коды (DE, ES…),
+        # они не переводятся, поэтому правило 7 про sticky не нужно.
+        done = set(row.get("langs_done") or ())
+        back, langs_box = st.columns([1, 8], gap="small",
+                                     vertical_alignment="center")
+        if back.button("← " + t("loc.back"), key="loc-back"):
+            for k in ("loc-product", "loc-lang"):
+                st.session_state.pop(k, None)
+            st.rerun()
+        picked = pick_langs(langs_box, lang, done)
     lang = picked[0] if picked else lang
     st.session_state["loc-lang"] = lang
 
@@ -352,7 +371,9 @@ def pick_langs(box, current: str, done: set) -> list:
     chosen = set(preset if preset is not None
                  else st.session_state.get("loc-langs") or [current])
 
-    cols = box.columns(len(TARGET_LANGS) + 1, gap="small",
+    # последняя колонка-распорка забирает остаток, остальные жмутся
+    # по содержимому — иначе «FR» и кнопка режутся так же, как раньше
+    cols = box.columns([1] * len(TARGET_LANGS) + [3, 6], gap="small",
                        vertical_alignment="center")
     picked = []
     for i, lg in enumerate(TARGET_LANGS):
@@ -361,7 +382,7 @@ def pick_langs(box, current: str, done: set) -> list:
             picked.append(lg)
 
     # «все, где нет перевода» — это и есть очередь работы по товару
-    if cols[-1].button(t("loc.langs_missing"), key="loc-langs-missing",
+    if cols[-2].button(t("loc.langs_missing"), key="loc-langs-missing",
                        help=t("loc.langs_missing_help")):
         st.session_state["loc-langs-preset"] = [
             lg for lg in TARGET_LANGS if lg not in done]
