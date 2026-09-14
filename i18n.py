@@ -84,6 +84,21 @@ LANGS: dict[str, dict[str, str]] = {
         "loc.langs_missing": "All untranslated",
         "loc.langs_missing_help": "Tick every language this product has no translation for.",
         "loc.retranslate_help": "Rows × languages: {langs}",
+        "loc.open": "Open",
+        "loc.translate_missing": "Translate everything missing",
+        "loc.translate_missing_help": "Every untranslated row in every language that lacks one — regardless of the ticks above.",
+        "loc.nothing_missing": "Every row is translated in every language.",
+        "loc.retranslate_n": "Translate again: {rows} {into}",
+        "loc.rows.one": "{n} row",
+        "loc.rows.few": "{n} rows",
+        "loc.rows.many": "{n} rows",
+        "loc.into_langs.one": "into {n} language",
+        "loc.into_langs.few": "into {n} languages",
+        "loc.into_langs.many": "into {n} languages",
+        "loc.into.de": "into German",
+        "loc.into.es": "into Spanish",
+        "loc.into.it": "into Italian",
+        "loc.into.fr": "into French",
         "loc.model_done_langs": "Translated by the model: {n} rows in {langs} ({model})",
         "loc.skip_rows_hint": "Numbers, units and model codes — identical in every language. They are not sent to the model and not counted as work.",
         "loc.model_all_skipped": "Nothing to translate here: all the selected rows are numbers or model codes.",
@@ -873,6 +888,21 @@ LANGS: dict[str, dict[str, str]] = {
         "loc.langs_missing": "Все без перевода",
         "loc.langs_missing_help": "Отметить все языки, на которых у товара нет перевода.",
         "loc.retranslate_help": "Строк × языков: {langs}",
+        "loc.open": "Открыть",
+        "loc.translate_missing": "Перевести всё, чего нет",
+        "loc.translate_missing_help": "Каждую непереведённую строку на каждый язык, где её нет, — независимо от галочек выше.",
+        "loc.nothing_missing": "Все строки переведены на все языки.",
+        "loc.retranslate_n": "Перевести заново {rows} {into}",
+        "loc.rows.one": "{n} строку",
+        "loc.rows.few": "{n} строки",
+        "loc.rows.many": "{n} строк",
+        "loc.into_langs.one": "на {n} язык",
+        "loc.into_langs.few": "на {n} языка",
+        "loc.into_langs.many": "на {n} языков",
+        "loc.into.de": "на немецкий",
+        "loc.into.es": "на испанский",
+        "loc.into.it": "на итальянский",
+        "loc.into.fr": "на французский",
         "loc.model_done_langs": "Переведено моделью строк: {n} на {langs} ({model})",
         "loc.skip_rows_hint": "Числа, единицы и коды моделей — одинаковы на всех языках. В модель не уходят и работой не считаются.",
         "loc.model_all_skipped": "Переводить нечего: выбранные строки — числа или коды моделей.",
@@ -1662,6 +1692,21 @@ LANGS: dict[str, dict[str, str]] = {
         "loc.langs_missing": "Усі без перекладу",
         "loc.langs_missing_help": "Позначити всі мови, якими товар не перекладено.",
         "loc.retranslate_help": "Рядків × мов: {langs}",
+        "loc.open": "Відкрити",
+        "loc.translate_missing": "Перекласти все, чого немає",
+        "loc.translate_missing_help": "Кожен неперекладений рядок кожною мовою, якою його немає, — незалежно від позначок вище.",
+        "loc.nothing_missing": "Усі рядки перекладено всіма мовами.",
+        "loc.retranslate_n": "Перекласти заново {rows} {into}",
+        "loc.rows.one": "{n} рядок",
+        "loc.rows.few": "{n} рядки",
+        "loc.rows.many": "{n} рядків",
+        "loc.into_langs.one": "{n} мовою",
+        "loc.into_langs.few": "{n} мовами",
+        "loc.into_langs.many": "{n} мовами",
+        "loc.into.de": "німецькою",
+        "loc.into.es": "іспанською",
+        "loc.into.it": "італійською",
+        "loc.into.fr": "французькою",
         "loc.model_done_langs": "Перекладено моделлю рядків: {n} мовами {langs} ({model})",
         "loc.skip_rows_hint": "Числа, одиниці та коди моделей — однакові всіма мовами. До моделі не йдуть і роботою не вважаються.",
         "loc.model_all_skipped": "Перекладати нічого: вибрані рядки — числа або коди моделей.",
@@ -2414,6 +2459,25 @@ def t(key: str, **kwargs) -> str:
     """Перевод по ключу с подстановками: t('dash.header', n=187, days=16)."""
     s = tr_opt(key) or key
     return s.format(**kwargs) if kwargs else s
+
+
+def plural(key: str, n: int, **kwargs) -> str:
+    """Форма слова по числу: «1 строку», «2 строки», «5 строк».
+
+    Три формы лежат в словаре под `key.one`, `key.few`, `key.many`.
+    Правило славянское: 1 (кроме 11) — one, 2–4 (кроме 12–14) — few,
+    остальное — many. Английскому хватает one/many, few там равно
+    many. Число подставляется само как `n`.
+    """
+    n = int(n)
+    r10, r100 = n % 10, n % 100
+    if r10 == 1 and r100 != 11:
+        form = "one"
+    elif 2 <= r10 <= 4 and not 12 <= r100 <= 14:
+        form = "few"
+    else:
+        form = "many"
+    return t(f"{key}.{form}", n=n, **kwargs)
 
 
 def mp_label(code: str) -> str:

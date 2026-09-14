@@ -220,21 +220,98 @@ def load_products() -> tuple[pd.DataFrame, str | None]:
             """
             SELECT p.id, p.asin, p.sku, p.name, p.section_type,
                    p.page_name, p.figma_file_key, p.figma_node_id,
-                   p.lang_nodes, p.layers_count, p.synced_at,
-                   COALESCE(array_agg(DISTINCT l.lang)
-                            FILTER (WHERE l.translated_text IS NOT NULL
-                                      AND l.translated_text <> ''), '{}') AS langs_done
+                   p.lang_nodes, p.layers_count, p.synced_at
             FROM figma_products p
-            LEFT JOIN figma_layers l ON l.product_id = p.id
-            GROUP BY p.id
             ORDER BY p.name
             """, get_engine())
-        if not df.empty:
-            df["langs_done"] = df["langs_done"].map(
-                lambda v: set(v) if v is not None else set())
+        gaps = lang_gaps()
+        # «Готов» — язык, где НЕ ОСТАЛОСЬ непереведённых строк. Раньше
+        # готовым считался язык с хотя бы одной переведённой строкой:
+        # одна строка, переведённая кнопкой ↻, красила язык в готовый
+        # у товара с тридцатью непереведёнными (B0GTW2CTWZ: DE 1 из 30),
+        # и список говорил «все языки готовы» там, где не сделано
+        # ничего. Пятый случай за неделю, когда правда лежала в базе,
+        # а экран показывал другое.
+        df["lang_gaps"] = df["id"].map(lambda i: gaps.get(int(i), {}))
+        df["langs_done"] = df["lang_gaps"].map(
+            lambda g: {lg for lg in TARGET_LANGS if not g.get(lg, 0)})
         return df, None
     except Exception as e:
         return pd.DataFrame(), f"{type(e).__name__}: {e}"
+
+
+def _coverage(product_id: int | None = None) -> pd.DataFrame:
+    """Английские строки и языки, на которых у каждой есть перевод.
+
+    Одна строка на слот: `product_id, slot, source_text, char_limit,
+    have` — список языков с непустым переводом того же слота. Служебные
+    строки (числа, коды моделей) отсеяны: их не переводят ни модель,
+    ни дизайнер, и язык с ними в счёте никогда не стал бы готовым.
+    """
+    where = "s.lang = %(src)s"
+    params: dict = {"src": SOURCE_LANG}
+    if product_id is not None:
+        where += " AND s.product_id = %(pid)s"
+        params["pid"] = int(product_id)
+    df = pd.read_sql(
+        f"""
+        SELECT s.product_id, s.slot, s.source_text, s.char_limit,
+               COALESCE(array_agg(d.lang)
+                        FILTER (WHERE d.translated_text IS NOT NULL
+                                  AND d.translated_text <> ''), '{{}}') AS have
+        FROM figma_layers s
+        LEFT JOIN figma_layers d
+               ON d.product_id = s.product_id
+              AND d.slot = s.slot
+              AND d.lang <> %(src)s
+        WHERE {where}
+        GROUP BY s.product_id, s.slot, s.source_text, s.char_limit
+        ORDER BY s.product_id, s.slot
+        """, get_engine(), params=params)
+    if df.empty:
+        return df
+    df["have"] = df["have"].map(lambda v: set(v) if v is not None else set())
+    return df[~df["source_text"].map(translate.is_boilerplate)]
+
+
+@st.cache_data(ttl=120)
+def lang_gaps() -> dict:
+    """{product_id: {lang: сколько строк ещё без перевода}} по всем товарам.
+
+    Один запрос на весь список, а не четыре на товар: в списке
+    двадцать товаров, и ходить в базу по восемьдесят раз ради чипов —
+    это и медленно, и не нужно.
+    """
+    cov = _coverage()
+    out: dict = {}
+    for _, r in cov.iterrows():
+        g = out.setdefault(int(r["product_id"]), {lg: 0 for lg in TARGET_LANGS})
+        for lg in TARGET_LANGS:
+            if lg not in r["have"]:
+                g[lg] += 1
+    return out
+
+
+def missing_plan(product_id: int) -> tuple[dict, str | None]:
+    """{lang: [строки без перевода]} — то, что переводит «всё, чего нет».
+
+    Строки на каждый язык СВОИ: у DE может не хватать тридцати, у FR
+    одной. Общий список на все языки заставил бы модель переводить
+    заново и то, что уже есть. Предел символов берётся английский —
+    языковой строки по определению нет.
+    """
+    try:
+        cov = _coverage(product_id)
+    except Exception as e:
+        return {}, f"{type(e).__name__}: {e}"
+    plan: dict = {}
+    for _, r in cov.iterrows():
+        row = {"slot": r["slot"], "source_text": r["source_text"],
+               "char_limit": r["char_limit"]}
+        for lg in TARGET_LANGS:
+            if lg not in r["have"]:
+                plan.setdefault(lg, []).append(row)
+    return plan, None
 
 
 def save_translation(product_id: int, slot: str, lang: str,
@@ -600,13 +677,18 @@ DEMO_LAYERS = [
 
 
 def demo_products() -> pd.DataFrame:
-    rows = [dict(DEMO_PRODUCT, langs_done={"es"}),
+    # Форма та же, что у настоящих данных: `lang_gaps` — сколько строк
+    # без перевода на каждый язык, `langs_done` — языки, где их ноль.
+    def gaps(**n):
+        return {lg: n.get(lg, 0) for lg in TARGET_LANGS}
+    rows = [dict(DEMO_PRODUCT, lang_gaps=gaps(de=4, it=4, fr=4),
+                 langs_done={"es"}),
             dict(DEMO_PRODUCT, id=-2, asin="B0GTRY26HB", sku="99601000",
                  name="Leaf blower Dnipro-M SBA-36", layers_count=4,
-                 langs_done=set()),
+                 lang_gaps=gaps(de=3, es=3, it=3, fr=3), langs_done=set()),
             dict(DEMO_PRODUCT, id=-3, asin="B0DFWVNRWB", sku="41324000",
                  name="Screwdriver set Dnipro-M CSD-36X", layers_count=5,
-                 langs_done={"es", "de", "it", "fr"})]
+                 lang_gaps=gaps(), langs_done={"es", "de", "it", "fr"})]
     return pd.DataFrame(rows)
 
 
