@@ -1,0 +1,149 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<style>
+  /* палитра Listing Suite, см. CLAUDE.md */
+  :root { --bg:#FAFAF8; --ink:#1A1815; --accent:#E8590C; --ok:#2F6B3A; --muted:#57534A; --line:#E7E4DD; }
+  body { margin:0; padding:14px 16px; font:12px/1.45 -apple-system, "Inter", system-ui, sans-serif; color:var(--ink); background:var(--bg); }
+  h1 { font-size:14px; margin:0 0 4px; }
+  .muted { color:var(--muted); }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin:10px 0; }
+  button { font:inherit; padding:6px 12px; border:1px solid var(--line); border-radius:6px; background:#fff; cursor:pointer; }
+  button.primary { background:var(--ink); color:#fff; border-color:var(--ink); }
+  button:disabled { opacity:.45; cursor:default; }
+  .warn { background:#FFF4E5; border:1px solid #F5C892; padding:8px 10px; border-radius:6px; margin:8px 0; }
+  .err  { background:#FDECEC; border:1px solid #F2B3B3; padding:8px 10px; border-radius:6px; margin:8px 0; }
+  .nums { display:flex; gap:18px; margin:8px 0 4px; }
+  .nums b { font-size:18px; display:block; }
+  .nums .bad b { color:var(--accent); }
+  table { width:100%; border-collapse:collapse; font-size:11px; }
+  th, td { text-align:left; padding:4px 6px; border-bottom:1px solid var(--line); vertical-align:top; }
+  th { color:var(--muted); font-weight:500; }
+  td.mono { font-family:"JetBrains Mono", ui-monospace, Menlo, monospace; white-space:nowrap; }
+  tr.missing td, tr.ambiguous td, tr.mixed td { color:var(--accent); }
+  tr.same td { color:var(--muted); }
+  .wrap { max-height:300px; overflow:auto; border:1px solid var(--line); border-radius:6px; }
+  ul { margin:4px 0 0 16px; padding:0; }
+  code { font-family:"JetBrains Mono", ui-monospace, Menlo, monospace; }
+</style>
+</head>
+<body>
+<h1>Перевод из Listing Suite → в макет</h1>
+<div class="muted">Файл выгрузки — кнопка «Применить в Figma» на экране «Перевод». Связка по <code>slot</code>; картинки, шрифт и кегль не трогаются.</div>
+
+<div class="row">
+  <input type="file" id="file" accept=".json,application/json">
+  <span id="fileinfo" class="muted"></span>
+</div>
+
+<div id="msg"></div>
+<div id="plan" hidden>
+  <div class="nums" id="nums"></div>
+  <div class="row">
+    <button class="primary" id="apply">Применить</button>
+    <button id="cancel">Отмена</button>
+    <span class="muted">Отменить после применения — обычным Cmd/Ctrl+Z в Figma.</span>
+  </div>
+  <div class="wrap"><table id="tbl"></table></div>
+</div>
+
+<div id="report" hidden></div>
+
+<script>
+  var STATE = { rows: [] };
+  var LABEL = { replace: "заменим", same: "уже так", missing: "слоя нет",
+                ambiguous: "несколько слоёв", mixed: "смешанное оформление", empty: "пустой перевод" };
+
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+    return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c]; }); }
+  function el(id) { return document.getElementById(id); }
+  function show(id, on) { el(id).hidden = !on; }
+  function msg(html, cls) { el("msg").innerHTML = html ? '<div class="' + cls + '">' + html + '</div>' : ""; }
+
+  el("file").addEventListener("change", function (ev) {
+    var f = ev.target.files && ev.target.files[0];
+    if (!f) return;
+    var rd = new FileReader();
+    rd.onload = function () {
+      var payload;
+      try { payload = JSON.parse(rd.result); }
+      catch (e) { msg("Это не JSON из Listing Suite: " + esc(e.message), "err"); return; }
+      if (!payload || !Array.isArray(payload.layers) || !payload.lang) {
+        msg("В файле нет полей <code>lang</code> и <code>layers</code> — это не выгрузка «Применить в Figma».", "err"); return;
+      }
+      el("fileinfo").textContent = f.name + " · " + payload.asin + " · " + String(payload.lang).toUpperCase() + " · строк: " + payload.layers.length;
+      msg("Ищу слои на странице…", "muted");
+      show("plan", false); show("report", false);
+      parent.postMessage({ pluginMessage: { type: "plan", payload: payload } }, "*");
+    };
+    rd.readAsText(f, "utf-8");
+  });
+
+  el("apply").addEventListener("click", function () {
+    el("apply").disabled = true; el("apply").textContent = "Применяю…";
+    parent.postMessage({ pluginMessage: { type: "apply" } }, "*");
+  });
+  el("cancel").addEventListener("click", function () {
+    parent.postMessage({ pluginMessage: { type: "close" } }, "*");
+  });
+
+  function renderPlan(r) {
+    if (!r.ok) { msg(esc(r.error), "err"); return; }
+    var s = r.summary;
+    var head = "Файл «" + esc(r.file) + "», страница «" + esc(r.page) + "», товар " + esc(r.asin) + ".";
+    var warn = (r.warnings || []).map(function (w) { return '<div class="warn">' + esc(w) + "</div>"; }).join("");
+    msg(head + warn, "muted");
+    el("nums").innerHTML =
+      '<div><b>' + s.replace + '</b>заменим</div>' +
+      '<div class="' + (s.missing ? "bad" : "") + '"><b>' + s.missing + '</b>слоя нет</div>' +
+      '<div><b>' + s.same + '</b>уже так</div>' +
+      (s.ambiguous ? '<div class="bad"><b>' + s.ambiguous + '</b>несколько слоёв</div>' : "") +
+      (s.mixed ? '<div class="bad"><b>' + s.mixed + '</b>смешанное оформление</div>' : "");
+    var rows = r.rows.slice().sort(function (a, b) {
+      var o = { missing: 0, ambiguous: 0, mixed: 0, replace: 1, same: 2, empty: 3 };
+      return (o[a.state] - o[b.state]) || a.slot.localeCompare(b.slot);
+    });
+    el("tbl").innerHTML = "<tr><th>slot</th><th>сейчас</th><th>станет</th><th>что сделаем</th></tr>" +
+      rows.map(function (x) {
+        return '<tr class="' + x.state + '"><td class="mono">' + esc(x.slot) + (x.typo ? ' <span class="muted">(имя фрейма с опечаткой)</span>' : "") +
+          "</td><td>" + esc(x.now) + "</td><td>" + esc(x.want) + "</td><td>" + LABEL[x.state] + "</td></tr>";
+      }).join("");
+    el("apply").disabled = !s.replace;
+    el("apply").textContent = s.replace ? "Применить · " + s.replace : "Заменять нечего";
+    show("plan", true);
+  }
+
+  function renderReport(r) {
+    if (!r.ok) { msg(esc(r.error), "err"); return; }
+    var list = function (title, items, fmt) {
+      if (!items || !items.length) return "";
+      return "<div><b>" + title + " (" + items.length + "):</b><ul>" +
+        items.map(function (i) { return "<li><code>" + esc(fmt ? fmt(i) : i) + "</code></li>"; }).join("") + "</ul></div>";
+    };
+    el("report").innerHTML =
+      '<div class="nums">' +
+      '<div><b>' + r.replaced + '</b>заменено</div>' +
+      '<div class="' + (r.missing.length ? "bad" : "") + '"><b>' + r.missing.length + '</b>не найдено слоёв</div>' +
+      '<div><b>' + r.same + '</b>совпадает с текущим</div></div>' +
+      list("Не найдено — структура разошлась, проверьте эти места", r.missing) +
+      list("Несколько слоёв с одним slot — не тронуты", r.ambiguous) +
+      list("Смешанное оформление — не тронуты", r.mixed) +
+      list("Не удалось заменить", r.failed, function (f) { return f.slot + " — " + f.error; }) +
+      '<div class="row"><button id="done">Закрыть</button></div>';
+    show("plan", false); show("report", true);
+    el("done").addEventListener("click", function () {
+      parent.postMessage({ pluginMessage: { type: "close" } }, "*");
+    });
+  }
+
+  window.onmessage = function (ev) {
+    var m = ev.data && ev.data.pluginMessage;
+    if (!m) return;
+    if (m.type === "plan") renderPlan(m.result);
+    else if (m.type === "report") renderReport(m.result);
+    else if (m.type === "error") msg("Ошибка плагина: " + esc(m.error), "err");
+  };
+</script>
+</body>
+</html>
