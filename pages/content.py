@@ -27,12 +27,13 @@ import json
 import pandas as pd
 import streamlit as st
 
-from i18n import t
+from i18n import t, plural
 from services import ai, figma, translate
 from services.localization import (
     slide_of,
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
-    demo_layers, demo_products, fits, glossary, load_layers, load_products,
+    demo_layers, demo_products, fits, glossary, lang_gaps, load_layers,
+    load_products, missing_plan,
     load_prompt, needs_sync, over_rows, preview_node, product_state,
     preview_png, save_model_translation, save_parsed, save_prompt,
     save_translation, summarize, sync_age_hours,
@@ -205,6 +206,7 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
                     "limited": bool(first_pass),
                 }
                 load_products.clear()
+                lang_gaps.clear()
                 st.rerun()
             except figma.FigmaError as e:
                 status.update(label=t("loc.sync_failed"), state="error")
@@ -270,12 +272,20 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
                                 vertical_alignment="center")
         render_thumb(c0, r, demo)
         c1.markdown(product_row_html(r), unsafe_allow_html=True)
-        done = set(r.get("langs_done") or ())
-        missing = [lg for lg in TARGET_LANGS if lg not in done]
-        # кнопка ведёт на первый непереведённый язык: он и есть работа
+        # Кнопка ведёт на первый язык, где ОСТАЛИСЬ непереведённые
+        # строки, — он и есть работа. «Готов» здесь считается по
+        # строкам, а не по факту «хоть одна переведена» (см.
+        # load_products): раньше единственная строка, переведённая
+        # кнопкой ↻, делала язык готовым, и кнопка звала «Перевести DE»
+        # у товара, где DE значился законченным.
+        # Когда переводить нечего, кнопка не обещает перевод —
+        # она открывает товар, и зовётся так.
+        gaps = r.get("lang_gaps") or {}
+        missing = [lg for lg in TARGET_LANGS if gaps.get(lg, 0)]
         target = missing[0] if missing else TARGET_LANGS[0]
-        if c2.button(f'{t("loc.translate")} · {target.upper()}',
-                     key=f"loc-open-{r['id']}",
+        label = (f'{t("loc.translate")} · {target.upper()}' if missing
+                 else t("loc.open"))
+        if c2.button(label, key=f"loc-open-{r['id']}",
                      type="primary" if missing else "secondary"):
             st.session_state["loc-product"] = int(r["id"])
             st.session_state["loc-lang"] = target
@@ -341,7 +351,7 @@ def render_editor(products: pd.DataFrame, demo: bool) -> None:
     # Действия — НАД таблицей, как массовые действия на Синтезе:
     # строк здесь три десятка, и кнопка под ними уезжает за экран.
     # Ровно поэтому «Перевести заново» и считали пропавшей.
-    render_actions(layers, row, lang)
+    render_actions(layers, row, lang, demo)
 
     # Карточка — это девять слайдов, и текст живёт на них, а не
     # в главном фото. Одна таблица на 33 строки заставляла дизайнера
@@ -475,10 +485,22 @@ def _store_edit(pid: int, slot: str, lang: str, key: str) -> None:
     st.session_state["loc-save-error"] = err
     load_layers.clear()
     load_products.clear()
+    lang_gaps.clear()
 
 
 def _translate_rows(pid: int, langs, rows: list) -> None:
-    """Перевод моделью: строка или весь товар — путь один.
+    """Одни и те же строки на каждый из языков: строка по ↻ или
+    «заново» по отмеченным языкам. Путь один — `_translate_plan`."""
+    langs = [langs] if isinstance(langs, str) else list(langs)
+    _translate_plan(pid, {lang: rows for lang in langs})
+
+
+def _translate_plan(pid: int, plan: dict) -> None:
+    """Перевод моделью по плану {язык: строки}.
+
+    План нужен потому, что у «всё, чего нет» строки на каждый язык
+    СВОИ: у DE не хватает тридцати, у FR одной. Общий список на все
+    языки переводил бы заново и то, что уже есть.
 
     Вызывается ИЗ КОЛБЭКА кнопки, а из колбэка `st.error` на экран
     не попадает — Streamlit рисует элементы позже. Поэтому всё, что
@@ -488,7 +510,6 @@ def _translate_rows(pid: int, langs, rows: list) -> None:
     """
     st.session_state.pop("loc-save-error", None)
     st.session_state.pop("loc-model-note", None)
-    langs = [langs] if isinstance(langs, str) else list(langs)
 
     prompt_text, _ver, err = load_prompt()
     if err:
@@ -497,13 +518,19 @@ def _translate_rows(pid: int, langs, rows: list) -> None:
     text = st.session_state.get("loc-prompt-draft") or prompt_text \
         or translate.DEFAULT_PROMPT
 
-    work, _skip = translate.split_rows(rows)
-    if not work:
+    # служебные строки отсеиваются на каждом языке отдельно: план
+    # уже мог их не содержать, а мог и содержать — путь общий
+    plan = {lang: translate.split_rows(rows)[0]
+            for lang, rows in plan.items()}
+    plan = {lang: rows for lang, rows in plan.items() if rows}
+    if not plan:
         st.session_state["loc-model-note"] = t("loc.model_all_skipped")
         return
+    langs = list(plan)
+    n_work = max(len(v) for v in plan.values())
 
     done_total, model_used, fails = 0, "", []
-    for lang in langs:
+    for lang, work in plan.items():
         # глоссарий свой на каждый язык: словарь дизайнера у немецкого
         # и итальянского разный, и общий образец сбил бы оба
         pairs_df, _ = glossary(lang)
@@ -555,9 +582,10 @@ def _translate_rows(pid: int, langs, rows: list) -> None:
                             f"{l.upper()}:" not in " ".join(fails)))
     elif not fails:
         st.session_state["loc-model-note"] = t("loc.model_kept_human",
-                                               n=len(work))
+                                               n=n_work)
     load_layers.clear()
     load_products.clear()
+    lang_gaps.clear()
 
 
 def render_slides(layers: pd.DataFrame, row, pid: int, lang: str,
@@ -698,29 +726,82 @@ def render_prompt_box() -> None:
                 st.rerun()
 
 
-def render_actions(layers: pd.DataFrame, row, lang: str) -> None:
-    """Действия и оговорки — под обеими колонками, а не внутри одной."""
+def rows_into(n_rows: int, langs) -> str:
+    """«22 строки на французский» / «22 строки на 3 языка».
+
+    Словами, а не «22 × 1»: произведение читалось как формула, и
+    спрашивали, что там умножается. Один язык называется по имени,
+    несколько — числом.
+    """
+    return f'{plural("loc.rows", n_rows)} {into_phrase(langs)}'
+
+
+def into_phrase(langs) -> str:
+    """«на французский» для одного языка, «на 3 языка» для нескольких."""
+    langs = list(langs)
+    if len(langs) == 1:
+        return t(f"loc.into.{langs[0]}")
+    return plural("loc.into_langs", len(langs))
+
+
+def render_actions(layers: pd.DataFrame, row, lang: str, demo: bool) -> None:
+    """Действия — НАД таблицей, первой строкой, и главное действие одно.
+
+    Раньше кнопка перевода стояла под тремя десятками строк и уезжала
+    за экран — её считали пропавшей и жали ↻ на каждой строке. Теперь
+    первой и основной идёт «Перевести всё, чего нет»: она сама
+    находит непереведённые строки на КАЖДОМ языке, где их нет, и
+    переводит разом, без выбора языка и переключений. Галочки языков
+    на неё не влияют — они для перевода заново и для просмотра.
+    """
     pid = int(row["id"])
     rows = [{"slot": cell_text(lr, "slot") or cell_text(lr, "layer_id"),
              "source_text": lr["source_text"],
              "char_limit": lr.get("char_limit")}
             for _, lr in layers.iterrows()]
-
-    a1, a2, a3 = st.columns([3.0, 2.4, 3.6], gap="small")
-    # Перевод — главное действие экрана, поэтому он основной и первый.
-    # «Применить в Figma» вторично: применяют то, что уже переведено.
     langs = st.session_state.get("loc-langs") or [lang]
     work, _skip = translate.split_rows(rows)
-    a1.button(f'{t("loc.retranslate")} · {len(work)} × {len(langs)}',
-              key="loc-retry", type="primary",
-              disabled=not work,
+
+    # Чего нет — по строкам на каждый язык. Демо-набор в базу не
+    # ходит: план собирается из демо-строк той же формой, чтобы кнопка
+    # на демо выглядела и считала так же, как на настоящих данных.
+    if demo:
+        plan, err = {}, None
+        for lg in TARGET_LANGS:
+            gap = [{"slot": cell_text(r, "slot") or cell_text(r, "layer_id"),
+                    "source_text": r["source_text"],
+                    "char_limit": r.get("char_limit")}
+                   for _, r in demo_layers(pid, lg).iterrows()
+                   if not cell_text(r, "translated_text").strip()]
+            if gap:
+                plan[lg] = gap
+    else:
+        plan, err = missing_plan(pid)
+    if err:
+        st.error("⚠ " + t("loc.load_failed", e=err))
+    n_missing = sum(len(v) for v in plan.values())
+
+    a1, a2, a3 = st.columns([3.6, 3.0, 2.4], gap="small")
+    if n_missing:
+        a1.button(f'{t("loc.translate_missing")} · '
+                  f'{rows_into(n_missing, plan)}',
+                  key="loc-fill", type="primary",
+                  help=t("loc.translate_missing_help"),
+                  on_click=_translate_plan, args=(pid, plan))
+    else:
+        a1.caption("✓ " + t("loc.nothing_missing"))
+    # «Заново» — вторично: это переделка того, что уже есть, по
+    # отмеченным языкам. Раньше подпись была «Перевести · 22 × 1».
+    a2.button(t("loc.retranslate_n", rows=plural("loc.rows", len(work)),
+                into=into_phrase(langs)),
+              key="loc-retry", disabled=not work,
               help=t("loc.retranslate_help",
                      langs=", ".join(l.upper() for l in langs)),
               on_click=_translate_rows, args=(pid, langs, rows))
     # Запись в Figma через REST невозможна, поэтому «Применить» отдаёт
     # файл для плагина. Кнопка, которая ничего не делает и объясняет
     # почему, — хуже кнопки, которая делает половину дела.
-    a2.download_button(
+    a3.download_button(
         t("loc.apply_figma"), key="loc-apply",
         file_name=f"figma-{row.get('asin')}-{lang}.json", mime="application/json",
         data=json.dumps({

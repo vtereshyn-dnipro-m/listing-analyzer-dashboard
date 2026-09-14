@@ -42,7 +42,7 @@ def check(name: str, cond: bool) -> None:
         FAILS.append(name)
 
 
-MODE = {"fail": False, "real": False, "layers": None}
+MODE = {"fail": False, "real": False, "layers": None, "coverage": None}
 
 # Настоящий товар, прочитанный из Figma: у него есть узел, а значит
 # и превью макета. Демо узла не имеет намеренно.
@@ -80,6 +80,19 @@ REAL_LAYERS = pd.DataFrame([
 GLOSSARY = pd.DataFrame([{"en": "Fabric fastening", "tr": "Stoffbefestigung",
                           "char_limit": 30}])
 
+# Покрытие по строкам — то, из чего считается «язык готов». Форма та
+# же, что отдаёт _coverage: строка на английский слот и список языков,
+# где у него есть перевод. DE переведён ЦЕЛИКОМ (обе строки), ES —
+# одна из двух, IT и FR — ни одной. «2 Ah» служебная и в счёт не идёт.
+COVERAGE = pd.DataFrame([
+    dict(product_id=7, slot="B0G4S9SJ3M.PT01#0.0", source_text="USB-C Charging",
+         char_limit=20, have=["de", "es"]),
+    dict(product_id=7, slot="B0G4S9SJ3M.PT01#0.1",
+         source_text="Charges from power banks", char_limit=44, have=["de"]),
+    dict(product_id=7, slot="B0G4S9SJ3M.PT01#0.2", source_text="2 Ah",
+         char_limit=12, have=[]),
+])
+
 
 def fake_sql(sql, con=None, **kw):
     if MODE["fail"]:
@@ -92,6 +105,9 @@ def fake_sql(sql, con=None, **kw):
     if MODE["real"]:
         if "JOIN figma_layers src" in q:
             return GLOSSARY.copy()
+        if "AS have" in q:
+            return (MODE["coverage"] if MODE.get("coverage") is not None
+                    else COVERAGE).copy()
         if "FROM figma_layers" in q:
             # подмена целым кадром, а не срезом: pandas 3 не кладёт NaN
             # в строковую колонку через `df[:] = other`
@@ -173,6 +189,18 @@ check("на пустых таблицах тоже показывается де
 _labels = [str(b.label) for b in at.button if str(b.key or "").startswith("loc-open-")]
 check(f"кнопка ведёт на непереведённый язык ({_labels[:1]})",
       bool(_labels) and _labels[0].endswith("DE"))
+# У товара, где переводить нечего, кнопка не обещает перевод: она
+# «Открыть» и вторичная. Раньше она звала «Перевести · DE» и была
+# такой же, как у товара с работой, — по ней нельзя было понять,
+# сделан товар или нет.
+_open = [b for b in at.button if str(b.key or "").startswith("loc-open-")]
+_done_btn = _open[-1]                       # готовые — внизу списка
+check(f"у переведённого товара кнопка «Открыть» ({_done_btn.label})",
+      str(_done_btn.label) == "Открыть")
+check("и она не выделена как действие",
+      str(getattr(getattr(_done_btn, "proto", None), "type", "")) != "primary")
+check("а у товара с работой — основная",
+      str(getattr(getattr(_open[0], "proto", None), "type", "")) == "primary")
 
 # --- 5. экран перевода: счётчик, подсветка, предупреждение
 at.session_state["loc-product"] = -1
@@ -591,8 +619,11 @@ check(f"перевод ушёл на ОБА выбранных языка ({[c[0
       sorted(c[0] for c in LANG_CALLS) == ["de", "es"])
 check("и в каждый язык ушли только переводимые строки",
       all(c[1] == 2 for c in LANG_CALLS))
-check("в подписи кнопки видно строки и языки",
-      any("2 × 2" in str(b.label) for b in at.button if b.key == "loc-retry"))
+# Словами, а не «2 × 2»: произведение читалось как формула. Один язык
+# называется по имени, несколько — числом со склонением.
+_lbl = next(str(b.label) for b in at.button if b.key == "loc-retry")
+check(f"подпись «заново» словами: строки и языки ({_lbl})",
+      "2 строки" in _lbl and "2 языка" in _lbl)
 
 # «все без перевода» — это очередь работы по товару
 next(b for b in at.button if b.key == "loc-langs-missing").click().run()
@@ -607,12 +638,68 @@ def weight(b):
     return str(getattr(getattr(b, "proto", None), "type", "") or "secondary")
 
 
+_fill = next(b for b in at.button if b.key == "loc-fill")
+check(f"«всё, чего нет» — основная ({weight(_fill)})",
+      weight(_fill) == "primary")
 _retry = next(b for b in at.button if b.key == "loc-retry")
-check(f"кнопка перевода основная ({weight(_retry)})",
-      weight(_retry) == "primary")
+check(f"«заново» вторична ({weight(_retry)})", weight(_retry) != "primary")
 _apply = next(b for b in at.get("download_button") if b.key == "loc-apply")
 check(f"а «Применить в Figma» вторичная ({weight(_apply)})",
       weight(_apply) != "primary")
+_ids = [str(b.key) for b in at.button]
+check("и «всё, чего нет» стоит первой среди действий",
+      _ids.index("loc-fill") < _ids.index("loc-retry"))
+
+# --- 7б². «Перевести всё, чего нет» — строки на КАЖДЫЙ язык свои
+# По фикстуре: DE готов целиком, у ES не хватает одной строки, у IT
+# и FR — двух. Общий список на все языки переводил бы заново и то,
+# что уже есть; здесь же DE не должен получить ни строки.
+check(f"подпись считает строки и языки словами ({_fill.label})",
+      "5 строк" in str(_fill.label) and "3 языка" in str(_fill.label))
+LANG_CALLS.clear()
+_fill.click().run()
+_plan = dict(LANG_CALLS)
+check(f"переведено ровно то, чего нет, по языкам ({_plan})",
+      _plan == {"es": 1, "it": 2, "fr": 2})
+check("готовый язык не тронут", "de" not in _plan)
+check("экран не упал", not at.exception)
+
+# «Готов» — по строкам, а не по факту «хоть одна переведена». Раньше
+# единственная строка, переведённая кнопкой ↻, красила язык в готовый
+# у товара с тридцатью непереведёнными (живой случай: B0GTW2CTWZ,
+# DE 1 из 30), и список говорил «все языки готовы».
+st.cache_data.clear()
+_prod, _err = loc.load_products()
+_done = set(_prod.iloc[0]["langs_done"])
+check(f"язык с одной строкой из двух НЕ готов ({sorted(_done)})",
+      "es" not in _done and _err is None)
+check("а язык со всеми строками — готов", "de" in _done)
+check(f"и по каждому языку видно, сколько не хватает "
+      f"({_prod.iloc[0]['lang_gaps']})",
+      _prod.iloc[0]["lang_gaps"] == {"de": 0, "es": 1, "it": 2, "fr": 2})
+
+# формы слов: «1 строку», «2 строки», «5 строк», и 11–14 — «строк»
+from i18n import plural                                   # noqa: E402
+check("склонение строк по числу",
+      [plural("loc.rows", n) for n in (1, 2, 5, 11, 21, 22, 112)]
+      == ["1 строку", "2 строки", "5 строк", "11 строк", "21 строку",
+          "22 строки", "112 строк"])
+check("и языков", [plural("loc.into_langs", n) for n in (1, 3, 5)]
+      == ["на 1 язык", "на 3 языка", "на 5 языков"])
+
+# Когда не хватает ничего — кнопки нет, а не «Перевести 0 строк».
+MODE["coverage"] = COVERAGE.assign(have=[["de", "es", "it", "fr"]] * 3)
+at = page()
+next(b for b in at.button if b.key == "loc-open-7").click().run()
+check("без пробелов кнопки «всё, чего нет» нет",
+      not any(b.key == "loc-fill" for b in at.button))
+check("и сказано, что переводить нечего",
+      any("переведены на все языки" in str(c.value) for c in at.caption))
+check("«заново» при этом остаётся",
+      any(b.key == "loc-retry" for b in at.button))
+MODE["coverage"] = None
+at = page()
+next(b for b in at.button if b.key == "loc-open-7").click().run()
 tr.run = fake_run
 
 # --- 7в. отказ модели обязан доходить до экрана
