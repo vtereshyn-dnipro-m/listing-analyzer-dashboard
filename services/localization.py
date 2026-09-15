@@ -275,6 +275,52 @@ def _coverage(product_id: int | None = None) -> pd.DataFrame:
 
 
 @st.cache_data(ttl=120)
+def export_rows(product_ids: tuple) -> tuple[pd.DataFrame, str | None]:
+    """Готовые переводы нескольких товаров для плагина, одним запросом.
+
+    `(asin, lang, layer_id, slot, translated_text)` — только непустые
+    переводы, только целевые языки. Ключ кэша — кортеж id, поэтому
+    вызывать с ОТСОРТИРОВАННЫМ кортежем: иначе одна и та же выборка
+    в другом порядке станет отдельным запросом.
+    """
+    if not product_ids:
+        return pd.DataFrame(), None
+    try:
+        df = pd.read_sql(
+            """
+            SELECT p.asin, l.lang, l.layer_id, l.slot, l.translated_text
+            FROM figma_layers l
+            JOIN figma_products p ON p.id = l.product_id
+            WHERE l.product_id = ANY(%(ids)s)
+              AND l.lang <> %(src)s
+              AND l.translated_text IS NOT NULL AND l.translated_text <> ''
+            ORDER BY p.asin, l.lang, l.slot
+            """, get_engine(),
+            params={"ids": [int(i) for i in product_ids], "src": SOURCE_LANG})
+        return df, None
+    except Exception as e:
+        return pd.DataFrame(), f"{type(e).__name__}: {e}"
+
+
+def export_payload(file_key: str, rows: pd.DataFrame) -> dict:
+    """JSON для плагина на НЕСКОЛЬКО товаров и языков.
+
+    Форма `{"file_key", "items": [{"asin", "lang", "layers": [...]}]}`
+    — та же единица, что в выгрузке одного товара, только списком.
+    Плагин принимает обе: одиночную и с `items`.
+    """
+    items: list = []
+    if rows is not None and not rows.empty:
+        for (asin, lang), g in rows.groupby(["asin", "lang"], sort=True):
+            items.append({
+                "asin": str(asin), "lang": str(lang),
+                "layers": [{"layer_id": str(r["layer_id"]), "slot": str(r["slot"]),
+                            "text": str(r["translated_text"])}
+                           for _, r in g.iterrows()],
+            })
+    return {"file_key": file_key, "items": items}
+
+@st.cache_data(ttl=120)
 def lang_gaps() -> dict:
     """{product_id: {lang: сколько строк ещё без перевода}} по всем товарам.
 
