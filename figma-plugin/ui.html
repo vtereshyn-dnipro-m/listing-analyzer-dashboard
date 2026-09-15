@@ -69,10 +69,15 @@
       var payload;
       try { payload = JSON.parse(rd.result); }
       catch (e) { msg("Это не JSON из Listing Suite: " + esc(e.message), "err"); return; }
-      if (!payload || !Array.isArray(payload.layers) || !payload.lang) {
-        msg("В файле нет полей <code>lang</code> и <code>layers</code> — это не выгрузка «Применить в Figma».", "err"); return;
+      var items = Array.isArray(payload && payload.items) ? payload.items
+                : (payload && Array.isArray(payload.layers) && payload.lang) ? [payload] : null;
+      if (!items) {
+        msg("В файле нет ни <code>items</code>, ни пары <code>lang</code>/<code>layers</code> — это не выгрузка из Listing Suite.", "err"); return;
       }
-      el("fileinfo").textContent = f.name + " · " + payload.asin + " · " + String(payload.lang).toUpperCase() + " · строк: " + payload.layers.length;
+      var nRows = items.reduce(function (a, it) { return a + ((it.layers || []).length); }, 0);
+      el("fileinfo").textContent = f.name + " · " + (items.length === 1
+        ? (items[0].asin + " · " + String(items[0].lang).toUpperCase())
+        : "позиций: " + items.length) + " · строк: " + nRows;
       msg("Ищу слои на странице…", "muted");
       show("plan", false); show("report", false);
       parent.postMessage({ pluginMessage: { type: "plan", payload: payload } }, "*");
@@ -91,7 +96,8 @@
   function renderPlan(r) {
     if (!r.ok) { msg(esc(r.error), "err"); return; }
     var s = r.summary;
-    var head = "Файл «" + esc(r.file) + "», страница «" + esc(r.page) + "», товар " + esc(r.asin) + ".";
+    var head = "Файл «" + esc(r.file) + "», страницы: " + esc((r.langs || []).join(", ")) +
+      ", позиций в выгрузке: " + r.items + ".";
     var warn = (r.warnings || []).map(function (w) { return '<div class="warn">' + esc(w) + "</div>"; }).join("");
     msg(head + warn, "muted");
     el("nums").innerHTML =
@@ -102,11 +108,12 @@
       (s.mixed ? '<div class="bad"><b>' + s.mixed + '</b>смешанное оформление</div>' : "");
     var rows = r.rows.slice().sort(function (a, b) {
       var o = { missing: 0, ambiguous: 0, mixed: 0, replace: 1, same: 2, empty: 3 };
-      return (o[a.state] - o[b.state]) || a.slot.localeCompare(b.slot);
+      return (o[a.state] - o[b.state]) || String(a.lang).localeCompare(String(b.lang)) || a.slot.localeCompare(b.slot);
     });
-    el("tbl").innerHTML = "<tr><th>slot</th><th>сейчас</th><th>станет</th><th>что сделаем</th></tr>" +
+    el("tbl").innerHTML = "<tr><th>язык</th><th>slot</th><th>сейчас</th><th>станет</th><th>что сделаем</th></tr>" +
       rows.map(function (x) {
-        return '<tr class="' + x.state + '"><td class="mono">' + esc(x.slot) + (x.typo ? ' <span class="muted">(имя фрейма с опечаткой)</span>' : "") +
+        return '<tr class="' + x.state + '"><td class="mono">' + esc(String(x.lang || "").toUpperCase()) +
+          '</td><td class="mono">' + esc(x.slot) + (x.typo ? ' <span class="muted">(имя фрейма с опечаткой)</span>' : "") +
           "</td><td>" + esc(x.now) + "</td><td>" + esc(x.want) + "</td><td>" + LABEL[x.state] + "</td></tr>";
       }).join("");
     el("apply").disabled = !s.replace;

@@ -32,8 +32,8 @@ from services import ai, figma, translate
 from services.localization import (
     slide_of,
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
-    demo_layers, demo_products, fits, glossary, lang_gaps, load_layers,
-    load_products, missing_plan,
+    demo_layers, demo_products, export_payload, export_rows, fits, glossary,
+    lang_gaps, load_layers, load_products, missing_plan,
     load_prompt, needs_sync, over_rows, preview_node, product_state,
     preview_png, save_model_translation, save_parsed, save_prompt,
     save_translation, summarize, sync_age_hours,
@@ -205,8 +205,7 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
                     "typo_frames": parsed.get("typo_frames", []),
                     "limited": bool(first_pass),
                 }
-                load_products.clear()
-                lang_gaps.clear()
+                _invalidate()
                 st.rerun()
             except figma.FigmaError as e:
                 status.update(label=t("loc.sync_failed"), state="error")
@@ -256,6 +255,186 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
                 st.code(line, language=None)
 
 
+def _toggle_sel(pid: int, key: str) -> None:
+    sel = set(st.session_state.get("loc-sel") or ())
+    (sel.add if st.session_state.get(key) else sel.discard)(pid)
+    st.session_state["loc-sel"] = sel
+
+
+def _set_sel(ids) -> None:
+    """Поменять набор целиком и пересоздать галочки (правило 7б)."""
+    st.session_state["loc-sel"] = set(int(i) for i in ids)
+    st.session_state["loc-sel-gen"] = int(st.session_state.get("loc-sel-gen", 0)) + 1
+
+
+def bulk_counts(view: pd.DataFrame, sel: set) -> tuple[int, int, int]:
+    """(строк, товаров, языков) — сколько РЕАЛЬНО не хватает у выбранных.
+
+    Считается от `lang_gaps`, уже загруженных для списка, без походов
+    в базу: товар считается, если у него есть хоть один пробел, язык —
+    если пробел есть хоть у одного товара. «4 товара, 2 языка» —
+    это не «выбрано 4», а «4, у которых есть работа».
+    """
+    rows, prods, langs = 0, 0, set()
+    for _, r in view.iterrows():
+        if int(r["id"]) not in sel:
+            continue
+        gaps = r.get("lang_gaps") or {}
+        got = {lg: n for lg, n in gaps.items() if n}
+        if got:
+            prods += 1
+            rows += sum(got.values())
+            langs |= set(got)
+    return rows, prods, len(langs)
+
+
+def bulk_label(rows: int, prods: int, langs: int) -> str:
+    """«142 строки, 4 товара, 2 языка» — три числа словами со склонением."""
+    return ", ".join((plural("loc.rows_n", rows), plural("loc.products_n", prods),
+                      plural("loc.langs_n", langs)))
+
+
+def render_bulk_bar(view: pd.DataFrame, demo: bool) -> set:
+    """Выбор товаров и два действия по выбранным. Возвращает набор id.
+
+    Раньше всё шло по одному: открыл, перевёл, вернулся, открыл
+    следующий — четыре товара на четыре языка это шестнадцать
+    заходов. Теперь отмечаются товары, и одна кнопка переводит всё,
+    чего у них нет, на все недостающие языки; вторая отдаёт ОДИН файл
+    для плагина со всеми переводами выбранных, а не по файлу на товар.
+    """
+    ids = [int(i) for i in view["id"]]
+    sel = set(st.session_state.get("loc-sel") or ()) & set(ids)
+    st.session_state["loc-sel"] = sel
+    rows, prods, langs = bulk_counts(view, sel)
+
+    key = "loc-bulk"
+    st.markdown(
+        f'<style>.st-key-{key} div[data-testid="stHorizontalBlock"]'
+        '{gap:10px !important;align-items:center;flex-wrap:wrap;}'
+        f'.st-key-{key} div[data-testid="stColumn"]'
+        '{flex:0 0 auto !important;width:auto !important;min-width:0 !important;}'
+        f'.st-key-{key} div[data-testid="stColumn"]:last-child'
+        '{flex:1 1 auto !important;}'
+        f'.st-key-{key} .stButton button,.st-key-{key} .stDownloadButton button'
+        '{white-space:nowrap !important;width:auto !important;}</style>',
+        unsafe_allow_html=True)
+    with st.container(key=key):
+        c_all, c_none, c_go, c_dl, c_rest = st.columns([1, 1, 3, 3, 4], gap="small",
+                                                       vertical_alignment="center")
+        if c_all.button(f'{t("loc.select_all")} · {len(ids)}', key="loc-sel-all"):
+            _set_sel(ids)
+            st.rerun()
+        if c_none.button(t("loc.select_none"), key="loc-sel-none",
+                         disabled=not sel):
+            _set_sel(())
+            st.rerun()
+
+        # Главное действие: всё, чего нет, по выбранным. Число честное —
+        # не «выбрано 4», а сколько строк, товаров и языков в работе.
+        go = c_go.button(
+            f'{t("loc.translate_missing")} · {bulk_label(rows, prods, langs)}'
+            if rows else t("loc.translate_missing"),
+            key="loc-bulk-go", type="primary", disabled=not rows or demo,
+            help=t("loc.bulk_help"))
+
+        # Один файл на все выбранные товары и языки. Только то, что
+        # переведено, — и в подписи сказано, сколько.
+        payload, n_exp, n_prod_exp = _bulk_export(view, sel, demo)
+        c_dl.download_button(
+            f'{t("loc.export_figma")} · {plural("loc.rows_n", n_exp)}, '
+            f'{plural("loc.products_n", n_prod_exp)}' if n_exp
+            else t("loc.export_figma"),
+            key="loc-bulk-dl", disabled=not n_exp,
+            file_name="figma-translations.json", mime="application/json",
+            data=json.dumps(payload, ensure_ascii=False, indent=2),
+            help=t("loc.export_help"))
+        if sel and not rows and not n_exp:
+            c_rest.caption(t("loc.bulk_nothing"))
+
+    if go:
+        _bulk_translate(view, sel)
+    _render_bulk_result()
+    return sel
+
+
+def _bulk_export(view: pd.DataFrame, sel: set, demo: bool):
+    """(payload, строк, товаров) для кнопки выгрузки."""
+    if not sel or demo:
+        return {"file_key": None, "items": []}, 0, 0
+    rows_df, err = export_rows(tuple(sorted(sel)))
+    if err:
+        st.error("⚠ " + t("loc.load_failed", e=err))
+        return {"file_key": None, "items": []}, 0, 0
+    file_key = str(view.iloc[0].get("figma_file_key") or "")
+    payload = export_payload(file_key, rows_df)
+    n_prod = rows_df["asin"].nunique() if not rows_df.empty else 0
+    return payload, int(len(rows_df)), int(n_prod)
+
+
+def _bulk_translate(view: pd.DataFrame, sel: set) -> None:
+    """Перевод «всего, чего нет» по выбранным — с ходом по товарам.
+
+    Не колбэк, а прямой вызов из отрисовки: здесь нет полей, которые
+    надо пересоздать до рендера, зато есть что показать по ходу —
+    двадцать товаров на четыре языка идут минуты, и молчащий экран
+    не отличить от сломанного. Итог кладётся в session_state
+    и рисуется после rerun, как у одиночного перевода.
+    """
+    todo = [r for _, r in view.iterrows()
+            if int(r["id"]) in sel
+            and any((r.get("lang_gaps") or {}).values())]
+    total = {"done": 0, "fails": [], "prods": 0, "model": ""}
+    with st.status(t("loc.bulk_running", n=len(todo)), expanded=True) as status:
+        for i, r in enumerate(todo, 1):
+            pid = int(r["id"])
+            name = f'{r.get("name") or r.get("asin")} · {r.get("asin")}'
+            status.update(label=t("loc.bulk_step", i=i, n=len(todo), name=name))
+            plan, err = missing_plan(pid)
+            if err:
+                total["fails"].append(f"{r.get('asin')}: {err}")
+                status.write(f"✗ {name} — {err}")
+                continue
+            res = _run_plan(pid, plan)
+            if res["error"]:
+                total["fails"].append(f"{r.get('asin')}: {res['error']}")
+                status.write(f"✗ {name} — {res['error']}")
+                continue
+            total["done"] += res["done"]
+            total["model"] = res["model"] or total["model"]
+            if res["done"]:
+                total["prods"] += 1
+            for f in res["fails"]:
+                total["fails"].append(f"{r.get('asin')} {f}")
+            status.write(
+                f"{'✓' if res['done'] and not res['fails'] else '△'} {name} — "
+                + t("loc.bulk_line", n=res["done"],
+                    langs=", ".join(l.upper() for l in res["ok_langs"]) or "—")
+                + (f" · {' · '.join(res['fails'])}" if res["fails"] else ""))
+        status.update(label=t("loc.bulk_finished", n=total["done"]),
+                      state="error" if total["fails"] and not total["done"]
+                      else "complete")
+    st.session_state["loc-bulk-result"] = total
+    _invalidate()
+    st.rerun()
+
+
+def _render_bulk_result() -> None:
+    """Итог массового прогона — после rerun, чтобы список уже был свежим."""
+    res = st.session_state.pop("loc-bulk-result", None)
+    if not res:
+        return
+    if res["done"]:
+        st.success("✓ " + t("loc.bulk_done", n=res["done"], p=res["prods"],
+                            model=res["model"]))
+    if res["fails"]:
+        st.error("⚠ " + t("loc.bulk_fails", n=len(res["fails"])) + " · "
+                 + " · ".join(res["fails"][:6])
+                 + (" …" if len(res["fails"]) > 6 else ""))
+    if not res["done"] and not res["fails"]:
+        st.info(t("loc.bulk_nothing"))
+
+
 def render_list(products: pd.DataFrame, demo: bool) -> None:
     render_sync_bar(products, demo)
     st.markdown(summary_html(summarize(products)), unsafe_allow_html=True)
@@ -267,9 +446,20 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
         lambda d: {"none": 0, "partial": 1, "all": 2}[product_state(set(d or ()))])
     view = view.sort_values(["_o", "name"])
 
+    sel = render_bulk_bar(view, demo)
+    gen = int(st.session_state.get("loc-sel-gen", 0))
+
     for _, r in view.iterrows():
-        c0, c1, c2 = st.columns([1.1, 8, 2.6], gap="small",
-                                vertical_alignment="center")
+        pid = int(r["id"])
+        ck, c0, c1, c2 = st.columns([0.5, 1.1, 8, 2.6], gap="small",
+                                    vertical_alignment="center")
+        # Отметка живёт в НАБОРЕ `loc-sel`, а не в ключе галочки:
+        # «Выбрать все» стоит выше галочек и переставить их напрямую
+        # не может (правило 7б) — кнопка меняет набор и растит
+        # поколение, галочки следующего прогона создаются заново.
+        ck.checkbox("", key=f"loc-ck-{gen}-{pid}", value=pid in sel,
+                    label_visibility="collapsed",
+                    on_change=_toggle_sel, args=(pid, f"loc-ck-{gen}-{pid}"))
         render_thumb(c0, r, demo)
         c1.markdown(product_row_html(r), unsafe_allow_html=True)
         # Кнопка ведёт на первый язык, где ОСТАЛИСЬ непереведённые
@@ -483,9 +673,7 @@ def _store_edit(pid: int, slot: str, lang: str, key: str) -> None:
     """
     err = save_translation(pid, slot, lang, st.session_state.get(key, ""))
     st.session_state["loc-save-error"] = err
-    load_layers.clear()
-    load_products.clear()
-    lang_gaps.clear()
+    _invalidate()
 
 
 def _translate_rows(pid: int, langs, rows: list) -> None:
@@ -496,11 +684,7 @@ def _translate_rows(pid: int, langs, rows: list) -> None:
 
 
 def _translate_plan(pid: int, plan: dict) -> None:
-    """Перевод моделью по плану {язык: строки}.
-
-    План нужен потому, что у «всё, чего нет» строки на каждый язык
-    СВОИ: у DE не хватает тридцати, у FR одной. Общий список на все
-    языки переводил бы заново и то, что уже есть.
+    """Перевод моделью по плану {язык: строки} — из редактора.
 
     Вызывается ИЗ КОЛБЭКА кнопки, а из колбэка `st.error` на экран
     не попадает — Streamlit рисует элементы позже. Поэтому всё, что
@@ -510,11 +694,54 @@ def _translate_plan(pid: int, plan: dict) -> None:
     """
     st.session_state.pop("loc-save-error", None)
     st.session_state.pop("loc-model-note", None)
+    r = _run_plan(pid, plan)
+    if r["error"]:
+        st.session_state["loc-save-error"] = r["error"]
+        return
+    if r["skipped"]:
+        st.session_state["loc-model-note"] = t("loc.model_all_skipped")
+        return
+    # Отказ по одному языку не должен выглядеть отказом по всем: сказать
+    # надо и про сделанное, и про несделанное, каждое своим числом.
+    if r["fails"]:
+        st.session_state["loc-save-error"] = " · ".join(r["fails"])
+    if r["done"]:
+        st.session_state["loc-model-note"] = t(
+            "loc.model_done_langs", n=r["done"], model=r["model"],
+            langs=", ".join(l.upper() for l in r["ok_langs"]))
+    elif not r["fails"]:
+        st.session_state["loc-model-note"] = t("loc.model_kept_human",
+                                               n=r["n_work"])
+    _invalidate()
 
+
+def _invalidate() -> None:
+    """Всё, что считает от переводов: строки, список, пробелы, выгрузка."""
+    load_layers.clear()
+    load_products.clear()
+    lang_gaps.clear()
+    export_rows.clear()
+
+
+def _run_plan(pid: int, plan: dict) -> dict:
+    """Перевод моделью по плану {язык: строки}. Возвращает, что вышло.
+
+    План нужен потому, что у «всё, чего нет» строки на каждый язык
+    СВОИ: у DE не хватает тридцати, у FR одной. Общий список на все
+    языки переводил бы заново и то, что уже есть.
+
+    Ничего не говорит человеку сам: зовётся и из колбэка редактора,
+    и из массового прогона списка, а говорят они по-разному — один
+    плашкой после перерисовки, другой строками хода по товарам.
+    Возвращает: done (строк записано), model, fails (по языкам),
+    ok_langs, n_work, skipped (нечего переводить), error (не начали).
+    """
+    out = {"done": 0, "model": "", "fails": [], "ok_langs": [],
+           "n_work": 0, "skipped": False, "error": None}
     prompt_text, _ver, err = load_prompt()
     if err:
-        st.session_state["loc-save-error"] = err
-        return
+        out["error"] = err
+        return out
     text = st.session_state.get("loc-prompt-draft") or prompt_text \
         or translate.DEFAULT_PROMPT
 
@@ -524,12 +751,10 @@ def _translate_plan(pid: int, plan: dict) -> None:
             for lang, rows in plan.items()}
     plan = {lang: rows for lang, rows in plan.items() if rows}
     if not plan:
-        st.session_state["loc-model-note"] = t("loc.model_all_skipped")
-        return
-    langs = list(plan)
-    n_work = max(len(v) for v in plan.values())
+        out["skipped"] = True
+        return out
+    out["n_work"] = max(len(v) for v in plan.values())
 
-    done_total, model_used, fails = 0, "", []
     for lang, work in plan.items():
         # глоссарий свой на каждый язык: словарь дизайнера у немецкого
         # и итальянского разный, и общий образец сбил бы оба
@@ -540,8 +765,8 @@ def _translate_plan(pid: int, plan: dict) -> None:
         if not got:
             # три разных отказа, и все раньше выглядели одинаково —
             # пустотой: провайдер не ответил, ответ не разобрался, пусто
-            fails.append(f"{lang.upper()}: "
-                         + (ai.last_call_error() or t("loc.model_empty")))
+            out["fails"].append(f"{lang.upper()}: "
+                                + (ai.last_call_error() or t("loc.model_empty")))
             continue
 
         # модель может ответить местами, которых мы не спрашивали: тогда
@@ -549,17 +774,18 @@ def _translate_plan(pid: int, plan: dict) -> None:
         known = {str(r["slot"]) for r in work}
         useful = {k: v for k, v in got.items() if k in known}
         if not useful:
-            fails.append(f"{lang.upper()}: " + t(
+            out["fails"].append(f"{lang.upper()}: " + t(
                 "loc.model_slots_mismatch", n=len(got),
                 got=", ".join(list(got)[:3])))
             continue
 
         n, err = save_model_translation(pid, lang, model, useful)
         if err:
-            fails.append(f"{lang.upper()}: {err}")
+            out["fails"].append(f"{lang.upper()}: {err}")
             continue
-        done_total += n
-        model_used = model
+        out["done"] += n
+        out["model"] = model
+        out["ok_langs"].append(lang)
 
         # Поле ввода объявлено с key, и одного `pop` тут МАЛО: ключ из
         # session_state снимается, но состояние самого виджета живёт
@@ -570,22 +796,7 @@ def _translate_plan(pid: int, plan: dict) -> None:
         # становятся новыми виджетами и берут текст из базы.
         gen_key = f"loc-gen-{pid}-{lang}"
         st.session_state[gen_key] = int(st.session_state.get(gen_key, 0)) + 1
-
-    # Отказ по одному языку не должен выглядеть отказом по всем: сказать
-    # надо и про сделанное, и про несделанное, каждое своим числом.
-    if fails:
-        st.session_state["loc-save-error"] = " · ".join(fails)
-    if done_total:
-        st.session_state["loc-model-note"] = t(
-            "loc.model_done_langs", n=done_total, model=model_used,
-            langs=", ".join(l.upper() for l in langs if
-                            f"{l.upper()}:" not in " ".join(fails)))
-    elif not fails:
-        st.session_state["loc-model-note"] = t("loc.model_kept_human",
-                                               n=n_work)
-    load_layers.clear()
-    load_products.clear()
-    lang_gaps.clear()
+    return out
 
 
 def render_slides(layers: pd.DataFrame, row, pid: int, lang: str,

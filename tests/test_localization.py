@@ -94,6 +94,18 @@ COVERAGE = pd.DataFrame([
 ])
 
 
+# Готовые переводы для выгрузки: два языка одного товара — файл для
+# плагина обязан сгруппировать их в две позиции, а не свалить в одну.
+EXPORT = pd.DataFrame([
+    dict(asin="B0G4S9SJ3M", lang="de", layer_id="9:5",
+         slot="B0G4S9SJ3M.PT01#0.0", translated_text="USB-C-Laden"),
+    dict(asin="B0G4S9SJ3M", lang="de", layer_id="9:6",
+         slot="B0G4S9SJ3M.PT01#0.1", translated_text="Lädt an Powerbanks"),
+    dict(asin="B0G4S9SJ3M", lang="es", layer_id="1:5",
+         slot="B0G4S9SJ3M.PT01#0.0", translated_text="Carga USB-C"),
+])
+
+
 def fake_sql(sql, con=None, **kw):
     if MODE["fail"]:
         raise RuntimeError("relation figma_products does not exist")
@@ -105,6 +117,8 @@ def fake_sql(sql, con=None, **kw):
     if MODE["real"]:
         if "JOIN figma_layers src" in q:
             return GLOSSARY.copy()
+        if "product_id = ANY" in q:
+            return EXPORT.copy()
         if "AS have" in q:
             return (MODE["coverage"] if MODE.get("coverage") is not None
                     else COVERAGE).copy()
@@ -339,6 +353,65 @@ check("и она на экране", len(at.get("image")) == 1)
 at.run()          # ещё одна отрисовка — кэш обязан удержать байты
 check(f"повторная отрисовка списка запроса не делает ({len(CALLS)})",
       len(CALLS) == 1)
+
+# --- 4б. массовая работа в списке
+# Раньше всё по одному: открыл, перевёл, вернулся — четыре товара на
+# четыре языка это шестнадцать заходов. Теперь отмечаются товары, одна
+# кнопка переводит всё, чего у них нет, вторая отдаёт ОДИН файл.
+_ck = [b for b in at.checkbox if str(b.key or "").startswith("loc-ck-")]
+check(f"у каждой строки списка есть галочка ({len(_ck)})", len(_ck) == 1)
+_go = next(b for b in at.button if b.key == "loc-bulk-go")
+check("без выбора кнопка перевода неактивна и число не выдумано",
+      _go.disabled and "строк" not in str(_go.label))
+_dl = next(b for b in at.get("download_button") if b.key == "loc-bulk-dl")
+check("и выгрузка неактивна", _dl.disabled)
+
+next(b for b in at.button if b.key == "loc-sel-all").click().run()
+_ck = [b for b in at.checkbox if str(b.key or "").startswith("loc-ck-")]
+check("«Выбрать все» отмечает строки — через набор и новое поколение "
+      "ключей, а не запись в ключ галочки", all(b.value for b in _ck)
+      and not at.exception)
+_go = next(b for b in at.button if b.key == "loc-bulk-go")
+# по фикстуре покрытия: DE готов, ES не хватает 1, IT и FR по 2 → 5 строк
+check(f"число честное: строки, товары, языки ({_go.label})",
+      "5 строк" in str(_go.label) and "1 товар" in str(_go.label)
+      and "3 языка" in str(_go.label) and not _go.disabled)
+_dl = next(b for b in at.get("download_button") if b.key == "loc-bulk-dl")
+check(f"выгрузка называет, сколько в ней ({_dl.label})",
+      "3 строки" in str(_dl.label) and "1 товар" in str(_dl.label))
+# Содержимое файла из виджета не достать — байты уходят в медиа-
+# хранилище, в протоколе только ссылка. Проверяется сборщик, который
+# кнопка и зовёт, на той же фикстуре.
+_payload = loc.export_payload("ZZJ9", EXPORT)
+check("в файле ключ макета", _payload["file_key"] == "ZZJ9")
+check("один файл, позиции по (товар, язык)",
+      [(i["asin"], i["lang"], len(i["layers"])) for i in _payload["items"]]
+      == [("B0G4S9SJ3M", "de", 2), ("B0G4S9SJ3M", "es", 1)])
+check("в позиции — slot и текст, как в одиночной выгрузке",
+      _payload["items"][0]["layers"][0] == {"layer_id": "9:5",
+                                            "slot": "B0G4S9SJ3M.PT01#0.0",
+                                            "text": "USB-C-Laden"})
+
+# перевод по выбранным: строки на каждый язык свои, DE не тронут.
+# Запись подменяется: базы нет, а проверяется путь до неё и итог.
+import services.translate as tr                            # noqa: E402
+BULK_CALLS: list = []
+_tr_saved, _save_saved = tr.run, loc.save_model_translation
+loc.save_model_translation = lambda pid, lang, model, texts: (len(texts), None)
+tr.run = lambda prompt, lang, rows, pairs: (
+    BULK_CALLS.append((lang, len(rows))) or
+    ({r["slot"]: "x" for r in rows}, "claude-sonnet-5"))
+_go.click().run()
+check(f"по выбранным переведено ровно то, чего нет ({dict(BULK_CALLS)})",
+      dict(BULK_CALLS) == {"es": 1, "it": 2, "fr": 2} and "de" not in dict(BULK_CALLS))
+check("итог назван числом после перерисовки",
+      any("Переведено строк: 5" in str(x.value) for x in at.success))
+check("и экран не упал", not at.exception)
+tr.run, loc.save_model_translation = _tr_saved, _save_saved
+
+next(b for b in at.button if b.key == "loc-sel-none").click().run()
+_ck = [b for b in at.checkbox if str(b.key or "").startswith("loc-ck-")]
+check("«Снять» снимает все", not any(b.value for b in _ck))
 
 # в редакторе — то же изображение, но крупнее
 at.session_state["loc-product"] = 7

@@ -110,6 +110,33 @@ function buildPlan(bySlot, layers, isMixed) {
   return rows;
 }
 
+// Выгрузка бывает двух форм: один товар на один язык
+// ({asin, lang, layers}) и несколько разом ({items: [...]}) —
+// «Выгрузить для Figma» из списка. Единица одна и та же.
+function payloadItems(payload) {
+  if (payload && Array.isArray(payload.items)) return payload.items;
+  return payload ? [payload] : [];
+}
+
+// План по всем позициям выгрузки. `getIndex(lang)` отдаёт индекс
+// слотов языковой страницы или null, если страницы нет; тогда позиция
+// откладывается целиком и называется в предупреждениях — остальные
+// языки от этого не страдают. Чистая: figma.* сюда не заходит.
+function planItems(items, getIndex, isMixed) {
+  var rows = [], skipped = [];
+  for (var i = 0; i < items.length; i++) {
+    var it = items[i] || {};
+    var lang = String(it.lang || "");
+    var idx = getIndex(lang);
+    if (!idx) { skipped.push({ asin: it.asin, lang: lang }); continue; }
+    var part = buildPlan(idx, it.layers || [], isMixed);
+    for (var j = 0; j < part.length; j++) {
+      part[j].asin = it.asin; part[j].lang = lang; rows.push(part[j]);
+    }
+  }
+  return { rows: rows, skipped: skipped };
+}
+
 function summarize(rows) {
   var s = { replace: 0, same: 0, missing: 0, ambiguous: 0, mixed: 0, empty: 0 };
   rows.forEach(function (r) { s[r.state] = (s[r.state] || 0) + 1; });
@@ -132,33 +159,48 @@ function isMixedFont(node) {
 function stripNodes(rows) {
   // в UI узлы не передать — только описание
   return rows.map(function (r) {
-    return { slot: r.slot, want: r.want, now: r.now, state: r.state, typo: r.typo };
+    return { asin: r.asin, lang: r.lang, slot: r.slot, want: r.want,
+             now: r.now, state: r.state, typo: r.typo };
   });
 }
+
+function tag(r) { return String(r.lang || "").toUpperCase() + " · " + r.slot; }
 
 var PLAN = null;      // план последнего разбора, применяется по кнопке
 
 async function plan(payload) {
-  var lang = String(payload.lang || "");
-  var layers = payload.layers || [];
+  var items = payloadItems(payload);
   var warnings = [];
-
   if (figma.fileKey && payload.file_key && figma.fileKey !== payload.file_key) {
     warnings.push("Файл выгрузки (" + payload.file_key + ") не совпадает с открытым (" + figma.fileKey + ").");
   }
-  var page = findPage(lang);
-  if (!page) {
-    return { ok: false, error: "Языковой страницы для «" + lang.toUpperCase() +
-      "» в файле нет. Копирование макета на новую страницу — следующий шаг, " +
-      "пока плагин работает только с готовыми языковыми страницами." };
+  // страницы грузятся по одной на язык, сколько бы товаров ни было
+  var index = {};
+  var langs = {};
+  items.forEach(function (it) { langs[String(it.lang || "")] = true; });
+  for (var lang in langs) {
+    var page = findPage(lang);
+    if (!page) { index[lang] = null; continue; }
+    await page.loadAsync();                     // dynamic-page: дети страницы грузятся по запросу
+    index[lang] = indexPage(page);
   }
-  await page.loadAsync();                       // dynamic-page: дети страницы грузятся по запросу
-  var bySlot = indexPage(page);
-  var rows = buildPlan(bySlot, layers, isMixedFont);
-  PLAN = { page: page, rows: rows, lang: lang, asin: payload.asin };
+  var got = planItems(items, function (l) { return index[l] || null; }, isMixedFont);
+  if (got.skipped.length) {
+    var byLang = {};
+    got.skipped.forEach(function (x) { (byLang[x.lang] = byLang[x.lang] || []).push(x.asin); });
+    Object.keys(byLang).forEach(function (l) {
+      warnings.push("Языковой страницы «" + l.toUpperCase() + "» в файле нет — пропущено товаров: " +
+        byLang[l].length + " (" + byLang[l].join(", ") + "). Копирование макета на новую страницу — следующий шаг.");
+    });
+  }
+  if (!got.rows.length) {
+    return { ok: false, error: warnings.length ? warnings.join(" ") : "В выгрузке нет строк." };
+  }
+  PLAN = { rows: got.rows };
   return {
-    ok: true, page: page.name, file: figma.root.name, asin: payload.asin,
-    lang: lang, rows: stripNodes(rows), summary: summarize(rows), warnings: warnings
+    ok: true, file: figma.root.name, items: items.length,
+    langs: Object.keys(langs).filter(function (l) { return index[l]; }).map(function (l) { return l.toUpperCase(); }),
+    rows: stripNodes(got.rows), summary: summarize(got.rows), warnings: warnings
   };
 }
 
@@ -178,15 +220,16 @@ async function apply() {
       node.characters = r.want;
       done += 1;
     } catch (e) {
-      failed.push({ slot: r.slot, error: String(e && e.message || e) });
+      failed.push({ slot: tag(r), error: String(e && e.message || e) });
     }
   }
   var s = summarize(rows);
+  var pick = function (state) {
+    return rows.filter(function (r) { return r.state === state; }).map(tag);
+  };
   var report = {
     ok: true, replaced: done, same: s.same,
-    missing: rows.filter(function (r) { return r.state === "missing"; }).map(function (r) { return r.slot; }),
-    ambiguous: rows.filter(function (r) { return r.state === "ambiguous"; }).map(function (r) { return r.slot; }),
-    mixed: rows.filter(function (r) { return r.state === "mixed"; }).map(function (r) { return r.slot; }),
+    missing: pick("missing"), ambiguous: pick("ambiguous"), mixed: pick("mixed"),
     failed: failed
   };
   figma.notify("Listing Suite: заменено " + done + ", не найдено " + report.missing.length);
@@ -211,5 +254,6 @@ function main() {
 if (typeof figma !== "undefined") main();
 if (typeof module !== "undefined") {
   module.exports = { PAGE_LANG: PAGE_LANG, FRAME_RE: FRAME_RE, walkText: walkText,
-    indexPage: indexPage, buildPlan: buildPlan, summarize: summarize, normFrame: normFrame };
+    indexPage: indexPage, buildPlan: buildPlan, summarize: summarize, normFrame: normFrame,
+    payloadItems: payloadItems, planItems: planItems };
 }

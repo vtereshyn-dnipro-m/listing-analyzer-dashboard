@@ -127,7 +127,17 @@ var slots = [];
   found.forEach(function (f) { slots.push([f.slot, f.text]); });
 });
 var rows = buildPlan(bySlot, LAYERS, function (n) { return !!n.mixed; });
+// файл на несколько позиций: DE есть, ES нет — вторая позиция откладывается
+var multi = planItems(payloadItems({ items: [
+    { asin: "B0G4S9SJ3M", lang: "de", layers: LAYERS.slice(0, 2) },
+    { asin: "B0G4S9SJ3M", lang: "es", layers: LAYERS.slice(0, 2) },
+    { asin: "B0GJMT58WT", lang: "de", layers: [LAYERS[3]] }
+  ]}), function (l) { return l === "de" ? bySlot : null; }, function (n) { return !!n.mixed; });
+var single = payloadItems({ asin: "X", lang: "de", layers: [] });
 var RESULT = JSON.stringify({
+  multi: { rows: multi.rows.map(function (r) { return [r.asin, r.lang, r.slot, r.state]; }),
+           skipped: multi.skipped },
+  single_items: single.length,
   slots: slots,
   page_lang: PAGE_LANG,
   frame_re: %(names)s.map(function (n) { var m = FRAME_RE.exec(n);
@@ -209,6 +219,19 @@ check("смешанное оформление пропускается с им�
 check(f"итог считает каждое состояние ({js['summary']})",
       js["summary"] == {"replace": 2, "same": 1, "missing": 1,
                         "ambiguous": 1, "mixed": 1, "empty": 1})
+
+# --- 3б. один файл на несколько товаров и языков
+# «Выгрузить для Figma» из списка отдаёт {items: [...]}, где каждая
+# позиция — та же единица, что одиночная выгрузка. Позиция без языковой
+# страницы откладывается и НАЗЫВАЕТСЯ, остальные от этого не страдают.
+m = js["multi"]
+check("одиночная выгрузка читается как одна позиция", js["single_items"] == 1)
+check(f"позиции с существующей страницей разобраны ({len(m['rows'])} строк)",
+      [r[:2] for r in m["rows"]] == [["B0G4S9SJ3M", "de"]] * 2 + [["B0GJMT58WT", "de"]])
+check("позиция без языковой страницы отложена и названа",
+      m["skipped"] == [{"asin": "B0G4S9SJ3M", "lang": "es"}])
+check("и не мешает остальным: их состояния те же, что поодиночке",
+      [r[3] for r in m["rows"]] == ["same", "replace", "replace"])
 
 # --- 4. плагин не применяет молча и не трогает лишнего
 check("замена только по кнопке: план и применение — разные сообщения",
