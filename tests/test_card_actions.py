@@ -129,7 +129,7 @@ sp.log_push = lambda *a, **k: None
 
 from streamlit.testing.v1 import AppTest                # noqa: E402
 
-at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
 at.switch_page("pages/synthesis.py").run()
 check("страница отрисована без ошибки", not at.exception)
 

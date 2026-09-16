@@ -131,7 +131,7 @@ import streamlit as st                                  # noqa: E402
 
 def page(path="pages/synthesis.py"):
     st.cache_data.clear()
-    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+    at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
     at.switch_page(path).run()
     return at
 

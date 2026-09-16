@@ -162,7 +162,7 @@ sp.missing_secrets = lambda: []
 
 from streamlit.testing.v1 import AppTest                # noqa: E402
 
-at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
 at.switch_page("pages/synthesis.py").run()
 check("страница отрисована", not at.exception)
 
@@ -261,7 +261,10 @@ check("состояние отправленного подписано дато
 sel_all = widget("mass-all")
 check("кнопка «Выбрать все» есть", sel_all is not None)
 sel_all.click().run()
-picked = {k for k in at.session_state.filtered_state
+# По публичному keys(), не по внутреннему filtered_state: в Streamlit
+# 1.64 приватный атрибут перестал быть достижим через AppTest, и тест
+# падал до первой проверки — не потому, что сломалась выборка.
+picked = {k for k in at.session_state.keys()
           if str(k).startswith("pick-") and at.session_state[k]}
 check("выбраны только строки выборки, а не весь каталог",
       picked == {"pick-B0PUSH-es"})
@@ -297,7 +300,7 @@ STATE["review"] = REVIEW.iloc[0:0]
 # сброса вторая половина теста читала бы данные первой
 import streamlit as _st                                 # noqa: E402
 _st.cache_data.clear()
-at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
 at.switch_page("pages/synthesis.py").run()
 check("после приёмки товар остался в списке", "B0GEN" in rows_on_screen())
 check("и метка сменилась на «Принят»", "Принят 28.08" in html())
@@ -316,7 +319,7 @@ CAND, MATRIX = BIG, BIG
 STATE["accepted"] = ACCEPTED.iloc[0:0]
 STATE["review"] = REVIEW.iloc[0:0]
 _st.cache_data.clear()
-at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
 at.switch_page("pages/synthesis.py").run()
 check("на экран попали не все строки выборки", len(rows_on_screen()) == 30)
 sel_all = widget("mass-all")
@@ -341,7 +344,7 @@ MATRIX = CAND
 STATE["accepted"] = ACCEPTED.iloc[0:0]
 STATE["review"] = REVIEW
 SQP = pd.DataFrame([dict(asin="B0GEN", marketplace=MP)])
-at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
 at.switch_page("pages/synthesis.py").run()
 h = html()
 check("плашка Coverage стоит и у товара без числа", "Coverage —" in h)
@@ -401,7 +404,7 @@ TWO = pd.DataFrame(
 CAND, MATRIX = TWO, TWO
 STATE["accepted"] = ACCEPTED.iloc[0:0]
 STATE["review"] = REVIEW.iloc[0:0]
-at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
 at.switch_page("pages/synthesis.py").run()
 
 

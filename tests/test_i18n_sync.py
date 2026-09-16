@@ -82,7 +82,7 @@ check(f"плейсхолдеры совпадают ({_bad_ph or '—'})", not _
 
 # --- штатный промах не поднимает тревогу
 import streamlit as st                                  # noqa: E402
-at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
 check("на живом словаре предупреждения нет", not at.sidebar.warning)
 
 check("tr_opt возвращает None вместо ключа",
@@ -90,7 +90,7 @@ check("tr_opt возвращает None вместо ключа",
       and i18n.tr_opt("nav.synthesis") is not None)
 _ = [i18n.t("cause.amazon_blocked"), i18n.t("action.lost_amazon_choice"),
      i18n.t("issue.code.100232")]
-at1 = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at1 = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
 check("промахи по несуществующим ключам тревогу НЕ поднимают",
       not at1.sidebar.warning)
 
@@ -102,7 +102,7 @@ for _lg in i18n.LANGS:
     for _k in ("synth.cov_no_sqp", "export.state_here"):
         i18n.LANGS[_lg].pop(_k, None)
 st.cache_data.clear()
-at2 = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at2 = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
 _w = " ".join(str(w.value) for w in at2.sidebar.warning)
 for _lg, _kv in _saved.items():
     i18n.LANGS[_lg].update(_kv)
@@ -121,7 +121,7 @@ _fake = types.ModuleType("i18n")
 _fake.__dict__.update(i18n.__dict__)
 del _fake.tr_opt
 sys.modules["i18n"] = _fake
-at3 = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at3 = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
 _w3 = " ".join(str(w.value) for w in at3.sidebar.warning)
 sys.modules["i18n"] = i18n
 check("старый i18n без tr_opt тоже виден", "i18n" in _w3)

@@ -302,23 +302,30 @@ def export_rows(product_ids: tuple) -> tuple[pd.DataFrame, str | None]:
         return pd.DataFrame(), f"{type(e).__name__}: {e}"
 
 
-def export_payload(file_key: str, rows: pd.DataFrame) -> dict:
+def export_payload(file_key: str | None, rows) -> dict:
     """JSON для плагина на НЕСКОЛЬКО товаров и языков.
 
     Форма `{"file_key", "items": [{"asin", "lang", "layers": [...]}]}`
     — та же единица, что в выгрузке одного товара, только списком.
     Плагин принимает обе: одиночную и с `items`.
+
+    Единственная сборка этой формы: её зовут и кнопка в списке
+    (с DataFrame), и HTTP-маршрут для плагина (со списком словарей,
+    без pandas). Две копии сборщика разошлись бы на первом же поле.
     """
-    items: list = []
-    if rows is not None and not rows.empty:
-        for (asin, lang), g in rows.groupby(["asin", "lang"], sort=True):
-            items.append({
-                "asin": str(asin), "lang": str(lang),
-                "layers": [{"layer_id": str(r["layer_id"]), "slot": str(r["slot"]),
-                            "text": str(r["translated_text"])}
-                           for _, r in g.iterrows()],
-            })
-    return {"file_key": file_key, "items": items}
+    if rows is None:
+        recs: list = []
+    elif isinstance(rows, pd.DataFrame):
+        recs = rows.to_dict("records") if not rows.empty else []
+    else:
+        recs = list(rows)
+    items: dict = {}
+    for r in sorted(recs, key=lambda r: (str(r["asin"]), str(r["lang"]), str(r["slot"]))):
+        key = (str(r["asin"]), str(r["lang"]))
+        it = items.setdefault(key, {"asin": key[0], "lang": key[1], "layers": []})
+        it["layers"].append({"layer_id": str(r["layer_id"]), "slot": str(r["slot"]),
+                             "text": str(r["translated_text"])})
+    return {"file_key": file_key, "items": list(items.values())}
 
 @st.cache_data(ttl=120)
 def lang_gaps() -> dict:
