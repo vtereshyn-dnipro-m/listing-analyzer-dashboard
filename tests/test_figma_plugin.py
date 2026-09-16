@@ -49,6 +49,8 @@ def check(name: str, cond: bool) -> None:
 
 
 CODE_JS = (ROOT / "figma-plugin/code.js").read_text(encoding="utf-8")
+UI_HTML = (ROOT / "figma-plugin/ui.html").read_text(encoding="utf-8")
+MANIFEST = (ROOT / "figma-plugin/manifest.json").read_text(encoding="utf-8")
 
 
 # ---------------------------------------------------------------- дерево
@@ -135,6 +137,7 @@ var multi = planItems(payloadItems({ items: [
   ]}), function (l) { return l === "de" ? bySlot : null; }, function (n) { return !!n.mixed; });
 var single = payloadItems({ asin: "X", lang: "de", layers: [] });
 var RESULT = JSON.stringify({
+  page_asins: pageAsins(PAGE),
   multi: { rows: multi.rows.map(function (r) { return [r.asin, r.lang, r.slot, r.state]; }),
            skipped: multi.skipped },
   single_items: single.length,
@@ -233,6 +236,21 @@ check("позиция без языковой страницы отложена 
 check("и не мешает остальным: их состояния те же, что поодиночке",
       [r[3] for r in m["rows"]] == ["same", "replace", "replace"])
 
+# --- 3в. что плагин просит у Listing Suite по сети
+# Он не спрашивает человека, а смотрит в файл: ASIN'ы фреймов на
+# языковых страницах, как их видит services/figma.py. Опечатка BB0…
+# даёт чистый ASIN, A+ и секции мимо — иначе запрос уйдёт за тем,
+# что положить некуда, или не уйдёт за тем, что есть.
+check(f"ASIN'ы со страницы — как у Python-разбора ({js['page_asins']})",
+      js["page_asins"] == ["B0DUPLICAT", "B0G4S9SJ3M", "B0GJMT58WT"])
+check("забор по сети идёт с токеном в заголовке и на свой маршрут",
+      "/figma/translations" in UI_HTML and '"Authorization": "Bearer "' in UI_HTML)
+check("адрес и токен хранятся в clientStorage, не в файле макета",
+      "figma.clientStorage" in CODE_JS and "setPluginData" not in CODE_JS)
+check("сеть ограничена манифестом, не «*»",
+      '"allowedDomains"' in MANIFEST and '"*"' not in MANIFEST
+      and "streamlit.app" in MANIFEST)
+
 # --- 4. плагин не применяет молча и не трогает лишнего
 check("замена только по кнопке: план и применение — разные сообщения",
       'msg.type === "plan"' in CODE_JS and 'msg.type === "apply"' in CODE_JS)
@@ -241,8 +259,8 @@ check("шрифт грузится перед правкой текста",
 check("меняется только characters — ни шрифт, ни кегль, ни картинки",
       not re.search(r"\.(fontName|fontSize|fills|resize|x|y)\s*=(?!=)", CODE_JS))
 check("слои не создаются", "createText" not in CODE_JS and "clone(" not in CODE_JS)
-check("сеть плагину не нужна",
-      '"allowedDomains": ["none"]' in (ROOT / "figma-plugin/manifest.json").read_text())
+check("сеть только до приложения — домен назван, не «*»",
+      "streamlit.app" in MANIFEST and '"*"' not in MANIFEST)
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS

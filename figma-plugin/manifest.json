@@ -4,7 +4,18 @@
   "api": "1.0.0",
   "main": "code.js",
   "ui": "ui.html",
-  "editorType": ["figma"],
+  "editorType": [
+    "figma"
+  ],
   "documentAccess": "dynamic-page",
-  "networkAccess": { "allowedDomains": ["none"] }
+  "networkAccess": {
+    "allowedDomains": [
+      "https://*.streamlit.app"
+    ],
+    "devAllowedDomains": [
+      "http://localhost:8602",
+      "http://localhost:8501"
+    ],
+    "reasoning": "Плагин забирает готовые переводы из Listing Suite по HTTP с токеном."
+  }
 }

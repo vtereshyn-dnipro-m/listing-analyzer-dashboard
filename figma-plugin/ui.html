@@ -30,12 +30,24 @@
 </head>
 <body>
 <h1>Перевод из Listing Suite → в макет</h1>
-<div class="muted">Файл выгрузки — кнопка «Применить в Figma» на экране «Перевод». Связка по <code>slot</code>; картинки, шрифт и кегль не трогаются.</div>
+<div class="muted">Связка по <code>slot</code>; картинки, шрифт и кегль не трогаются.</div>
 
 <div class="row">
+  <button class="primary" id="fetch">Забрать из Listing Suite</button>
+  <span class="muted">или файл:</span>
   <input type="file" id="file" accept=".json,application/json">
   <span id="fileinfo" class="muted"></span>
 </div>
+
+<details id="settings">
+  <summary class="muted">Настройки: адрес Listing Suite и токен</summary>
+  <div class="row">
+    <input type="url" id="url" placeholder="https://listing-suite.streamlit.app" style="min-width:280px">
+    <input type="password" id="token" placeholder="токен плагина" style="min-width:200px">
+    <button id="save">Сохранить</button>
+  </div>
+  <div class="muted">Токен — <code>FIGMA_PLUGIN_TOKEN</code> из секретов приложения, его даёт владелец. Хранится в плагине, в файл макета не попадает.</div>
+</details>
 
 <div id="msg"></div>
 <div id="plan" hidden>
@@ -84,6 +96,75 @@
     };
     rd.readAsText(f, "utf-8");
   });
+
+  // ---- настройки и забор по сети
+  var SETTINGS = { url: "", token: "" };
+  function applySettings(s) {
+    SETTINGS = s || SETTINGS;
+    el("url").value = SETTINGS.url || "";
+    el("token").value = SETTINGS.token || "";
+    el("fetch").disabled = !(SETTINGS.url && SETTINGS.token);
+    el("fetch").title = el("fetch").disabled ? "Сначала адрес и токен в настройках" : "";
+    if (el("fetch").disabled) el("settings").open = true;
+  }
+  el("save").addEventListener("click", function () {
+    parent.postMessage({ pluginMessage: { type: "save-settings",
+      settings: { url: el("url").value, token: el("token").value } } }, "*");
+  });
+  parent.postMessage({ pluginMessage: { type: "settings" } }, "*");
+
+  // Забрать: плагин сам смотрит, какие языковые страницы и товары есть
+  // в открытом файле, и просит ровно их. Ответ — та же форма, что файл.
+  el("fetch").addEventListener("click", function () {
+    el("fetch").disabled = true;
+    msg("Смотрю, какие языки и товары есть в файле…", "muted");
+    show("plan", false); show("report", false);
+    parent.postMessage({ pluginMessage: { type: "scan" } }, "*");
+  });
+  function fetchTranslations(scan) {
+    var langs = Object.keys(scan || {});
+    if (!langs.length) {
+      msg("В файле нет ни одной языковой страницы (DE, ES, IT, FR) с фреймами товаров — забирать не для чего.", "err");
+      el("fetch").disabled = false; return;
+    }
+    var asins = {};
+    langs.forEach(function (l) { (scan[l] || []).forEach(function (a) { asins[a] = true; }); });
+    var q = "asins=" + encodeURIComponent(Object.keys(asins).sort().join(",")) +
+            "&langs=" + encodeURIComponent(langs.join(","));
+    msg("Запрашиваю переводы: языки " + langs.join(", ").toUpperCase() + ", товаров " + Object.keys(asins).length + "…", "muted");
+    fetch(SETTINGS.url + "/figma/translations?" + q, {
+      headers: { "Authorization": "Bearer " + SETTINGS.token }
+    }).then(function (r) {
+      return r.text().then(function (txt) {
+        var body = null;
+        try { body = JSON.parse(txt); } catch (e) {}
+        if (!r.ok) {
+          var why = body && body.error ? body.error : (txt.slice(0, 200) || r.statusText);
+          if (r.status === 401) why += " Проверьте токен в настройках.";
+          if (r.status === 404) why += " Маршрут не поднят: у приложения не задан FIGMA_PLUGIN_TOKEN или адрес неверный.";
+          throw new Error("HTTP " + r.status + ": " + why);
+        }
+        if (!body || !Array.isArray(body.items)) throw new Error("Ответ не похож на выгрузку Listing Suite.");
+        return body;
+      });
+    }).then(function (payload) {
+      var nRows = payload.items.reduce(function (a, it) { return a + ((it.layers || []).length); }, 0);
+      el("fileinfo").textContent = "из Listing Suite · позиций: " + payload.items.length + " · строк: " + nRows;
+      if (!nRows) { msg("Listing Suite вернул пусто: по этим товарам и языкам переведённых строк нет.", "warn"); el("fetch").disabled = false; return; }
+      msg("Ищу слои на страницах…", "muted");
+      parent.postMessage({ pluginMessage: { type: "plan", payload: payload } }, "*");
+      el("fetch").disabled = false;
+    }).catch(function (e) {
+      // Ошибку сети Figma отдаёт без деталей: чаще всего это домен вне
+      // allowedDomains манифеста или приложение, закрытое авторизацией.
+      var t = String(e && e.message || e);
+      if (/Failed to fetch|NetworkError|Load failed/i.test(t)) {
+        t += " — сеть до Listing Suite не пропущена: адрес не входит в allowedDomains манифеста, либо приложение требует входа и не пускает без него.";
+      }
+      msg("Не удалось забрать переводы: " + esc(t), "err");
+      el("fetch").disabled = false;
+    });
+  }
 
   el("apply").addEventListener("click", function () {
     el("apply").disabled = true; el("apply").textContent = "Применяю…";
@@ -149,7 +230,9 @@
     if (!m) return;
     if (m.type === "plan") renderPlan(m.result);
     else if (m.type === "report") renderReport(m.result);
-    else if (m.type === "error") msg("Ошибка плагина: " + esc(m.error), "err");
+    else if (m.type === "settings") applySettings(m.result);
+    else if (m.type === "scan") fetchTranslations(m.result);
+    else if (m.type === "error") { msg("Ошибка плагина: " + esc(m.error), "err"); el("fetch").disabled = false; }
   };
 </script>
 </body>
