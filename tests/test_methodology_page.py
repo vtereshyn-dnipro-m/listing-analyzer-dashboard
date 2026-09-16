@@ -75,7 +75,7 @@ from streamlit.testing.v1 import AppTest                # noqa: E402
 
 def page():
     st.cache_data.clear()          # кэш загрузчика общий на процесс
-    a = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+    a = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
     a.switch_page("pages/methodology.py").run()
     return a
 

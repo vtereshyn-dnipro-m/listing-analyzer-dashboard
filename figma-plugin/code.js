@@ -27,7 +27,6 @@
 var PAGE_LANG = { "UK/US": "en", "DE": "de", "ES": "es", "IT": "it", "FR": "fr" };
 // одна-две лишние буквы перед ASIN допускаются: в файле есть BB0GJMT58WT.MAIN
 var FRAME_RE = /^([A-Z]{0,2})(B0[A-Z0-9]{8})\.(.+)$/;
-var APLUS_RE = /^carousel\b/i;     // модули A+ отложены — не запрашиваем
 
 // Рекурсивный обход — зеркало _walk_text. Работает и с узлами
 // плагина, и с JSON REST API: у обоих `type`, `name`, `children`,
@@ -237,60 +236,12 @@ async function apply() {
   return report;
 }
 
-// Что просить у Listing Suite: языки, у которых в файле ЕСТЬ страница,
-// и ASIN'ы фреймов на них. Плагин не спрашивает человека, что забрать, —
-// он смотрит в открытый файл. Это же и есть граница первой версии:
-// языки без страницы не запрашиваются, потому что класть их некуда.
-function pageAsins(page) {
-  // ASIN'ы фреймов товаров на странице — как их видит services/figma.py:
-  // только FRAME верхнего уровня, имя по FRAME_RE, A+ мимо, опечатка
-  // BB0… даёт чистый ASIN. Чистая функция — её проверяет тест.
-  var asins = {};
-  (page.children || []).forEach(function (fr) {
-    if (fr.type !== "FRAME") return;
-    var name = String(fr.name || "");
-    var m = FRAME_RE.exec(name);
-    if (m && !APLUS_RE.test(name)) asins[m[2]] = true;
-  });
-  return Object.keys(asins).sort();
-}
-
-async function scanFile() {
-  var out = {};
-  var pages = figma.root.children;
-  for (var i = 0; i < pages.length; i++) {
-    var lang = PAGE_LANG[pages[i].name];
-    if (!lang || lang === "en") continue;
-    await pages[i].loadAsync();
-    var list = pageAsins(pages[i]);
-    if (list.length) out[lang] = list;
-  }
-  return out;
-}
-
-// Адрес и токен живут в clientStorage плагина: вводятся один раз,
-// у каждого дизайнера свои, в файл макета не попадают.
-async function loadSettings() {
-  return {
-    url: (await figma.clientStorage.getAsync("ls-url")) || "",
-    token: (await figma.clientStorage.getAsync("ls-token")) || ""
-  };
-}
-async function saveSettings(s) {
-  await figma.clientStorage.setAsync("ls-url", String(s.url || "").trim().replace(/\/+$/, ""));
-  await figma.clientStorage.setAsync("ls-token", String(s.token || "").trim());
-  return loadSettings();
-}
-
 function main() {
-  figma.showUI(__html__, { width: 660, height: 600, title: "Listing Suite: перевод в макет" });
+  figma.showUI(__html__, { width: 640, height: 580, title: "Listing Suite: перевод в макет" });
   figma.ui.onmessage = async function (msg) {
     try {
       if (msg.type === "plan") figma.ui.postMessage({ type: "plan", result: await plan(msg.payload) });
       else if (msg.type === "apply") figma.ui.postMessage({ type: "report", result: await apply() });
-      else if (msg.type === "settings") figma.ui.postMessage({ type: "settings", result: await loadSettings() });
-      else if (msg.type === "save-settings") figma.ui.postMessage({ type: "settings", result: await saveSettings(msg.settings) });
-      else if (msg.type === "scan") figma.ui.postMessage({ type: "scan", result: await scanFile() });
       else if (msg.type === "close") figma.closePlugin();
     } catch (e) {
       figma.ui.postMessage({ type: "error", error: String(e && e.message || e) });
@@ -304,5 +255,5 @@ if (typeof figma !== "undefined") main();
 if (typeof module !== "undefined") {
   module.exports = { PAGE_LANG: PAGE_LANG, FRAME_RE: FRAME_RE, walkText: walkText,
     indexPage: indexPage, buildPlan: buildPlan, summarize: summarize, normFrame: normFrame,
-    payloadItems: payloadItems, planItems: planItems, pageAsins: pageAsins };
+    payloadItems: payloadItems, planItems: planItems };
 }

@@ -32,22 +32,18 @@
 <h1>Перевод из Listing Suite → в макет</h1>
 <div class="muted">Связка по <code>slot</code>; картинки, шрифт и кегль не трогаются.</div>
 
-<div class="row">
-  <button class="primary" id="fetch">Забрать из Listing Suite</button>
-  <span class="muted">или файл:</span>
-  <input type="file" id="file" accept=".json,application/json">
-  <span id="fileinfo" class="muted"></span>
-</div>
-
-<details id="settings">
-  <summary class="muted">Настройки: адрес Listing Suite и токен</summary>
-  <div class="row">
-    <input type="url" id="url" placeholder="https://listing-suite.streamlit.app" style="min-width:280px">
-    <input type="password" id="token" placeholder="токен плагина" style="min-width:200px">
-    <button id="save">Сохранить</button>
+<div class="row" style="align-items:flex-start">
+  <div style="flex:1 1 320px">
+    <div class="muted">Вставьте JSON, скопированный в Listing Suite («Скопировать для плагина»):</div>
+    <textarea id="paste" rows="4" style="width:100%;box-sizing:border-box;font:11px/1.4 ui-monospace,Menlo,monospace" placeholder='{"file_key": …, "items": [...]}'></textarea>
+    <div class="row" style="margin:6px 0 0">
+      <button class="primary" id="parse">Разобрать</button>
+      <span class="muted">или файл:</span>
+      <input type="file" id="file" accept=".json,application/json">
+    </div>
   </div>
-  <div class="muted">Токен — <code>FIGMA_PLUGIN_TOKEN</code> из секретов приложения, его даёт владелец. Хранится в плагине, в файл макета не попадает.</div>
-</details>
+</div>
+<div id="fileinfo" class="muted"></div>
 
 <div id="msg"></div>
 <div id="plan" hidden>
@@ -73,98 +69,41 @@
   function show(id, on) { el(id).hidden = !on; }
   function msg(html, cls) { el("msg").innerHTML = html ? '<div class="' + cls + '">' + html + '</div>' : ""; }
 
+  // Один приём на оба пути — вставка и файл: дальше плагину всё равно,
+  // откуда пришёл JSON.
+  function takePayload(text, source) {
+    var payload;
+    try { payload = JSON.parse(text); }
+    catch (e) { msg("Это не JSON из Listing Suite: " + esc(e.message), "err"); return; }
+    var items = Array.isArray(payload && payload.items) ? payload.items
+              : (payload && Array.isArray(payload.layers) && payload.lang) ? [payload] : null;
+    if (!items) {
+      msg("Нет ни <code>items</code>, ни пары <code>lang</code>/<code>layers</code> — это не выгрузка из Listing Suite.", "err"); return;
+    }
+    var nRows = items.reduce(function (a, it) { return a + ((it.layers || []).length); }, 0);
+    el("fileinfo").textContent = source + " · " + (items.length === 1
+      ? (items[0].asin + " · " + String(items[0].lang).toUpperCase())
+      : "позиций: " + items.length) + " · строк: " + nRows;
+    msg("Ищу слои на странице…", "muted");
+    show("plan", false); show("report", false);
+    parent.postMessage({ pluginMessage: { type: "plan", payload: payload } }, "*");
+  }
+  el("parse").addEventListener("click", function () {
+    var text = el("paste").value.trim();
+    if (!text) { msg("Поле пустое — вставьте JSON из Listing Suite.", "err"); return; }
+    takePayload(text, "из буфера");
+  });
+  // вставили — разбираем сразу, кнопка на случай правки руками
+  el("paste").addEventListener("paste", function () {
+    setTimeout(function () { var t = el("paste").value.trim(); if (t) takePayload(t, "из буфера"); }, 0);
+  });
   el("file").addEventListener("change", function (ev) {
     var f = ev.target.files && ev.target.files[0];
     if (!f) return;
     var rd = new FileReader();
-    rd.onload = function () {
-      var payload;
-      try { payload = JSON.parse(rd.result); }
-      catch (e) { msg("Это не JSON из Listing Suite: " + esc(e.message), "err"); return; }
-      var items = Array.isArray(payload && payload.items) ? payload.items
-                : (payload && Array.isArray(payload.layers) && payload.lang) ? [payload] : null;
-      if (!items) {
-        msg("В файле нет ни <code>items</code>, ни пары <code>lang</code>/<code>layers</code> — это не выгрузка из Listing Suite.", "err"); return;
-      }
-      var nRows = items.reduce(function (a, it) { return a + ((it.layers || []).length); }, 0);
-      el("fileinfo").textContent = f.name + " · " + (items.length === 1
-        ? (items[0].asin + " · " + String(items[0].lang).toUpperCase())
-        : "позиций: " + items.length) + " · строк: " + nRows;
-      msg("Ищу слои на странице…", "muted");
-      show("plan", false); show("report", false);
-      parent.postMessage({ pluginMessage: { type: "plan", payload: payload } }, "*");
-    };
+    rd.onload = function () { takePayload(rd.result, f.name); };
     rd.readAsText(f, "utf-8");
   });
-
-  // ---- настройки и забор по сети
-  var SETTINGS = { url: "", token: "" };
-  function applySettings(s) {
-    SETTINGS = s || SETTINGS;
-    el("url").value = SETTINGS.url || "";
-    el("token").value = SETTINGS.token || "";
-    el("fetch").disabled = !(SETTINGS.url && SETTINGS.token);
-    el("fetch").title = el("fetch").disabled ? "Сначала адрес и токен в настройках" : "";
-    if (el("fetch").disabled) el("settings").open = true;
-  }
-  el("save").addEventListener("click", function () {
-    parent.postMessage({ pluginMessage: { type: "save-settings",
-      settings: { url: el("url").value, token: el("token").value } } }, "*");
-  });
-  parent.postMessage({ pluginMessage: { type: "settings" } }, "*");
-
-  // Забрать: плагин сам смотрит, какие языковые страницы и товары есть
-  // в открытом файле, и просит ровно их. Ответ — та же форма, что файл.
-  el("fetch").addEventListener("click", function () {
-    el("fetch").disabled = true;
-    msg("Смотрю, какие языки и товары есть в файле…", "muted");
-    show("plan", false); show("report", false);
-    parent.postMessage({ pluginMessage: { type: "scan" } }, "*");
-  });
-  function fetchTranslations(scan) {
-    var langs = Object.keys(scan || {});
-    if (!langs.length) {
-      msg("В файле нет ни одной языковой страницы (DE, ES, IT, FR) с фреймами товаров — забирать не для чего.", "err");
-      el("fetch").disabled = false; return;
-    }
-    var asins = {};
-    langs.forEach(function (l) { (scan[l] || []).forEach(function (a) { asins[a] = true; }); });
-    var q = "asins=" + encodeURIComponent(Object.keys(asins).sort().join(",")) +
-            "&langs=" + encodeURIComponent(langs.join(","));
-    msg("Запрашиваю переводы: языки " + langs.join(", ").toUpperCase() + ", товаров " + Object.keys(asins).length + "…", "muted");
-    fetch(SETTINGS.url + "/figma/translations?" + q, {
-      headers: { "Authorization": "Bearer " + SETTINGS.token }
-    }).then(function (r) {
-      return r.text().then(function (txt) {
-        var body = null;
-        try { body = JSON.parse(txt); } catch (e) {}
-        if (!r.ok) {
-          var why = body && body.error ? body.error : (txt.slice(0, 200) || r.statusText);
-          if (r.status === 401) why += " Проверьте токен в настройках.";
-          if (r.status === 404) why += " Маршрут не поднят: у приложения не задан FIGMA_PLUGIN_TOKEN или адрес неверный.";
-          throw new Error("HTTP " + r.status + ": " + why);
-        }
-        if (!body || !Array.isArray(body.items)) throw new Error("Ответ не похож на выгрузку Listing Suite.");
-        return body;
-      });
-    }).then(function (payload) {
-      var nRows = payload.items.reduce(function (a, it) { return a + ((it.layers || []).length); }, 0);
-      el("fileinfo").textContent = "из Listing Suite · позиций: " + payload.items.length + " · строк: " + nRows;
-      if (!nRows) { msg("Listing Suite вернул пусто: по этим товарам и языкам переведённых строк нет.", "warn"); el("fetch").disabled = false; return; }
-      msg("Ищу слои на страницах…", "muted");
-      parent.postMessage({ pluginMessage: { type: "plan", payload: payload } }, "*");
-      el("fetch").disabled = false;
-    }).catch(function (e) {
-      // Ошибку сети Figma отдаёт без деталей: чаще всего это домен вне
-      // allowedDomains манифеста или приложение, закрытое авторизацией.
-      var t = String(e && e.message || e);
-      if (/Failed to fetch|NetworkError|Load failed/i.test(t)) {
-        t += " — сеть до Listing Suite не пропущена: адрес не входит в allowedDomains манифеста, либо приложение требует входа и не пускает без него.";
-      }
-      msg("Не удалось забрать переводы: " + esc(t), "err");
-      el("fetch").disabled = false;
-    });
-  }
 
   el("apply").addEventListener("click", function () {
     el("apply").disabled = true; el("apply").textContent = "Применяю…";
@@ -230,9 +169,7 @@
     if (!m) return;
     if (m.type === "plan") renderPlan(m.result);
     else if (m.type === "report") renderReport(m.result);
-    else if (m.type === "settings") applySettings(m.result);
-    else if (m.type === "scan") fetchTranslations(m.result);
-    else if (m.type === "error") { msg("Ошибка плагина: " + esc(m.error), "err"); el("fetch").disabled = false; }
+    else if (m.type === "error") msg("Ошибка плагина: " + esc(m.error), "err");
   };
 </script>
 </body>

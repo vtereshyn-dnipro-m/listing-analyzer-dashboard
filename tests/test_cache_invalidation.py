@@ -59,7 +59,7 @@ import streamlit as st                                  # noqa: E402
 from streamlit.testing.v1 import AppTest                # noqa: E402
 
 PAGES = ("pages/synthesis.py", "pages/catalog.py", "pages/dashboard.py")
-at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 for p in PAGES:
     at.switch_page(p).run()
 
