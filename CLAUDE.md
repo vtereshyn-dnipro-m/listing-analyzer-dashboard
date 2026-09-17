@@ -267,6 +267,9 @@ run'а читается из `dbutils.notebook.exit`: «skipped» значит, 
 Excel открывает CSV с кириллицей и разделителями по-своему на каждой
 машине. В файле есть колонки сбора (`status`, `tier`, `weekly_day`,
 `fetched_at`, `age_days`) — те же, что подписаны на карточках.
+В XLSX ASIN — гиперссылка на карточку Amazon через `product_url`
+(не шаблон по коду рынка: у Бельгии витрина amazon.com.be), в ячейке
+остаётся сам ASIN; в CSV ссылок нет.
 
 История есть только у снапшотов: `listing_snapshots` append-only
 (цена, сток, рейтинг, отзывы на каждый сбор). `asin_economics`,
@@ -999,6 +1002,7 @@ python tests/test_translate.py
 python tests/test_figma_plugin.py
 python tests/test_catalog_age.py
 python tests/test_collect_button.py
+python tests/test_matrix_input.py
 ```
 
 `tests/fixture_template.py` — не тест, а общая миниатюра шаблона Amazon
@@ -1259,6 +1263,14 @@ Suite. Плагин кладёт перевод в слой, найденный 
 активном run'е, и AppTest, как браузер, отказывается её нажать);
 параметры, не дошедшие до job'а (без `force=1` ноутбук пропустит
 прогон как «уже собрано сегодня»). Databricks подменён целиком.
+
+`test_matrix_input.py` — ввод пар в Матрицу: ASIN не выдаёт себя за
+SKU. Парсер при голом ASIN писал `sku or asin`, и в Каталоге,
+выгрузке и группировках Синтеза у товара стоял «sku B0G4S9SJ3M» —
+подмена, неотличимая от правды: SKU и ASIN одинаково выглядят кодами.
+Теперь пусто значит пусто, SKU при вставке берётся из зеркала
+каталога, пустой повтор не затирает известный; две старые строки —
+миграцией `2026-09-17_sku_group_from_mirror.sql`.
 
 `test_length_guard.py` — гарантия лимита: запас в промпте, автоповтор,
 обрезка по границе слова, отказ резать при потере must_keep.

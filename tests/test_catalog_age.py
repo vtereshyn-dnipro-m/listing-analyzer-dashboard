@@ -153,13 +153,27 @@ check("и сказано, что выгружается то, что на экр
 import io, re  # noqa: E402
 _src = (ROOT / "pages/catalog.py").read_text(encoding="utf-8")
 _fn = "def _xlsx_bytes" + _src.split("def _xlsx_bytes")[1].split("\n\n\n")[0]
-_ns = {"pd": pd}; exec(_fn, _ns)
+from services.marketplaces import product_url  # noqa: E402
+_ns = {"pd": pd, "product_url": product_url}; exec(_fn, _ns)
 _frame = pd.DataFrame([{"asin": "B0X", "status": "wound_down", "tier": "weekly",
                         "weekly_day": 3, "age_days": 20, "name": "Тест"}])
 _wb = pd.read_excel(io.BytesIO(_ns["_xlsx_bytes"](_frame)), sheet_name="catalog")
 check("XLSX открывается и держит колонки сбора и кириллицу",
       list(_wb.columns) == ["asin", "status", "tier", "weekly_day", "age_days", "name"]
       and _wb.iloc[0]["name"] == "Тест" and int(_wb.iloc[0]["weekly_day"]) == 3)
+_frame = pd.DataFrame([{"asin": "B0G4S9SJ3M", "mp": "be", "name": "x"},
+                       {"asin": "B0G4S9SJ3M", "mp": "es", "name": "y"}])
+import openpyxl  # noqa: E402
+_ws = openpyxl.load_workbook(io.BytesIO(_ns["_xlsx_bytes"](_frame)))["catalog"]
+_links = [(_ws.cell(row=r, column=1).value, getattr(_ws.cell(row=r, column=1).hyperlink, "target", None))
+          for r in (2, 3)]
+check(f"ASIN в XLSX — гиперссылка, в ячейке сам ASIN ({_links[1]})",
+      _links[1] == ("B0G4S9SJ3M", "https://www.amazon.es/dp/B0G4S9SJ3M"))
+# Бельгия — витрина amazon.com.be: шаблон amazon.{mp} дал бы amazon.be
+check(f"Бельгия ведёт на amazon.com.be, не amazon.be ({_links[0][1]})",
+      _links[0][1] == "https://www.amazon.com.be/dp/B0G4S9SJ3M")
+check("в CSV ссылок нет — ASIN как текст",
+      "amazon." not in _src.split("exp.to_csv")[0][-400:] and 'exp.to_csv(index=False)' in _src)
 check("в выгрузке есть колонки сбора",
       all(f'"{c}":' in _src.split("exp = pd.DataFrame")[1].split("] for x in rows")[0]
           for c in ("status", "tier", "weekly_day", "fetched_at", "age_days")))
