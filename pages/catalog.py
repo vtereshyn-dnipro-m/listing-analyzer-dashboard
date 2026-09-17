@@ -17,6 +17,7 @@ import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT
 from i18n import t, plural
+from services import collector
 from services.cells import cell_text
 from services.db import get_conn, get_engine, safe_read
 from services.settings import get_int, get_float
@@ -382,6 +383,146 @@ def freshness_html(rows: list[dict]) -> str:
 FRESH = market_freshness(df)
 st.markdown(freshness_html(FRESH), unsafe_allow_html=True)
 st.caption(t("catalog.age_note"))
+
+
+# ---- сбор по выбранным рынкам
+# Кнопка запускает тот же job Databricks, что идёт в 13:00, но только
+# по отмеченным рынкам. Три правила — см. services/collector.py:
+# не поверх идущего, свёрнутые не считаются, ход — по базе.
+@st.cache_data(ttl=20, show_spinner=False)
+def _active_run():
+    return collector.active_run()
+
+
+def render_collect(all_markets: list[str]) -> None:
+    key = "cat-collect"
+    st.markdown(
+        f'<style>.st-key-{key} div[data-testid="stHorizontalBlock"]'
+        '{gap:10px !important;align-items:center;flex-wrap:wrap;}'
+        f'.st-key-{key} div[data-testid="stColumn"]'
+        '{flex:0 0 auto !important;width:auto !important;min-width:0 !important;}'
+        f'.st-key-{key} div[data-testid="stColumn"]:last-child'
+        '{flex:1 1 auto !important;}'
+        f'.st-key-{key} .stButton button{{white-space:nowrap !important;width:auto !important;}}'
+        f'.st-key-{key} label{{white-space:nowrap !important;}}</style>',
+        unsafe_allow_html=True)
+
+    run = st.session_state.get("collect-run")
+    if run is None:
+        # сбор мог начаться не отсюда — утренний прогон тоже «идёт»
+        found, err = _active_run()
+        if found:
+            run = dict(found, markets=all_markets, external=True)
+            st.session_state["collect-run"] = run
+    no_client = collector.client() is None
+
+    with st.container(key=key):
+        cols = st.columns([1] * len(all_markets) + [4, 4], gap="small",
+                          vertical_alignment="center")
+        picked = [mp for i, mp in enumerate(all_markets)
+                  if cols[i].checkbox(mp.upper(), key=f"collect-mp-{mp}")]
+        plan, perr = collector.planned(picked)
+        n_plan = int(plan["pairs"].sum()) if not plan.empty else 0
+        label = (f'{t("catalog.collect_btn")} · {", ".join(m.upper() for m in picked)} · '
+                 f'{plural("catalog.products_n", n_plan)}' if picked
+                 else t("catalog.collect_btn"))
+        if cols[-2].button(label, key="collect-go", type="primary",
+                           disabled=not picked or not n_plan or run is not None or no_client,
+                           help=t("catalog.collect_help")):
+            started, serr = collector.start(picked)
+            if started:
+                st.session_state["collect-run"] = dict(started, planned=n_plan)
+                _active_run.clear()
+                st.rerun()
+            st.session_state["collect-error"] = serr
+        if no_client:
+            cols[-1].caption(t("catalog.collect_no_client"))
+        elif perr:
+            cols[-1].caption("⚠ " + t("common.read_failed", e=perr))
+        elif picked and not n_plan:
+            cols[-1].caption(t("catalog.collect_nothing"))
+
+    err = st.session_state.pop("collect-error", None)
+    if err == "already-running":
+        st.warning(t("catalog.collect_busy"))
+    elif err and err != "no-client":
+        st.error("⚠ " + t("catalog.collect_failed", e=err))
+
+    render_collect_outcome()
+    if run is not None:
+        render_collect_progress()
+
+
+@st.fragment(run_every="10s" if st.session_state.get("collect-run") else None)
+def render_collect_progress() -> None:
+    """Ход сбора: состояние run'а и сколько снапшотов уже в базе.
+
+    Фрагмент перерисовывает только себя раз в десять секунд, пока
+    run идёт; страница целиком не дёргается. Число «собрано» — из
+    базы, поэтому честно только при коммите по паре в ноутбуке;
+    пока он коммитит одной транзакцией, здесь будет «0 из N» до
+    самого финала — и об этом сказано словами, а не полоской.
+    """
+    run = st.session_state.get("collect-run")
+    if not run:
+        return
+    state, err = collector.run_state(run["run_id"])
+    if state:
+        run.update({k: v for k, v in state.items() if v is not None})
+    markets = run.get("markets") or []
+    got, _ = collector.collected_since(run.get("started_at"), markets) \
+        if run.get("started_at") else (0, None)
+    planned_n = run.get("planned")
+    since = (pd.Timestamp(run["started_at"]).tz_convert("Europe/Kyiv").strftime("%H:%M")
+             if run.get("started_at") else "—")
+    live = run.get("state") in ("PENDING", "RUNNING", "TERMINATING", "QUEUED", "BLOCKED")
+
+    if live:
+        head = t("catalog.collect_running", since=since,
+                 mps=", ".join(m.upper() for m in markets))
+        if planned_n:
+            st.progress(min(1.0, got / planned_n),
+                        text=f'{head} · {t("catalog.collect_got", got=got, n=planned_n)}')
+            if got == 0:
+                st.caption(t("catalog.collect_zero_note"))
+        else:
+            st.info(f'{head} · {t("catalog.collect_got_only", got=got)}')
+        return
+
+    # Завершился. Итог кладётся в session_state и рисуется страницей
+    # после ПОЛНОГО rerun: фрагмент перерисовывает только себя, а
+    # кнопка выше уже отрисована неактивной — без rerun она осталась бы
+    # такой, пока человек не тронет экран.
+    exit_value = run.get("exit") or ""
+    st.session_state["collect-outcome"] = {
+        "got": got, "exit": exit_value, "err": err,
+        "result": run.get("result") or run.get("state"),
+    }
+    st.session_state.pop("collect-run", None)
+    _active_run.clear()
+    load_catalog.clear()
+    st.rerun(scope="app")
+
+
+def render_collect_outcome() -> None:
+    """Итог последнего сбора — один раз, после перерисовки."""
+    o = st.session_state.pop("collect-outcome", None)
+    if not o:
+        return
+    exit_value = str(o.get("exit") or "")
+    if o.get("result") == "SUCCESS" and "skipped" not in exit_value.lower():
+        st.success(f'✓ {t("catalog.collect_done", got=o["got"])}'
+                   + (f" · {exit_value}" if exit_value else ""))
+    elif "skipped" in exit_value.lower():
+        st.warning(t("catalog.collect_skipped"))
+    else:
+        st.error("⚠ " + t("catalog.collect_ended_badly",
+                          state=o.get("result"), e=exit_value or "—"))
+    if o.get("err"):
+        st.caption("⚠ " + t("catalog.collect_failed", e=o["err"]))
+
+
+render_collect(sorted(df["marketplace"].unique()))
 
 # ---- группы фильтра: по ИСТОЧНИКУ проблемы, а не по конкретной причине.
 # Amazon — состояние пары из listing_issues; Контент и Поиск — правила
