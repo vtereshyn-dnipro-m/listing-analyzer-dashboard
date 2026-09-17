@@ -16,7 +16,7 @@ import pandas as pd
 import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT
-from i18n import t
+from i18n import t, plural
 from services.db import get_conn, get_engine, safe_read
 from services.settings import get_int, get_float
 from services.economics import (
@@ -251,6 +251,70 @@ if catalog_error:
 if df.empty:
     st.caption(t("common.no_data"))
     st.stop()
+
+
+def age_days(ts) -> int | None:
+    """Полных дней с момента снапшота; None — снапшота нет."""
+    if pd.isna(ts):
+        return None
+    return int((pd.Timestamp.now("UTC") - pd.to_datetime(ts, utc=True)).days)
+
+
+def market_freshness(cat: pd.DataFrame) -> list[dict]:
+    """Возраст данных по каждому рынку — по последнему УДАЧНОМУ снапшоту пары.
+
+    Сбор идёт по кругу: ежедневный прогон в 13:00 Kyiv берёт около
+    270 пар из тысячи, и каждая пара обновляется примерно раз в неделю
+    (проверено 17.09: по возрасту пары раскладываются ровно на семь
+    дневных корзин). Поэтому «последний прогон 16.09» у рынка ничего
+    не говорит о карточке: её собственный снапшот может быть недельной
+    давности, и цифры на нём — тоже. Здесь считается не дата прогона,
+    а сколько пар рынка старше недели и сколько не собирались вовсе:
+    именно это и есть «данным можно верить или нет».
+    """
+    out = []
+    for mp, g in cat.groupby("marketplace", sort=True):
+        ages = g["fetched_at"].map(age_days)
+        have = ages.dropna()
+        out.append({
+            "mp": str(mp), "pairs": int(len(g)),
+            "never": int(ages.isna().sum()),
+            "stale": int((have > 7).sum()),
+            "median": int(have.median()) if len(have) else None,
+            "oldest": int(have.max()) if len(have) else None,
+            "last": (pd.to_datetime(g["fetched_at"], utc=True).max()
+                     if len(have) else None),
+        })
+    return out
+
+
+def freshness_html(rows: list[dict]) -> str:
+    """Чипы по рынкам: одна строка HTML (правило 1)."""
+    chips = []
+    for r in rows:
+        bad = r["never"] or r["stale"]
+        col = ACCENT if r["never"] else (WARN_TEXT if r["stale"] else OK_TEXT)
+        med = (t("catalog.age_median", n=r["median"]) if r["median"] is not None
+               else t("catalog.not_collected"))
+        parts = [med]
+        if r["stale"]:
+            parts.append(t("catalog.age_stale", n=r["stale"], days=r["oldest"]))
+        if r["never"]:
+            parts.append(t("catalog.age_never", n=r["never"]))
+        chips.append(
+            f'<span style="display:inline-block;margin:0 8px 6px 0;padding:4px 10px;'
+            f'border:1px solid {BORDER};border-radius:8px;font-size:12px;">'
+            f'<b style="font-family:{MONO};">{r["mp"].upper()}</b> · {r["pairs"]} · '
+            f'<span style="color:{col};">{" · ".join(parts)}</span></span>')
+    return "<div>" + "".join(chips) + "</div>"
+
+
+# Возраст данных — до фильтров и списка, потому что относится ко всему
+# экрану: цифры четырёхдневной давности выглядят как сегодняшние, и
+# без этой строки читатель считает их сегодняшними.
+FRESH = market_freshness(df)
+st.markdown(freshness_html(FRESH), unsafe_allow_html=True)
+st.caption(t("catalog.age_note"))
 
 # ---- группы фильтра: по ИСТОЧНИКУ проблемы, а не по конкретной причине.
 # Amazon — состояние пары из listing_issues; Контент и Поиск — правила
@@ -821,8 +885,17 @@ for x in chunk:
                      else f"{t('ruler.free')} {TITLE_LIMIT - mx['title_len']}"),
     ) if mx["title_len"] else ""
 
-    fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
-               if pd.notna(r["fetched_at"]) else t("catalog.not_collected"))
+    # Дата одна не работает: «16.09 10:00» через четыре дня читается как
+    # «на днях». Рядом — возраст словами, и старше недели он выделен.
+    _age = age_days(r["fetched_at"])
+    if _age is None:
+        fetched = t("catalog.not_collected")
+    else:
+        _when = pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
+        _ago = (t("catalog.age_today") if _age == 0
+                else plural("catalog.age_ago", _age))
+        fetched = (f'{_when} · <span style="color:{WARN_TEXT if _age > 7 else MUTED};">'
+                   f'{_ago}</span>')
     short = (mx["title"][:130] + "…") if len(mx["title"]) > 130 else mx["title"]
 
     thumb = (
