@@ -224,6 +224,40 @@ check("и не осталось ссылок на несуществующий s
 check("правило про миграции переписано на фактическое",
       "migrations/" in db_src and "Databricks" in db_src)
 
+# --- 4. текст из ячейки: NaN — пустота, а не «nan» и не падение
+# `x or ""` выглядит защитой, но NaN истинный: `str(NaN or "")` печатает
+# «nan» в подписи sku_group, причине боли, областях методологии; срез
+# `(NaN or "")[:70]` падает с TypeError. Восемь таких чтений из строк
+# pandas заменены одним хелпером; грепом заперто, что они не вернутся.
+import re                                                  # noqa: E402
+from services.cells import cell_text                       # noqa: E402
+
+_row = pd.Series({"a": NAN, "b": None, "c": "", "d": "текст", "e": 17557000,
+                  "f": pd.NaT})
+check("cell_text: NaN — пусто", cell_text(_row, "a") == "")
+check("cell_text: None — пусто", cell_text(_row, "b") == "")
+check("cell_text: NaT — пусто", cell_text(_row, "f") == "")
+check("cell_text: пустая строка — пусто", cell_text(_row, "c") == "")
+check("cell_text: текст как есть", cell_text(_row, "d") == "текст")
+check("cell_text: число — строкой, без «.0»", cell_text(_row, "e") == "17557000")
+check("cell_text: нет колонки — default", cell_text(_row, "zzz", "—") == "—")
+check("cell_text: словарь тоже", cell_text({"a": None, "b": "x"}, "b") == "x")
+check("и нигде не даёт «nan»",
+      all(cell_text(_row, k) != "nan" for k in _row.index))
+
+# чтения из СТРОК pandas через `or ""`: r/src/a — так называются строки
+# в циклах iterrows на страницах. Словари из JSON (ScrapingDog, шаблоны)
+# сюда не попадают: там None, и `or ""` честен.
+_pat = re.compile(r'\b(r|src|a|row)(\.get\("[a-z_]+"\)|\["[a-z_]+"\]) or ""')
+_hits = [f"{p.name}:{i}" for p in sorted(ROOT.glob("pages/*.py"))
+         for i, ln in enumerate(p.read_text(encoding="utf-8").splitlines(), 1)
+         if _pat.search(ln) and "`" not in ln and not ln.strip().startswith("#")]
+check(f"чтений строки pandas через `or \"\"` не осталось ({_hits or '—'})",
+      not _hits)
+_uses = sum(p.read_text(encoding="utf-8").count("cell_text(")
+            for p in ROOT.glob("pages/*.py"))
+check(f"на замену пришёл cell_text ({_uses} мест)", _uses >= 9)
+
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
       else f"{len(FAILS)} провалов: {FAILS}")
