@@ -132,6 +132,38 @@ check("свёрнутая — словом, без возраста",
 check("и приглушённым цветом, не предупреждающим",
       f'color:{muted};">свёрнут' in c)
 
+# --- 3. выгрузка — ровно то, что на экране, в CSV и Excel
+# Число в подписи кнопок обязано совпадать с числом строк под фильтром:
+# файл «всего каталога» вместо отфильтрованного — тихая подмена.
+# Байты из download_button в AppTest не достать, поэтому сборщик XLSX
+# проверяется отдельно на том же кадре: файл открывается и в нём
+# колонки сбора, которые подписаны на карточках.
+_dl = {b.key: str(b.label) for b in at.get("download_button")}
+check("две кнопки выгрузки: CSV и Excel",
+      "cat-export-csv" in _dl and "cat-export-xlsx" in _dl)
+check(f"без фильтра — все 8 строк ({_dl.get('cat-export-csv')})",
+      _dl["cat-export-csv"].endswith("· 8") and _dl["cat-export-xlsx"].endswith("· 8"))
+at.multiselect[0].set_value(["it"]).run()
+_dl = {b.key: str(b.label) for b in at.get("download_button")}
+check(f"с фильтром IT — две строки в обоих ({_dl.get('cat-export-xlsx')})",
+      _dl["cat-export-csv"].endswith("· 2") and _dl["cat-export-xlsx"].endswith("· 2"))
+check("и сказано, что выгружается то, что на экране",
+      any("то, что на экране" in str(c.value) for c in at.caption))
+
+import io, re  # noqa: E402
+_src = (ROOT / "pages/catalog.py").read_text(encoding="utf-8")
+_fn = "def _xlsx_bytes" + _src.split("def _xlsx_bytes")[1].split("\n\n\n")[0]
+_ns = {"pd": pd}; exec(_fn, _ns)
+_frame = pd.DataFrame([{"asin": "B0X", "status": "wound_down", "tier": "weekly",
+                        "weekly_day": 3, "age_days": 20, "name": "Тест"}])
+_wb = pd.read_excel(io.BytesIO(_ns["_xlsx_bytes"](_frame)), sheet_name="catalog")
+check("XLSX открывается и держит колонки сбора и кириллицу",
+      list(_wb.columns) == ["asin", "status", "tier", "weekly_day", "age_days", "name"]
+      and _wb.iloc[0]["name"] == "Тест" and int(_wb.iloc[0]["weekly_day"]) == 3)
+check("в выгрузке есть колонки сбора",
+      all(f'"{c}":' in _src.split("exp = pd.DataFrame")[1].split("] for x in rows")[0]
+          for c in ("status", "tier", "weekly_day", "fetched_at", "age_days")))
+
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
       else f"{len(FAILS)} провалов: {FAILS}")

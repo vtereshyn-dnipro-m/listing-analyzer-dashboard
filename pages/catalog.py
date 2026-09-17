@@ -619,6 +619,12 @@ exp = pd.DataFrame([{
     "rating": x["mx"]["rating"], "price": x["mx"]["price"],
     "bsr": x["mx"]["bsr"][0] if x["mx"]["bsr"] else None,
     "in_stock": x["mx"]["in_stock"], "name": x["mx"]["title"],
+    # сбор: статус, график и возраст — ровно то, что подписано на карточке
+    "status": pair_status(x["r"]), "tier": pair_tier(x["r"]),
+    "weekly_day": pair_day(x["r"]),
+    "fetched_at": (pd.to_datetime(x["r"]["fetched_at"]).strftime("%Y-%m-%d %H:%M")
+                   if pd.notna(x["r"]["fetched_at"]) else None),
+    "age_days": age_days(x["r"]["fetched_at"]),
     "revenue_30d": (ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
                     ).get("revenue_30d"),
     "sessions_30d": (ECON.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
@@ -642,8 +648,43 @@ exp = pd.DataFrame([{
     "attrs_empty": (ATTRS.get((x["r"]["asin"], x["r"]["marketplace"])) or {}
                     ).get("attrs_empty"),
 } for x in rows])
-st.download_button(t("catalog.export"), exp.to_csv(index=False).encode("utf-8-sig"),
-                   file_name="catalog.csv", mime="text/csv")
+# Выгружается ТО, ЧТО НА ЭКРАНЕ: `rows` уже прошли фильтры рынка,
+# группы проблем, поиска и «только проблемные», и в файле ровно они —
+# в подписи кнопок стоит число строк, чтобы это было видно до нажатия.
+# Два формата: CSV — для скриптов и pandas, XLSX — для людей: Excel
+# открывает CSV с кириллицей и разделителями по-своему на каждой машине.
+def _xlsx_bytes(frame: pd.DataFrame) -> bytes:
+    import io
+    buf = io.BytesIO()
+    with pd.ExcelWriter(buf, engine="openpyxl") as xw:
+        frame.to_excel(xw, index=False, sheet_name="catalog")
+    return buf.getvalue()
+
+
+_stamp = pd.Timestamp.now(tz="Europe/Kyiv").strftime("%Y-%m-%d")
+_exp_key = "cat-export"
+st.markdown(
+    f'<style>.st-key-{_exp_key} div[data-testid="stHorizontalBlock"]'
+    '{gap:10px !important;align-items:center;flex-wrap:wrap;}'
+    f'.st-key-{_exp_key} div[data-testid="stColumn"]'
+    '{flex:0 0 auto !important;width:auto !important;min-width:0 !important;}'
+    f'.st-key-{_exp_key} div[data-testid="stColumn"]:last-child'
+    '{flex:1 1 auto !important;}'
+    f'.st-key-{_exp_key} .stDownloadButton button'
+    '{white-space:nowrap !important;width:auto !important;}</style>',
+    unsafe_allow_html=True)
+with st.container(key=_exp_key):
+    e1, e2, e3 = st.columns([1, 1, 4], gap="small", vertical_alignment="center")
+    e1.download_button(f'{t("catalog.export_csv")} · {len(exp)}',
+                       exp.to_csv(index=False).encode("utf-8-sig"),
+                       file_name=f"catalog-{_stamp}.csv", mime="text/csv",
+                       key="cat-export-csv")
+    e2.download_button(f'{t("catalog.export_xlsx")} · {len(exp)}',
+                       _xlsx_bytes(exp),
+                       file_name=f"catalog-{_stamp}.xlsx",
+                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                       key="cat-export-xlsx")
+    e3.caption(t("catalog.export_note"))
 
 # ---- пагинация
 pages = max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE)
