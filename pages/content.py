@@ -31,7 +31,7 @@ from i18n import t, plural
 from services import ai, figma, translate
 from services.cells import cell_text
 from services.localization import (
-    slide_of,
+    aplus_part, slide_of, slide_order,
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
     demo_layers, demo_products, export_payload, export_rows, fits, glossary,
     lang_gaps, load_layers, load_products, missing_plan,
@@ -191,6 +191,8 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
                     "source_checked": parsed.get("source_checked", 0),
                     "source_over": parsed.get("source_over", 0),
                     "aplus_frames": parsed.get("aplus_frames", 0),
+                    "aplus_orphans": parsed.get("aplus_orphans", []),
+                    "dupe_frames": parsed.get("dupe_frames", []),
                     "typo_frames": parsed.get("typo_frames", []),
                     "limited": bool(first_pass),
                 }
@@ -222,7 +224,25 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
         st.info("ℹ " + t("loc.first_pass_notice",
                          n=len(figma.FIRST_PASS_ASINS)))
     if rep.get("aplus_frames"):
-        st.caption(t("loc.aplus_skipped", n=int(rep["aplus_frames"])))
+        st.caption(t("loc.aplus_linked", n=int(rep["aplus_frames"])))
+    # модуль без подписи над ним ни к кому не привязан — и это надо
+    # назвать: иначе половина макетов молча выпадает из перевода
+    if rep.get("aplus_orphans"):
+        with st.expander(t("loc.aplus_orphans_n", n=len(rep["aplus_orphans"]))):
+            st.caption(t("loc.aplus_orphans_hint"))
+            for line in rep["aplus_orphans"][:20]:
+                st.markdown(f'<div class="ls-mono" style="font-size:12px;'
+                            f'color:{MUTED};">{line}</div>',
+                            unsafe_allow_html=True)
+    # два фрейма с одним именем на одной странице — один slot на два
+    # слоя: в базе остаётся последний, плагин на таком слоте откажется
+    if rep.get("dupe_frames"):
+        with st.expander(t("loc.dupes_n", n=len(rep["dupe_frames"]))):
+            st.caption(t("loc.dupes_hint"))
+            for line in rep["dupe_frames"][:20]:
+                st.markdown(f'<div class="ls-mono" style="font-size:12px;'
+                            f'color:{MUTED};">{line}</div>',
+                            unsafe_allow_html=True)
     # опечатки разобраны, но названы: чинить их надо в Figma,
     # а не держать поправку в коде вечно
     if rep.get("typo_frames"):
@@ -811,12 +831,30 @@ def _run_plan(pid: int, plan: dict) -> dict:
     return out
 
 
+def slide_title(name: str, part: pd.DataFrame) -> str:
+    """Заголовок блока: «PT01», а у модуля A+ — вариант, номер и имя
+    фрейма из Figma: «A+ десктоп 5 · carousel 3.1». Позиционное имя
+    «A+d05» дизайнеру ничего не говорит, настоящее имя — говорит."""
+    ap = aplus_part(name)
+    if ap is None:
+        return name
+    real = ""
+    if "frame_name" in part:
+        real = next((cell_text(r, "frame_name") for _, r in part.iterrows()
+                     if cell_text(r, "frame_name")), "")
+    var, num = ap
+    head = (t("loc.aplus_desktop", n=num) if var == "d"
+            else t("loc.aplus_mobile", n=num) if var == "m"
+            else t("loc.aplus_other"))
+    return f"{head} · {real}" if real else head
+
+
 def render_slides(layers: pd.DataFrame, row, pid: int, lang: str,
                   demo: bool) -> None:
     """Блок на слайд: заголовок, слева его превью, справа его строки."""
     slides = layers.assign(_slide=layers["slot"].map(slide_of)
                            if "slot" in layers else "")
-    order = sorted({s for s in slides["_slide"] if s})
+    order = sorted({s for s in slides["_slide"] if s}, key=slide_order)
     if not order:                       # демо и старые данные без slot
         pane_img, pane_txt = st.columns([1, 1.9], gap="medium")
         with pane_img:
@@ -830,7 +868,7 @@ def render_slides(layers: pd.DataFrame, row, pid: int, lang: str,
         # в заголовке — переводимые строки: служебные лежат внутри
         # свёрнутыми, и считать их работой значит завышать объём
         work_n = int((~part["source_text"].map(translate.is_boilerplate)).sum())
-        st.markdown(eyebrow(f'{name} · {t("loc.slide_rows", n=work_n)}'),
+        st.markdown(eyebrow(f'{slide_title(name, part)} · {t("loc.slide_rows", n=work_n)}'),
                     unsafe_allow_html=True)
         pane_img, pane_txt = st.columns([1, 1.9], gap="medium")
         with pane_img:

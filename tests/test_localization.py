@@ -267,13 +267,21 @@ check("галочка пробного захода есть и включена
 check("в подписи названо число товаров",
       _box is not None and "4" in str(_box.label))
 
-at.session_state["loc-sync-report"] = {"limited": True, "skipped_sections": [],
-                                       "skipped_pages": [], "aplus_frames": 564}
+at.session_state["loc-sync-report"] = {
+    "limited": True, "skipped_sections": [], "skipped_pages": [], "aplus_frames": 564,
+    "aplus_orphans": ["UK/US: carousel 7 @ (9000, 100)"],
+    "dupe_frames": ["UK/US: B0DG3T7VKM.PT04 ×2"]}
 at.run()
 check("после чтения сказано, что прочитан не весь файл",
       any("не весь файл" in str(i.value) for i in at.info))
-check("и сказано, сколько модулей A+ отложено",
-      any("A+ пропущено: 564" in str(c.value) for c in at.caption))
+check("и сказано, сколько модулей A+ привязано",
+      any("A+ привязано" in str(c.value) and "564" in str(c.value) for c in at.caption))
+# модуль без подписи и два фрейма с одним именем чинятся только в Figma —
+# на экране они названы, а не потеряны
+check("модуль A+ без подписи назван",
+      any("без подписи: 1" in str(e.label) for e in at.expander))
+check("повтор имени фрейма назван",
+      any("Повторов имён фреймов: 1" in str(e.label) for e in at.expander))
 at.session_state["loc-sync-report"] = {}
 
 # и главное — что галочка ДЕЙСТВУЕТ, а не украшает экран
@@ -491,6 +499,18 @@ check("слайда нет ни на одном языке — превью не
 check("имя слайда достаётся из места слоя",
       loc.slide_of("B0G4S9SJ3M.PT01#3") == "PT01"
       and loc.slide_of("B0G4S9SJ3M.MAIN#0") == "MAIN")
+# Модуль A+ — тоже слайд: имя позиционное («A+d05»), вариант d/m
+# значим, и uppercase его не должен трогать; на экране модули идут
+# ПОСЛЕ слайдов, а не по алфавиту впереди «MAIN»
+check("A+ слайд достаётся из места слоя без порчи варианта",
+      loc.slide_of("B0G4S9SJ3M.A+d05#1.0") == "A+d05"
+      and loc.slide_of("B0G4S9SJ3M.A+m12#0") == "A+m12")
+check("порядок: фото, слайды, A+ десктоп, A+ мобайл",
+      sorted(["A+m01", "PT02", "A+d10", "MAIN", "PT01", "A+d02"], key=loc.slide_order)
+      == ["MAIN", "PT01", "PT02", "A+d02", "A+d10", "A+m01"])
+check("узел модуля A+ находится по тому же ключу",
+      loc.preview_node({"lang_nodes": {"en": {"A+d05": "5:5"}}, "figma_node_id": "1:1"},
+                       "de", "A+d05") == ("5:5", "en"))
 check("прежний плоский формат не роняет экран",
       loc.preview_node({"lang_nodes": {"de": "9:9"},
                         "figma_node_id": "1:1"}, "de") == ("9:9", "de"))
@@ -637,6 +657,37 @@ SAVED.clear()
 at.text_input[0].set_value("Carga USB-C").run()
 check(f"правка по новому языку ушла в базу ({SAVED})",
       SAVED and SAVED[0][2] == "es" and SAVED[0][3] == "Carga USB-C")
+MODE["layers"] = None
+
+# --- 5г. модуль A+ в редакторе: свой блок ПОСЛЕ слайдов, с именем фрейма
+# «A+d05» дизайнеру ничего не говорит — заголовок называет вариант,
+# номер и настоящее имя модуля из Figma.
+MODE["layers"] = pd.concat([NO_TRANSLATION, pd.DataFrame([
+    dict(layer_id="1:22", slot="B0G4S9SJ3M.A+d01#0", frame_name="carousel 3.1",
+         lang="es", source_text="Two-year warranty", translated_text=float("nan"),
+         char_limit=30, status="none", edited_after_model=float("nan"))])],
+    ignore_index=True)
+st.cache_data.clear()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/content.py").run()
+at.session_state["loc-product"] = 7
+at.session_state["loc-lang"] = "es"
+at.run()
+_heads = [str(m.value) for m in at.markdown if "ls-eyebrow" in str(m.value)
+          and ("PT01" in str(m.value) or "A+" in str(m.value))]
+check("у модуля A+ свой блок с именем фрейма из Figma",
+      any("A+ десктоп 1" in h and "carousel 3.1" in h for h in _heads))
+check("и он идёт после слайда, а не перед ним",
+      [("A+" in h) for h in _heads] == [False, True])
+check("строка модуля переводится как остальные", len(at.text_input) == 3)
+# дальше проверки смотрят на экран без A+ — возвращаем его
+MODE["layers"] = NO_TRANSLATION
+st.cache_data.clear()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/content.py").run()
+at.session_state["loc-product"] = 7
+at.session_state["loc-lang"] = "es"
+at.run()
 MODE["layers"] = None
 
 # Тесты подделывают pd.read_sql, поэтому UI-проверка выше прошла бы

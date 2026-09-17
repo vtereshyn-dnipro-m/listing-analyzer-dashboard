@@ -19,6 +19,10 @@
 // даёт только TEXT с непустым текстом. Совпадение обхода с Python
 // проверяет tests/test_figma_plugin.py на одном дереве.
 //
+// Модули A+ («carousel …») ASIN в имени не несут — их slot синтетический
+// («B0G4S9SJ3M.A+d05#1.0»), см. attachAplus ниже: то же правило, что
+// в services/figma.py::attach_aplus, и тот же тест на равенство.
+//
 // Чего плагин НЕ делает: не трогает картинки, не меняет шрифт и кегль,
 // не создаёт слои (нет слоя — сообщает), не применяет молча (сначала
 // план, потом кнопка, потом отчёт с числами).
@@ -27,6 +31,92 @@
 var PAGE_LANG = { "UK/US": "en", "DE": "de", "ES": "es", "IT": "it", "FR": "fr" };
 // одна-две лишние буквы перед ASIN допускаются: в файле есть BB0GJMT58WT.MAIN
 var FRAME_RE = /^([A-Z]{0,2})(B0[A-Z0-9]{8})\.(.+)$/;
+// Модули A+: «carousel 2.2», ASIN в имени нет — привязка по подписям
+var APLUS_RE = /^carousel\b/i;
+var APLUS_LABEL_RE = /A\+|premium/i;
+var APLUS_WIDTH = { 2718: "d", 1398: "m" };
+var APLUS_ROW_STEP = 100;
+var ASIN_RE = /B0[A-Z0-9]{8}/;
+
+// ---- модули A+ — зеркало services/figma.py::attach_aplus
+//
+// У модуля нет ASIN в имени, и «carousel 3.1» есть у многих товаров.
+// Товар даёт ближайшая ПОДПИСЬ ВЫШЕ фрейма в той же полосе по X
+// (центр фрейма внутри ширины подписи). Подпись типа A+ — товар её;
+// подпись без типа — тоже, но только если фрейм лежит НИЖЕ слайдов
+// этого товара. Внутри (товар, вариант по ширине: d=2718, m=1398)
+// модули нумеруются по рядам сверху вниз, в ряду слева направо —
+// так получается имя фрейма для slot: «B0G4S9SJ3M.A+d05». Имена
+// самих модулей между языками расходятся (12 из 18 у одного товара),
+// позиция — нет. Правило одно на обе стороны и заперто тестом.
+function bbox(node) {
+  var b = node.absoluteBoundingBox || null;
+  return b ? [b.x, b.y, b.width, b.height] : [null, null, null, null];
+}
+// floor(x + 0.5), а не Math.round: у Python round банковский,
+// и ряд на границе сотни разошёлся бы с разбором.
+function halfUp(x) { return Math.floor(x + 0.5); }
+function aplusVariant(node) {
+  var w = halfUp(bbox(node)[2] || 0);
+  return APLUS_WIDTH[w] || ("x" + w);
+}
+function attachAplus(page) {
+  var nodes = page.children || [];
+  var labels = [], bottom = {};
+  for (var i = 0; i < nodes.length; i++) {
+    var n = nodes[i];
+    if (n.type === "TEXT") {
+      var txt = String(n.characters || n.name || "");
+      var hit = ASIN_RE.exec(txt);
+      if (hit) {
+        var lb = bbox(n);
+        labels.push({ asin: hit[0], aplus: APLUS_LABEL_RE.test(txt), x: lb[0], y: lb[1], w: lb[2] });
+      }
+    } else if (n.type === "FRAME") {
+      var m = FRAME_RE.exec(String(n.name || ""));
+      if (m) {
+        var fb = bbox(n);
+        if (fb[1] !== null && fb[3] !== null) {
+          var a = m[2];
+          var bot = fb[1] + fb[3];
+          if (!(a in bottom) || bot > bottom[a]) bottom[a] = bot;
+        }
+      }
+    }
+  }
+  var frames = [];
+  for (var j = 0; j < nodes.length; j++) {
+    if (nodes[j].type === "FRAME" && APLUS_RE.test(String(nodes[j].name || ""))) frames.push(nodes[j]);
+  }
+  // стабильная сортировка по (ряд, x) — как sort с ключом в Python
+  var keyed = frames.map(function (n, idx) {
+    var b = bbox(n);
+    return { n: n, row: halfUp((b[1] || 0) / APLUS_ROW_STEP), x: b[0] || 0, idx: idx };
+  });
+  keyed.sort(function (p, q) { return (p.row - q.row) || (p.x - q.x) || (p.idx - q.idx); });
+  var out = {}, per = {};
+  for (var k = 0; k < keyed.length; k++) {
+    var fr = keyed[k].n;
+    var b = bbox(fr);
+    if (b[0] === null || b[1] === null || b[2] === null) continue;
+    var cx = b[0] + b[2] / 2;
+    var best = null;
+    for (var t = 0; t < labels.length; t++) {
+      var L = labels[t];
+      if (L.y === null || L.x === null || L.w === null) continue;
+      if (!(L.y < b[1] && L.x <= cx && cx <= L.x + L.w)) continue;
+      if (best === null || L.y > best.y) best = L;   // первая из равных — как max() в Python
+    }
+    if (best === null) continue;
+    if (!best.aplus && (best.asin in bottom) && b[1] < bottom[best.asin]) continue;
+    var v = aplusVariant(fr);
+    var pk = best.asin + "|" + v;
+    per[pk] = (per[pk] || 0) + 1;
+    var num = per[pk] < 10 ? "0" + per[pk] : String(per[pk]);
+    out[String(fr.id)] = { asin: best.asin, synth: best.asin + ".A+" + v + num, real: String(fr.name || "") };
+  }
+  return out;
+}
 
 // Рекурсивный обход — зеркало _walk_text. Работает и с узлами
 // плагина, и с JSON REST API: у обоих `type`, `name`, `children`,
@@ -47,11 +137,18 @@ function walkText(node, out, frame, path) {
 function indexPage(page) {
   var bySlot = {};
   var frames = page.children || [];
+  var aplus = attachAplus(page);
   for (var i = 0; i < frames.length; i++) {
     var fr = frames[i];
     if (fr.type !== "FRAME") continue;          // подписи и прочее — мимо, как в Python
+    var frameName = String(fr.name || "");
+    if (APLUS_RE.test(frameName)) {
+      var hit = aplus[String(fr.id)];
+      if (!hit) continue;                       // модуль без подписи — сирота, как в Python
+      frameName = hit.synth;
+    }
     var found = [];
-    walkText(fr, found, String(fr.name || ""), []);
+    walkText(fr, found, frameName, []);
     for (var j = 0; j < found.length; j++) {
       var s = found[j].slot;
       (bySlot[s] = bySlot[s] || []).push(found[j]);
