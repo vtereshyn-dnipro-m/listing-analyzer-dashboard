@@ -29,6 +29,7 @@ import streamlit as st
 
 from i18n import t, plural
 from services import ai, figma, translate
+from services.cells import cell_text
 from services.localization import (
     slide_of,
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
@@ -110,7 +111,7 @@ def lang_chips(done: set) -> str:
 def product_row_html(r: pd.Series) -> str:
     done = set(r.get("langs_done") or ())
     edge = STATE_COLOR[product_state(done)]
-    sku = "" if pd.isna(r.get("sku")) else str(r.get("sku") or "")
+    sku = cell_text(r, "sku")
     return (
         f'<div class="ls-card" style="background:#fff;border:1px solid {BORDER};'
         f'border-left:3px solid {edge};border-radius:0 10px 10px 0;'
@@ -121,23 +122,11 @@ def product_row_html(r: pd.Series) -> str:
         f'{r.get("name") or "—"}</div>'
         f'<div class="ls-mono" style="font-size:11px;color:{MUTED};">'
         f'{r.get("asin")}{" · " + sku if sku else ""}'
-        f' · {r.get("section_type") or ""}</div></div>'
+        f' · {cell_text(r, "section_type")}</div></div>'
         f'<div style="flex:0 0 auto;">{lang_chips(done)}</div>'
         f'<div class="ls-mono" style="flex:0 0 auto;font-size:12px;'
         f'color:{MUTED};white-space:nowrap;">'
         f'{t("loc.layers_n", n=int(r.get("layers_count") or 0))}</div></div>')
-
-
-def cell_text(row, col: str) -> str:
-    """Значение ячейки строкой — с NaN вместо пустоты.
-
-    Правило 4 проекта: NaN в Python ИСТИННЫЙ, поэтому `x or ""`
-    возвращает не пустую строку, а сам NaN, и `.strip()` на нём падает
-    с AttributeError. Непереведённые строки приходят из LEFT JOIN
-    именно как NaN, а не как None, — на этом и упала страница.
-    """
-    val = row.get(col)
-    return "" if pd.isna(val) else str(val)
 
 
 def counter_html(n: int, lim: int | None, state: str) -> str:
@@ -389,7 +378,7 @@ def _bulk_export(view: pd.DataFrame, sel: set, demo: bool):
     if err:
         st.error("⚠ " + t("loc.load_failed", e=err))
         return {"file_key": None, "items": []}, 0, 0
-    file_key = str(view.iloc[0].get("figma_file_key") or "")
+    file_key = cell_text(view.iloc[0], "figma_file_key")
     payload = export_payload(file_key, rows_df)
     n_prod = rows_df["asin"].nunique() if not rows_df.empty else 0
     return payload, int(len(rows_df)), int(n_prod)

@@ -24,6 +24,7 @@ import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT, HIGHLIGHTS_LIMIT as _HL_DEFAULT
 from i18n import t, mp_label, current_lang
+from services.cells import cell_text
 from services.db import get_conn, cfg, get_engine
 from services.settings import get_setting, get_int
 from services.ai import (
@@ -786,8 +787,8 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
 
     for i, x in enumerate(items, 1):
         r = x["r"]
-        asin, mp, title = r["asin"], r["marketplace"], r["title"] or ""
-        _tick(i, asin, mp, str(r.get("sku_group") or ""))
+        asin, mp, title = r["asin"], r["marketplace"], cell_text(r, "title")
+        _tick(i, asin, mp, cell_text(r, "sku_group"))
         kw = build_keyword_table(asin, mp, title)
         # Пустая таблица фраз бывает по двум причинам, и они требуют
         # разного: «SQP по товару нет» — генерируем по методологии,

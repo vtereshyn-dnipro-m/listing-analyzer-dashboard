@@ -17,6 +17,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t, current_lang
+from services.cells import cell_text
 from services import cache
 from services.db import get_conn, cfg, get_engine, safe_read
 from services.settings import get_setting
@@ -533,7 +534,7 @@ for x in rows:
     r, imgs, apl = x["r"], x["imgs"], x["apl"]
     asin, mp = r["asin"], r["marketplace"]
     sku = r["sku_group"] if r["sku_group"] and r["sku_group"] != asin else ""
-    title = (r["title"] or "")[:70]
+    title = cell_text(r, "title")[:70]
     fetched = (pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
                if pd.notna(r["fetched_at"]) else t("catalog.not_collected"))
     thumb = (

@@ -17,6 +17,7 @@ import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT
 from i18n import t, plural
+from services.cells import cell_text
 from services.db import get_conn, get_engine, safe_read
 from services.settings import get_int, get_float
 from services.economics import (
@@ -915,7 +916,7 @@ for x in chunk:
     plate_html, edge, own_issues = ("", None, None)
     if not r["is_competitor"]:
         plate_html, edge, own_issues = issue_plate(
-            asin, mp, str(r["sku_group"] or ""))
+            asin, mp, cell_text(r, "sku_group"))
 
     # HTML одной строкой: у карточки может не быть линейки, значков или
     # плашки, и на переносах пустые участки превращаются в блок кода markdown.
@@ -943,7 +944,7 @@ for x in chunk:
     # не вставить), подписано ASIN'ом, чтобы не терялась связь в списке
     if own_issues:
         with st.expander(t("issue.details_title", asin=asin)):
-            issue_details(AIDX.get(asin) or [], str(r["sku_group"] or ""))
+            issue_details(AIDX.get(asin) or [], cell_text(r, "sku_group"))
 
 if pages > 1:
     st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)

@@ -13,6 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from i18n import t
+from services.cells import cell_text
 from services.db import get_conn, get_engine, safe_read, table_exists
 from services.settings import get_int, get_float, save_setting
 from components.ui import inject_fonts, eyebrow
@@ -265,7 +266,7 @@ else:
         chips = "".join(
             f"<span style='background:#F1EFE8;border-radius:6px;padding:1px 8px;"
             f"margin-left:4px;font-size:11px;'>{s.strip()}</span>"
-            for s in str(src.get("scopes") or "").split(",") if s.strip()
+            for s in cell_text(src, "scopes").split(",") if s.strip()
         )
 
         c_card, c_btn = st.columns([8, 1.4])
@@ -355,7 +356,7 @@ else:
         scopes_chips = "".join(
             f"<span style='background:#F1EFE8;border-radius:6px;padding:1px 8px;"
             f"margin-left:4px;font-size:11px;'>{s.strip()}</span>"
-            for s in str(a["affected_scopes"] or "").split(",") if s.strip())
+            for s in cell_text(a, "affected_scopes").split(",") if s.strip())
         detected = pd.to_datetime(a["detected_at"]).strftime("%d.%m.%Y")
         st.markdown(
             f'<div style="background:{_CARD};border:1px solid {_BORDER};'
