@@ -98,7 +98,7 @@ STUB = mk.PLACEHOLDER_IMG
 
 
 def page(path: str, mode_key: str | None = None):
-    at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
     at.switch_page(path).run()
     if mode_key:
         at.session_state[mode_key] = "table"

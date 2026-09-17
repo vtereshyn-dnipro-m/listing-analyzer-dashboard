@@ -352,10 +352,33 @@ def render_bulk_bar(view: pd.DataFrame, demo: bool) -> set:
         if sel and not rows and not n_exp:
             c_rest.caption(t("loc.bulk_nothing"))
 
+    render_copy_box(payload, "loc-bulk-copy", n_exp)
     if go:
         _bulk_translate(view, sel)
     _render_bulk_result()
     return sel
+
+
+def render_copy_box(payload: dict, key: str, n_rows: int) -> None:
+    """JSON для плагина — текстом, чтобы вставить из буфера.
+
+    Главное трение файла — не сам файл, а дорога: скачать, найти
+    в папке загрузок, загрузить в плагин. У `st.code` штатная иконка
+    «скопировать», а у плагина — поле для вставки; путь становится
+    «скопировал — вставил». Забор по сети пробовали и сняли:
+    приложение на Cloud закрыто авторизацией, и до маршрута плагин
+    не доходит. Файл остался вторым путём, для больших выгрузок.
+
+    Свёрнуто в expander: полотно JSON на триста строк под таблицей
+    не нужно никому, пока его не копируют.
+    """
+    if not n_rows:
+        return
+    with st.expander(t("loc.copy_json", n=plural("loc.rows_n", n_rows)),
+                     expanded=False):
+        st.caption(t("loc.copy_json_hint"))
+        st.code(json.dumps(payload, ensure_ascii=False, indent=2),
+                language="json", line_numbers=False, wrap_lines=False)
 
 
 def _bulk_export(view: pd.DataFrame, sel: set, demo: bool):
@@ -1012,19 +1035,21 @@ def render_actions(layers: pd.DataFrame, row, lang: str, demo: bool) -> None:
     # Запись в Figma через REST невозможна, поэтому «Применить» отдаёт
     # файл для плагина. Кнопка, которая ничего не делает и объясняет
     # почему, — хуже кнопки, которая делает половину дела.
+    single = {
+        "file_key": row.get("figma_file_key"),
+        "asin": row.get("asin"), "lang": lang,
+        "layers": [{"layer_id": lr["layer_id"],
+                    "slot": cell_text(lr, "slot"),
+                    "text": cell_text(lr, "translated_text")}
+                   for _, lr in layers.iterrows()
+                   if cell_text(lr, "translated_text").strip()],
+    }
     a3.download_button(
         t("loc.apply_figma"), key="loc-apply",
         file_name=f"figma-{row.get('asin')}-{lang}.json", mime="application/json",
-        data=json.dumps({
-            "file_key": row.get("figma_file_key"),
-            "asin": row.get("asin"), "lang": lang,
-            "layers": [{"layer_id": lr["layer_id"],
-                        "slot": cell_text(lr, "slot"),
-                        "text": cell_text(lr, "translated_text")}
-                       for _, lr in layers.iterrows()
-                       if cell_text(lr, "translated_text").strip()],
-        }, ensure_ascii=False, indent=2))
+        data=json.dumps(single, ensure_ascii=False, indent=2))
     st.caption(t("loc.apply_json_note"))
+    render_copy_box(single, "loc-copy", len(single["layers"]))
 
 
 def render_notes() -> None:

@@ -20,6 +20,7 @@ tests/test_localization.py — контроль длины перевода и �
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import re
 import sys
@@ -179,7 +180,7 @@ check("английский не делает товар переведённы�
 # --- 3. экран: демо объявлено, сбой назван сбоем
 def page():
     st.cache_data.clear()
-    at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+    at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
     at.switch_page("pages/content.py").run()
     return at
 
@@ -258,7 +259,7 @@ check("и в подписи названо число строк",
 # Четыре товара не должны выглядеть как весь файл: по такому списку
 # начнут считать объём работы — та же ошибка, что с демо-данными.
 st.cache_data.clear()
-at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/content.py").run()
 _box = next((c for c in at.checkbox if c.key == "loc-first-pass"), None)
 check("галочка пробного захода есть и включена",
@@ -284,7 +285,7 @@ fg_mod.parse_document = lambda doc, only_asins=None: (
     PARSED_WITH.append(only_asins) or _real_parse(doc, only_asins))
 
 st.cache_data.clear()
-at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/content.py").run()
 next(b for b in at.button if b.key == "loc-sync").click().run()
 check(f"с галочкой читаются только пробные товары ({PARSED_WITH})",
@@ -329,7 +330,7 @@ check("миниатюра мельче превью", fg.THUMB_SCALE < fg.IMAGE_
 
 # демо узла не имеет — рендер выдуманного был бы запросом в никуда
 st.cache_data.clear()
-at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/content.py").run()
 check("для демо-списка рендер не запрашивается", not CALLS)
 
@@ -344,7 +345,7 @@ check("и сказано, почему превью нет",
 MODE["real"] = True
 st.cache_data.clear()
 CALLS.clear()
-at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/content.py").run()
 check(f"в списке ровно одна картинка на товар ({CALLS})",
       CALLS == [("1:1", fg.THUMB_SCALE)])
@@ -380,8 +381,15 @@ _dl = next(b for b in at.get("download_button") if b.key == "loc-bulk-dl")
 check(f"выгрузка называет, сколько в ней ({_dl.label})",
       "3 строки" in str(_dl.label) and "1 товар" in str(_dl.label))
 # Содержимое файла из виджета не достать — байты уходят в медиа-
-# хранилище, в протоколе только ссылка. Проверяется сборщик, который
-# кнопка и зовёт, на той же фикстуре.
+# хранилище, в протоколе только ссылка. Зато рядом стоит блок
+# «Скопировать для плагина» — тот же JSON текстом, и его видно.
+# Он и есть основной путь: вставка из буфера вместо файла.
+_codes = [c for c in at.code if '"items"' in str(c.value)]
+check("рядом с выгрузкой — тот же JSON текстом для вставки в плагин",
+      len(_codes) == 1)
+_shown = json.loads(str(_codes[0].value)) if _codes else {}
+check("и он совпадает со сборщиком кнопки",
+      _shown == loc.export_payload("ZZJ9", EXPORT))
 _payload = loc.export_payload("ZZJ9", EXPORT)
 check("в файле ключ макета", _payload["file_key"] == "ZZJ9")
 check("один файл, позиции по (товар, язык)",
@@ -457,7 +465,7 @@ CALLS.clear()
 
 def page_editor():
     st.cache_data.clear()
-    a = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+    a = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
     a.switch_page("pages/content.py").run()
     a.session_state["loc-product"] = 7
     a.session_state["loc-lang"] = "es"
@@ -563,7 +571,7 @@ tr.run = fake_run
 
 MODE["real"] = True
 st.cache_data.clear()
-at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/content.py").run()
 at.session_state["loc-product"] = 7
 at.session_state["loc-lang"] = "es"
@@ -610,7 +618,7 @@ NO_TRANSLATION = REAL_LAYERS.assign(
 MODE["layers"] = NO_TRANSLATION
 
 st.cache_data.clear()
-at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/content.py").run()
 at.session_state["loc-product"] = 7
 at.session_state["loc-lang"] = "es"
@@ -853,7 +861,7 @@ check("успех виден числом строк и именем модел�
 MODE["layers"] = REAL_LAYERS.assign(
     edited_after_model=[True] * len(REAL_LAYERS))
 st.cache_data.clear()
-at = AppTest.from_file(str(ROOT / "main.py"), default_timeout=180).run()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/content.py").run()
 at.session_state["loc-product"] = 7
 at.session_state["loc-lang"] = "es"
