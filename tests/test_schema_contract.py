@@ -55,8 +55,10 @@ REF = re.compile(
     r"\b(?:FROM|JOIN|INSERT\s+INTO|UPDATE)\s+([a-zA-Z_][a-zA-Z0-9_]*)", re.I)
 # CTE объявляется единственным способом — «имя AS (»; алиасы так не пишутся
 CTE = re.compile(r"([a-zA-Z_][a-zA-Z0-9_]*)\s+AS\s*\(", re.I)
-# слова, которые синтаксически стоят на месте имени таблицы
-NOT_A_TABLE = {"lateral", "select", "only", "set"}
+# слова, которые синтаксически стоят на месте имени таблицы; и системные
+# каталоги Postgres — они есть в любой базе, к схеме listing_data не
+# относятся, и по ним код узнаёт, применена ли миграция (missing_columns)
+NOT_A_TABLE = {"lateral", "select", "only", "set", "information_schema", "pg_catalog"}
 
 
 def tables_in_code() -> dict[str, set[str]]:

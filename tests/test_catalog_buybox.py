@@ -88,10 +88,20 @@ CAT = pd.DataFrame([
 ])
 
 
+SCHEMA = {"applied": True}     # применена ли миграция на четыре колонки
+
+
 def fake_sql(sql, conn=None, **kw):
     q = str(sql)
+    if "information_schema.columns" in q:
+        cols = ["buy_box_owner", "buy_box_seller", "bsr_rank", "bsr_category"]
+        return pd.DataFrame({"column_name": cols if SCHEMA["applied"] else []})
     if "FROM product_matrix m" in q and "is_amazon_choice" in q:
-        return CAT.copy()
+        # без миграции колонок в ответе базы НЕТ — как в жизни
+        if not SCHEMA["applied"] and "s.buy_box_owner" in q:
+            raise RuntimeError('column "buy_box_owner" does not exist')
+        return CAT.copy() if SCHEMA["applied"] else CAT.drop(
+            columns=["buy_box_owner", "buy_box_seller", "bsr_rank", "bsr_category"])
     return pd.DataFrame()
 
 
@@ -123,6 +133,27 @@ check("чужой — с именем продавца", (chip_text(card("B0NEWO
 check("старый снапшот: BSR разобран из raw мимо ловушки ключа",
       "#24 · Pulverizadores" in card("B0OLDOWN"))
 check("новый снапшот: BSR из колонки", "#7 · Taladros" in card("B0NEWAMZ"))
+
+check("миграция применена — плашки про схему нет",
+      not any("Схема отстала" in str(w.value) for w in at.warning))
+
+# --- 2б. схема ОТСТАЛА от кода: страница живёт, а не падает
+# Код в main приезжает на Cloud раньше, чем .sql в Databricks. 18.09
+# Каталог лёг целиком: «column buy_box_owner does not exist». Теперь
+# без колонок страница читает raw и называет миграцию.
+SCHEMA["applied"] = False
+import streamlit as st                                 # noqa: E402
+st.cache_data.clear()
+at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
+at.switch_page("pages/catalog.py").run()
+check("без колонок страница отрисована, не «не удалось прочитать»",
+      not at.exception and not any("не удалось прочитать" in str(e.value).lower() for e in at.error))
+check("и названы колонки и файл миграции",
+      any("buy_box_owner" in str(w.value) and "2026-09-18_snapshots_buybox_bsr.sql" in str(w.value)
+          for w in at.warning))
+check("Buy Box при этом читается из raw", chip_text(card("B0OLDOWN"), "Buy Box") == "наш")
+check("и BSR тоже", "#24 · Pulverizadores" in card("B0OLDOWN"))
+SCHEMA["applied"] = True
 
 # --- 3. правила Диагноза из Buy Box не растут — намеренно
 src = (ROOT / "pages/catalog.py").read_text(encoding="utf-8")
