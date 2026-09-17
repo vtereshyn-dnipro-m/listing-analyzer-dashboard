@@ -238,6 +238,28 @@ def table_exists(name: str) -> bool | None:
 
 # ---------------------------------------------------------------- матрица
 
+def missing_columns(table: str, columns: list[str]) -> list[str] | None:
+    """Какие из колонок в таблице ЕЩЁ нет. None — судить не по чему.
+
+    Нужно там, где код и миграция едут порознь: код в main оказывается
+    на Cloud раньше, чем .sql — в Databricks, и страница, читающая
+    новую колонку, падает целиком с «column does not exist». Так
+    18.09 умер Каталог на четырёх колонках Buy Box и BSR. Страница
+    обязана работать со старой схемой и сказать словами, какой
+    миграции не хватает — а не лежать до её применения.
+    """
+    df, err = safe_read(
+        """
+        SELECT column_name FROM information_schema.columns
+        WHERE table_schema = %(s)s AND table_name = %(t)s
+          AND column_name = ANY(%(c)s)
+        """, {"s": DB_SCHEMA, "t": table, "c": list(columns)})
+    if err:
+        return None
+    have = set(df["column_name"]) if not df.empty else set()
+    return [c for c in columns if c not in have]
+
+
 def add_matrix_rows(conn, rows: list[tuple[str, str, str, bool]]) -> int:
     """rows: (sku_group, asin, marketplace, is_competitor). Идемпотентно."""
     if not rows:

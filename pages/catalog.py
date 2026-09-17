@@ -21,7 +21,7 @@ from services import collector
 from services.bsr import parse_bsr
 from services.buybox import buy_box_of, OWN, AMAZON, OTHER, NONE
 from services.cells import cell_text
-from services.db import get_conn, get_engine, safe_read
+from services.db import get_conn, get_engine, missing_columns, safe_read
 from services.settings import get_int, get_float
 from services.economics import (
     econ_map, fmt_money, fmt_conversion, money_at_risk, num, risk_coef,
@@ -76,23 +76,31 @@ def load_catalog() -> tuple[pd.DataFrame, str | None]:
     указанием завести заново почти тысячу товаров, которые в базе
     лежат — поэтому причина возвращается отдельно.
     """
-    return safe_read(
-            """
+    # Колонки сборщика (Buy Box, BSR) читаются, только если миграция
+    # 2026-09-18 уже применена. Код в main приезжает на Cloud раньше,
+    # чем .sql в Databricks, и жёсткий SELECT ронял Каталог целиком:
+    # «column buy_box_owner does not exist». Без колонок страница
+    # работает по raw и говорит, какой миграции не хватает.
+    cols = ["buy_box_owner", "buy_box_seller", "bsr_rank", "bsr_category"]
+    missing = missing_columns("listing_snapshots", cols)
+    have = [c for c in cols if not missing or c not in missing]
+    extra = "".join(f", s.{c}" for c in have)
+    extra_inner = "".join(f", {c}" for c in have)
+    df, err = safe_read(
+            f"""
             SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor,
                    m.status, m.collection_tier,
                    COALESCE(m.weekly_day,
                             MOD(ABS(HASHTEXT(m.asin || m.marketplace)), 7)) AS weekly_day,
                    s.fetched_at, s.ok, s.title, s.in_stock, s.review_count,
-                   s.is_amazon_choice, s.raw,
-                   s.buy_box_owner, s.buy_box_seller, s.bsr_rank, s.bsr_category,
+                   s.is_amazon_choice, s.raw{extra},
                    ll.has_aplus
             FROM product_matrix m
             LEFT JOIN listing_latest ll
                    ON ll.asin = m.asin AND ll.marketplace = m.marketplace
             LEFT JOIN LATERAL (
                 SELECT fetched_at, ok, title, in_stock, review_count,
-                       is_amazon_choice, raw,
-                       buy_box_owner, buy_box_seller, bsr_rank, bsr_category
+                       is_amazon_choice, raw{extra_inner}
                 FROM listing_snapshots s
                 WHERE s.asin = m.asin AND s.marketplace = m.marketplace
                   AND s.ok = TRUE
@@ -100,6 +108,12 @@ def load_catalog() -> tuple[pd.DataFrame, str | None]:
             ) s ON TRUE
             ORDER BY m.is_competitor, m.sku_group, m.asin
             """)
+    if err is None and not df.empty:
+        for c in cols:
+            if c not in df.columns:
+                df[c] = None
+    df.attrs["missing_columns"] = missing or []
+    return df, err
 
 
 def _raw(v) -> dict:
@@ -261,6 +275,11 @@ if catalog_error:
 if df.empty:
     st.caption(t("common.no_data"))
     st.stop()
+if df.attrs.get("missing_columns"):
+    # схема отстала от кода: Buy Box и BSR идут из raw, а не из колонок
+    st.warning("⚠ " + t("catalog.schema_behind",
+                        cols=", ".join(df.attrs["missing_columns"]),
+                        file="migrations/2026-09-18_snapshots_buybox_bsr.sql"))
 
 
 def age_days(ts) -> int | None:
