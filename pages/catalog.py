@@ -76,6 +76,9 @@ def load_catalog() -> tuple[pd.DataFrame, str | None]:
     return safe_read(
             """
             SELECT m.sku_group, m.asin, m.marketplace, m.is_competitor,
+                   m.status, m.collection_tier,
+                   COALESCE(m.weekly_day,
+                            MOD(ABS(HASHTEXT(m.asin || m.marketplace)), 7)) AS weekly_day,
                    s.fetched_at, s.ok, s.title, s.in_stock, s.review_count,
                    s.is_amazon_choice, s.raw,
                    ll.has_aplus
@@ -261,29 +264,91 @@ def age_days(ts) -> int | None:
     return int((pd.Timestamp.now("UTC") - pd.to_datetime(ts, utc=True)).days)
 
 
-def market_freshness(cat: pd.DataFrame) -> list[dict]:
-    """Возраст данных по каждому рынку — по последнему УДАЧНОМУ снапшоту пары.
+# Как job собирает пары — проверено по его ноутбуку 17.09 («Listing
+# Suite Auto Collector», 13:00 Kyiv). Ярус `daily` — пары с заказами
+# за 30 дней, собираются каждый прогон; `weekly` — остальное, день
+# недели закреплён хэшем asin||marketplace (0 = понедельник). Свёрнутые
+# (`status = 'wound_down'`) не собираются вовсе — это не отставание,
+# а решение, и подписывать их надо словом, не возрастом. Пара, ещё не
+# собранная ни разу, ждёт свой день: до семи дней по замыслу, а не
+# «не собиралась».
+WOUND = "wound_down"
+STALE_AFTER = {"daily": 2, "weekly": 7}     # дней, после которых пара ОТСТАЁТ
 
-    Сбор идёт по кругу: ежедневный прогон в 13:00 Kyiv берёт около
-    270 пар из тысячи, и каждая пара обновляется примерно раз в неделю
-    (проверено 17.09: по возрасту пары раскладываются ровно на семь
-    дневных корзин). Поэтому «последний прогон 16.09» у рынка ничего
-    не говорит о карточке: её собственный снапшот может быть недельной
-    давности, и цифры на нём — тоже. Здесь считается не дата прогона,
-    а сколько пар рынка старше недели и сколько не собирались вовсе:
-    именно это и есть «данным можно верить или нет».
+
+def pair_status(row) -> str:
+    return cell_text(row, "status") or "active"
+
+
+def pair_tier(row) -> str:
+    return "daily" if cell_text(row, "collection_tier") == "daily" else "weekly"
+
+
+def pair_day(row) -> int | None:
+    v = row.get("weekly_day")
+    return None if pd.isna(v) else int(v)
+
+
+def is_stale(row, age: int | None) -> bool:
+    """Отстаёт от СВОЕГО графика: ежедневная — больше двух дней, недельная —
+    больше семи. Свёрнутая не отстаёт никогда."""
+    if age is None or pair_status(row) == WOUND:
+        return False
+    return age > STALE_AFTER[pair_tier(row)]
+
+
+def cadence_text(row) -> str:
+    """«обновляется ежедневно» / «по четвергам»."""
+    if pair_tier(row) == "daily":
+        return t("catalog.tier_daily")
+    d = pair_day(row)
+    return t(f"day.on.{d}") if d is not None else t("catalog.tier_weekly_unknown")
+
+
+def collect_text(row) -> str:
+    """Подпись сбора на карточке: дата, возраст, график — или статус словом."""
+    age = age_days(row.get("fetched_at"))
+    if pair_status(row) == WOUND:
+        when = ("" if age is None else " · " + t("catalog.last_collect",
+                date=pd.to_datetime(row["fetched_at"]).strftime("%d.%m")))
+        return f'<span style="color:{MUTED};">{t("catalog.wound_down")}{when}</span>'
+    if age is None:
+        if pair_tier(row) == "daily":
+            return t("catalog.first_collect_daily")
+        d = pair_day(row)
+        return (t("catalog.first_collect", day=t(f"day.in.{d}")) if d is not None
+                else t("catalog.first_collect_soon"))
+    when = pd.to_datetime(row["fetched_at"]).strftime("%d.%m %H:%M")
+    ago = t("catalog.age_today") if age == 0 else plural("catalog.age_ago", age)
+    col = WARN_TEXT if is_stale(row, age) else MUTED
+    return f'{when} · <span style="color:{col};">{ago}</span> · {cadence_text(row)}'
+
+
+def market_freshness(cat: pd.DataFrame) -> list[dict]:
+    """Возраст данных по рынку — по ПРАВИЛАМ сбора, а не по календарю.
+
+    Считаются не «старше недели», а ОТСТАЮЩИЕ от своего графика:
+    ежедневная пара старше двух дней, недельная старше семи. Свёрнутые
+    исключены из отставания и названы отдельно — они не отстают, их
+    не собирают. Не собранные ни разу — «ждут первого сбора», а не
+    «не собирались»: у новой пары слот наступает в течение недели.
     """
     out = []
     for mp, g in cat.groupby("marketplace", sort=True):
-        ages = g["fetched_at"].map(age_days)
+        wound = g[g.apply(pair_status, axis=1) == WOUND]
+        live = g.drop(wound.index)
+        ages = live["fetched_at"].map(age_days)
         have = ages.dropna()
+        stale_rows = [r for _, r in live.iterrows() if is_stale(r, age_days(r.get("fetched_at")))]
         out.append({
             "mp": str(mp), "pairs": int(len(g)),
-            "never": int(ages.isna().sum()),
-            "stale": int((have > 7).sum()),
+            "wound": int(len(wound)),
+            "waiting": int(ages.isna().sum()),
+            "stale": len(stale_rows),
             "median": int(have.median()) if len(have) else None,
-            "oldest": int(have.max()) if len(have) else None,
-            "last": (pd.to_datetime(g["fetched_at"], utc=True).max()
+            "oldest": (max(age_days(r.get("fetched_at")) for r in stale_rows)
+                       if stale_rows else None),
+            "last": (pd.to_datetime(live["fetched_at"], utc=True).max()
                      if len(have) else None),
         })
     return out
@@ -293,20 +358,21 @@ def freshness_html(rows: list[dict]) -> str:
     """Чипы по рынкам: одна строка HTML (правило 1)."""
     chips = []
     for r in rows:
-        bad = r["never"] or r["stale"]
-        col = ACCENT if r["never"] else (WARN_TEXT if r["stale"] else OK_TEXT)
+        col = WARN_TEXT if r["stale"] else OK_TEXT
         med = (t("catalog.age_median", n=r["median"]) if r["median"] is not None
-               else t("catalog.not_collected"))
+               else t("catalog.age_waiting_all"))
         parts = [med]
         if r["stale"]:
             parts.append(t("catalog.age_stale", n=r["stale"], days=r["oldest"]))
-        if r["never"]:
-            parts.append(t("catalog.age_never", n=r["never"]))
+        if r["waiting"]:
+            parts.append(t("catalog.age_waiting", n=r["waiting"]))
+        tail = (f' · <span style="color:{MUTED};">{t("catalog.age_wound", n=r["wound"])}</span>'
+                if r["wound"] else "")
         chips.append(
             f'<span style="display:inline-block;margin:0 8px 6px 0;padding:4px 10px;'
             f'border:1px solid {BORDER};border-radius:8px;font-size:12px;">'
             f'<b style="font-family:{MONO};">{r["mp"].upper()}</b> · {r["pairs"]} · '
-            f'<span style="color:{col};">{" · ".join(parts)}</span></span>')
+            f'<span style="color:{col};">{" · ".join(parts)}</span>{tail}</span>')
     return "<div>" + "".join(chips) + "</div>"
 
 
@@ -886,17 +952,7 @@ for x in chunk:
                      else f"{t('ruler.free')} {TITLE_LIMIT - mx['title_len']}"),
     ) if mx["title_len"] else ""
 
-    # Дата одна не работает: «16.09 10:00» через четыре дня читается как
-    # «на днях». Рядом — возраст словами, и старше недели он выделен.
-    _age = age_days(r["fetched_at"])
-    if _age is None:
-        fetched = t("catalog.not_collected")
-    else:
-        _when = pd.to_datetime(r["fetched_at"]).strftime("%d.%m %H:%M")
-        _ago = (t("catalog.age_today") if _age == 0
-                else plural("catalog.age_ago", _age))
-        fetched = (f'{_when} · <span style="color:{WARN_TEXT if _age > 7 else MUTED};">'
-                   f'{_ago}</span>')
+    fetched = collect_text(r)
     short = (mx["title"][:130] + "…") if len(mx["title"]) > 130 else mx["title"]
 
     thumb = (
