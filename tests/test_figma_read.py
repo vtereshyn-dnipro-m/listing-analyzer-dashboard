@@ -87,16 +87,33 @@ DOC = {"document": {"children": [
                       300, 66, 18, 22)]},
         {"id": "1:12", "type": "FRAME", "name": "B0DG2Y9MSS.PT01", "children": [
             text_node("1:13", "t", "Tapered Nozzle", 220, 24, 20)]},
-        # A+ отложен: ASIN в имени нет, «carousel 2.2» есть у многих
+        # A+ без подписи рядом (нет координат — ни одна подпись не «выше»):
+        # сирота, идёт в отчёт, а не к первому попавшемуся товару
         {"id": "1:9", "type": "FRAME", "name": "carousel 2.2", "children": [
             text_node("1:10", "t", "Two-year warranty", 220, 20, 16)]},
         {"id": "1:11", "type": "FRAME", "name": "Random frame", "children": []},
+        # A+ с подписью типа A+ над ним: привязан к B0G4S9SJ3M, имя модуля
+        # («carousel 3.1») человеку, slot — по позиции («A+d01»)
+        {"id": "1:20", "type": "TEXT", "name": "label",
+         "characters": "A+ Premium Content_B0G4S9SJ3M",
+         "absoluteBoundingBox": {"x": 0, "y": 5000, "width": 3000, "height": 40}},
+        {"id": "1:21", "type": "FRAME", "name": "carousel 3.1",
+         "absoluteBoundingBox": {"x": 0, "y": 5100, "width": 2718, "height": 600},
+         "children": [text_node("1:22", "t", "Two-year warranty", 220, 20, 16)]},
     ]},
     {"name": "ES", "children": [
         {"id": "2:1", "type": "FRAME", "name": "B0G4S9SJ3M.PT01", "children": [
             {"id": "2:3", "type": "FRAME", "name": "Frame 35841", "children": [
                 {"id": "2:4", "type": "FRAME", "name": "Frame 1614", "children": [
-                    text_node("2:2", "title", "Carga USB-C", 220, 24, 20)]}]}]}]},
+                    text_node("2:2", "title", "Carga USB-C", 220, 24, 20)]}]}]},
+        # тот же модуль на ES назван ИНАЧЕ («carousel 1») — связь по позиции
+        {"id": "2:20", "type": "TEXT", "name": "label",
+         "characters": "A+ Premium Content_B0G4S9SJ3M",
+         "absoluteBoundingBox": {"x": 0, "y": 5000, "width": 3000, "height": 40}},
+        {"id": "2:21", "type": "FRAME", "name": "carousel 1",
+         "absoluteBoundingBox": {"x": 0, "y": 5100, "width": 2718, "height": 600},
+         "children": [text_node("2:22", "t", "Dos años de garantía", 220, 20, 16)]},
+    ]},
     {"name": "Gazi", "children": [{"id": "9:1", "name": "чужое", "children": []}]},
     {"name": "UK/US (OLD)", "children": []},
 ]}}
@@ -137,10 +154,17 @@ check("SKU и название подставлены из подписи",
 check("товар с подписью другого формата тоже нашёлся",
       _by_asin["B0DG2Y9MSS"]["sku"] == "41500000")
 
-# A+ отложен целиком и попадает в отчёт ЧИСЛОМ, а не молча
-check("модули A+ в слои не попали",
+# A+: товар даёт ПОДПИСЬ выше по холсту, а не имя фрейма (его нет).
+# Модуль без подписи — сирота в отчёте, не чей-то; модуль с подписью —
+# слои товара с синтетическим slot, настоящее имя остаётся человеку.
+check("A+ без подписи в слои не попал",
       not any(l["layer_id"] == "1:10" for p in R["products"] for l in p["layers"]))
-check(f"и они посчитаны ({R['aplus_frames']})", R["aplus_frames"] == 1)
+check(f"и назван сиротой ({R['aplus_orphans']})",
+      len(R["aplus_orphans"]) == 1 and "carousel 2.2" in R["aplus_orphans"][0])
+_ap = [l for p in R["products"] for l in p["layers"] if l["layer_id"] == "1:22"]
+check("A+ с подписью привязан к её товару под позиционным slot",
+      _ap and _ap[0]["slot"] == "B0G4S9SJ3M.A+d01#0" and _ap[0]["frame_name"] == "carousel 3.1")
+check(f"привязанные посчитаны ({R['aplus_frames']}), сироты — отдельно", R["aplus_frames"] == 2)
 
 # --- slot: то, чем строки разных языков связываются между собой
 _stapler = _by_asin["B0G4S9SJ3M"]
@@ -207,7 +231,7 @@ check(f"многострочный вмещает кратно больше ({_t
       _three == _one * 3)
 
 # --- самопроверка коэффициента
-check("исходные английские строки посчитаны", R["source_checked"] == 3)
+check("исходные английские строки посчитаны (с A+)", R["source_checked"] == 4)
 check("на нормальной ширине английский влезает в свой предел",
       R["source_over"] == 0)
 

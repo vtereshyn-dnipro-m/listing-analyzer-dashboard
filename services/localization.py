@@ -555,15 +555,55 @@ def glossary(lang: str, limit: int = 60) -> tuple[pd.DataFrame, str | None]:
         params={"src": SOURCE_LANG, "dst": lang, "lim": int(limit)})
 
 
+APLUS_PART = "A+"
+
+
+def norm_part(part: str) -> str:
+    """«pt01» → «PT01», но «A+d05» остаётся: d/m — вариант модуля."""
+    part = str(part or "")
+    return part if part.startswith(APLUS_PART) else part.upper()
+
+
 def slide_of(slot: str) -> str:
     """Имя слайда из места слоя: «B0G4S9SJ3M.PT01#3» → «PT01».
 
     Текст живёт в слайдах, а не в главном фото: у стаплера девять
     слайдов и на каждом свой текст. Группировка по слайду — это то,
-    как карточку видит дизайнер.
+    как карточку видит дизайнер. Модуль A+ — тоже «слайд»:
+    «B0G4S9SJ3M.A+d05#1.0» → «A+d05» (позиционное имя, см. figma.py).
     """
     head = str(slot or "").split("#", 1)[0]
-    return head.rsplit(".", 1)[-1].upper() if "." in head else ""
+    return norm_part(head.rsplit(".", 1)[-1]) if "." in head else ""
+
+
+def slide_order(name: str) -> tuple:
+    """Порядок слайдов на экране: фото, слайды, A+ десктоп, A+ мобайл.
+
+    Алфавит поставил бы «A+…» раньше «MAIN» — модули впереди карточки,
+    а дизайнер видит их внизу, под слайдами.
+    """
+    name = str(name or "")
+    if name == "MAIN":
+        return (0, name)
+    if not name.startswith(APLUS_PART):
+        return (1, name)
+    var = name[len(APLUS_PART):len(APLUS_PART) + 1]
+    return (2 if var == "d" else 3 if var == "m" else 4, name)
+
+
+def aplus_part(name: str) -> tuple[str, int | None] | None:
+    """«A+d05» → («d», 5), «A+m12» → («m», 12); не A+ — None.
+
+    Иная ширина («A+x200001») — («x», None): номер от ширины
+    не отделить, и на экране такой модуль зовётся по имени фрейма.
+    """
+    name = str(name or "")
+    if not name.startswith(APLUS_PART):
+        return None
+    tail = name[len(APLUS_PART):]
+    if tail[:1] in ("d", "m") and tail[1:].isdigit():
+        return (tail[:1], int(tail[1:]))
+    return ("x", None)
 
 
 def lang_nodes_of(row) -> dict:
@@ -603,7 +643,7 @@ def preview_node(row, lang: str, part: str = "MAIN") -> tuple[str, str]:
     потому что немецкой нет» выглядят одинаково.
     """
     nodes = lang_nodes_of(row)
-    part = (part or "MAIN").upper()
+    part = norm_part(part or "MAIN")
     own = (nodes.get(lang) or {}).get(part)
     if own:
         return str(own), lang

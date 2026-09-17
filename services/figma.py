@@ -21,6 +21,7 @@ Figma REST API умеет ТОЛЬКО читать. Запись текста �
 """
 from __future__ import annotations
 
+import math
 import re
 import time
 
@@ -82,6 +83,105 @@ FRAME_RE = re.compile(r"^(?P<junk>[A-Z]{0,2})(?P<asin>B0[A-Z0-9]{8})\.(?P<part>.
 # разошлась с именами там, где ответ известен (114 расхождений из 212).
 # Поэтому A+ отложены целиком и попадают в отчёт числом, а не молча.
 APLUS_RE = re.compile(r"^carousel\b", re.I)
+
+# A+ модули: «carousel 3.1» — модуль 3, слайд 1. ASIN в имени нет, одно
+# имя у многих товаров, и у каждого модуля ДВА фрейма с одним именем —
+# desktop 2718×1114 и mobile 1398×1048 (по 180 тех и других на UK/US).
+#
+# ПРИВЯЗКА К ТОВАРУ — по ПОДПИСЯМ, не по геометрии между фреймами:
+# холст размечен полосами «подпись → её фреймы → следующая подпись»,
+# и над блоком A+ стоит своя подпись «A+ Premium Content_<ASIN> …»
+# (где её нет — одна подпись без типа на оба блока товара). Разведка
+# 18.09 по живому файлу: 564 фрейма на четырёх страницах, все 564
+# легли по этому правилу, ноль потерянных. Предыдущая попытка — по
+# ближайшему фрейму товара — расходилась в 114 случаях из 212.
+#
+# КЛЮЧ МЕЖДУ ЯЗЫКАМИ — ПОРЯДОК ПО ПОЛОЖЕНИЮ, не имя. Имена модулей
+# на языковых страницах плывут: у B0G4S9SJ3M на UK/US «carousel 26…31»,
+# на DE те же места — «carousel 1, 4…8»; по именам совпадают 12 из 18,
+# по позиции (сверху вниз, слева направо, внутри варианта) — 18 из 18,
+# у B0H26WGJFS 2 против 10. Отсюда синтетическое имя фрейма для slot:
+# «B0G4S9SJ3M.A+d05» — ASIN, вариант (d/m; иная ширина → x<ширина>),
+# порядковый номер внутри варианта. Настоящее имя («carousel 3.1»)
+# остаётся в frame_name — для человека. Файл дизайнера не трогается;
+# плагин применяет то же правило (code.js, attachAplus), и тест
+# требует равенства с этим кодом на одном дереве.
+APLUS_WIDTH = {2718: "d", 1398: "m"}
+APLUS_LABEL_RE = re.compile(r"A\+|premium", re.I)
+APLUS_ROW_STEP = 100      # y округляется до сотен: фреймы одного ряда ±30 px
+
+
+def _bbox(node: dict) -> tuple:
+    b = node.get("absoluteBoundingBox") or {}
+    return (b.get("x"), b.get("y"), b.get("width"), b.get("height"))
+
+
+def _half_up(x: float) -> int:
+    # Не round(): у Python он банковский (2.5 → 2), у JavaScript
+    # Math.round — вверх (2.5 → 3). Ряд на границе сотни разошёлся бы
+    # между плагином и разбором; floor(x + 0.5) одинаков у обоих.
+    return math.floor(x + 0.5)
+
+
+def aplus_variant(node: dict) -> str:
+    w = _half_up(_bbox(node)[2] or 0)
+    return APLUS_WIDTH.get(w, f"x{w}")
+
+
+def attach_aplus(page_nodes: list) -> dict:
+    """{id узла A+ → (asin, синтетическое имя, настоящее имя)}.
+
+    Правило привязки: ближайшая ПОДПИСЬ ВЫШЕ фрейма в той же полосе
+    по X (центр фрейма внутри ширины подписи). Подпись типа A+ — товар
+    её. Подпись без типа или «Main Images» — тоже её товар, но только
+    если фрейм лежит НИЖЕ слайдов этого товара: иначе это чужой блок
+    над ней. Фрейм без подписи не привязывается и уходит в отчёт.
+
+    Порядок внутри (товар, вариант): по рядам сверху вниз (y до сотен),
+    в ряду слева направо. Тот же порядок обязан дать плагин.
+    """
+    labels: list = []
+    bottom: dict = {}
+    for n in page_nodes:
+        t = n.get("type")
+        if t == "TEXT":
+            txt = n.get("characters") or n.get("name") or ""
+            got = parse_label(txt)
+            if got:
+                x, y, w, _ = _bbox(n)
+                labels.append((got["asin"], bool(APLUS_LABEL_RE.search(txt)), x, y, w))
+        elif t == "FRAME":
+            m = FRAME_RE.match(str(n.get("name") or ""))
+            if m:
+                x, y, w, h = _bbox(n)
+                if y is not None and h is not None:
+                    a = m.group("asin")
+                    bottom[a] = max(bottom.get(a, float("-inf")), y + h)
+    frames = [n for n in page_nodes
+              if n.get("type") == "FRAME" and APLUS_RE.match(str(n.get("name") or ""))]
+    frames.sort(key=lambda n: (_half_up((_bbox(n)[1] or 0) / APLUS_ROW_STEP), _bbox(n)[0] or 0))
+    out: dict = {}
+    per: dict = {}
+    for n in frames:
+        x, y, w, h = _bbox(n)
+        if x is None or y is None or w is None:
+            continue
+        cx = x + w / 2
+        above = [l for l in labels
+                 if l[3] is not None and l[3] < y and l[2] is not None and l[4] is not None
+                 and l[2] <= cx <= l[2] + l[4]]
+        if not above:
+            continue
+        asin, is_aplus, *_ = max(above, key=lambda l: l[3])
+        if not is_aplus and y < bottom.get(asin, float("-inf")):
+            continue
+        var = aplus_variant(n)
+        k = per.get((asin, var), 0) + 1
+        per[(asin, var)] = k
+        out[str(n.get("id"))] = (asin, f"{asin}.A+{var}{k:02d}", str(n.get("name") or ""))
+    return out
+
+
 
 SECTION_MAIN = "Main Images"
 
@@ -295,7 +395,8 @@ def char_limit(node: dict) -> int | None:
     return max(1, per_line * lines) if per_line > 0 else None
 
 
-def _walk_text(node: dict, out: list, frame: str = "", path: tuple = ()) -> None:
+def _walk_text(node: dict, out: list, frame: str = "", path: tuple = (),
+               label: str | None = None) -> None:
     """Рекурсивный обход: текстовые слои лежат на разной глубине.
 
     Обход именно рекурсивный, а не по верхнему уровню: между фреймом
@@ -317,13 +418,13 @@ def _walk_text(node: dict, out: list, frame: str = "", path: tuple = ()) -> None
         if text:
             out.append({
                 "layer_id": str(node.get("id")),
-                "frame_name": frame or str(node.get("name") or ""),
+                "frame_name": label or frame or str(node.get("name") or ""),
                 "slot": f"{frame}#{'.'.join(str(i) for i in path)}",
                 "source_text": text,
                 "char_limit": char_limit(node),
             })
     for i, child in enumerate(node.get("children") or ()):
-        _walk_text(child, out, frame, path + (i,))
+        _walk_text(child, out, frame, path + (i,), label)
 
 
 def parse_label(text: str) -> dict | None:
@@ -372,13 +473,27 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
     other_frames: list[str] = []
     typo_frames: list[str] = []
 
+    aplus_orphans: list[str] = []
+    # Два фрейма с одним именем на одной странице («B0DG3T7VKM.PT04»
+    # дважды на UK/US) дают один slot на два слоя: в базе остаётся
+    # последний, плагин на таком слоте откажется («несколько слоёв»).
+    # Молчать нельзя — это чинится только в Figma.
+    dupe_frames: list[str] = []
     for page in pages:
         page_name = str(page.get("name") or "")
         lang = PAGE_LANG.get(page_name)
         if lang is None:
             skipped_pages.append(page_name)
             continue
-        for node in page.get("children") or ():
+        page_nodes = page.get("children") or ()
+        aplus_map = attach_aplus(list(page_nodes))
+        seen_names: dict = {}
+        for node in page_nodes:
+            if node.get("type") == "FRAME" and FRAME_RE.match(str(node.get("name") or "")):
+                nm = str(node.get("name"))
+                seen_names[nm] = seen_names.get(nm, 0) + 1
+        dupe_frames += [f"{page_name}: {nm} ×{c}" for nm, c in seen_names.items() if c > 1]
+        for node in page_nodes:
             name = str(node.get("name") or "")
             kind = node.get("type")
 
@@ -387,15 +502,50 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
                 got = parse_label(node.get("characters") or name)
                 if got is None:
                     skipped_labels.append(f"{page_name}: {name[:60]}")
-                elif lang == SOURCE_LANG or got["asin"] not in labels:
+                    continue
+                # У товара подписей две — «Main Images_…» и «A+ Premium
+                # Content_…», — и во второй SKU с названием часто нет.
+                # Поля ДОПОЛНЯЮТСЯ, а не затираются: английская подпись
+                # главнее языковой, но пустое поле не главнее заполненного.
+                cur = labels.get(got["asin"])
+                if cur is None:
                     labels[got["asin"]] = got
+                else:
+                    for f in ("sku", "name"):
+                        if got[f] and (lang == SOURCE_LANG or not cur[f]):
+                            cur[f] = got[f]
                 continue
 
             if kind != "FRAME":
                 continue
             if APLUS_RE.match(name):
-                # A+ отложены намеренно, см. APLUS_RE
+                hit = aplus_map.get(str(node.get("id")))
+                if hit is None:
+                    aplus_orphans.append(f"{page_name}: {name[:40]} @ {_bbox(node)[:2]}")
+                    continue
+                asin, synth, real = hit
+                if only_asins and asin not in only_asins:
+                    continue
                 aplus_frames += 1
+                key = (asin, SECTION_MAIN)
+                prod = by_key.get(key)
+                if prod is None:
+                    prod = by_key[key] = {
+                        "asin": asin, "sku": None, "name": "",
+                        "section_type": SECTION_MAIN, "page_name": page_name,
+                        "figma_node_id": str(node.get("id")),
+                        "lang_nodes": {}, "langs": [], "layers": [],
+                    }
+                # узел модуля — по синтетическому ключу без ASIN: «A+d05»
+                prod["lang_nodes"].setdefault(lang, {})[synth.split(".", 1)[1]] = str(node.get("id"))
+                if lang not in prod["langs"]:
+                    prod["langs"].append(lang)
+                found = []
+                _walk_text(node, found, frame=synth, label=real)
+                for layer in found:
+                    layer["lang"] = lang
+                    layer["page_name"] = page_name
+                prod["layers"].extend(found)
                 continue
             m = FRAME_RE.match(name)
             if not m:
@@ -474,6 +624,8 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
         "skipped_sections": skipped_labels + other_frames,
         "skipped_pages": skipped_pages,
         "aplus_frames": aplus_frames,
+        "aplus_orphans": aplus_orphans,
+        "dupe_frames": dupe_frames,
         "typo_frames": typo_frames,
         "source_checked": src_total,
         "source_over": src_over,

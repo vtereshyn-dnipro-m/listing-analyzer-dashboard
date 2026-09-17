@@ -104,6 +104,72 @@ LAYERS = [
 ]
 
 
+# ---------------------------------------------------------------- A+ страница
+# У модуля A+ нет ASIN в имени, товар даёт ПОДПИСЬ выше по холсту,
+# а порядковый номер — позиция. Дерево из ловушек: два товара в двух
+# колонках, подпись с типом и без, блок под подписью без типа, но ВЫШЕ
+# низа её слайдов (не её), десктоп/мобайл (по ширине), ряд на границе
+# сотни (y=1250 против y=1240: банковский round у Python дал бы обоим
+# ряд 12 и переставил их, floor(x+0.5) — нет), модуль без подписи
+# (сирота), имена «carousel …» повторяются.
+def B(x, y, w, h):
+    return {"absoluteBoundingBox": {"x": x, "y": y, "width": w, "height": h}}
+
+
+def F(name, x, y, w, h, *texts):
+    return dict({"type": "FRAME", "name": name, "children": [T(t) for t in texts]}, **B(x, y, w, h))
+
+
+APLUS_PAGE = {
+    "type": "CANVAS", "name": "DE",
+    "children": [
+        dict(T("54225000 B0AAAAAAA1 Stapler"), **B(0, 0, 3000, 40)),
+        # под подписью без типа, но выше низа слайдов (600) — не её блок
+        F("carousel 9", 0, 50, 2718, 40, "fremd"),
+        F("B0AAAAAAA1.MAIN", 0, 100, 1000, 500, "Hauptbild"),
+        F("B0AAAAAAA1.PT01", 1100, 100, 1000, 500, "Folie"),
+        F("carousel 2.2", 0, 700, 2718, 300, "A Titel"),
+        # граница сотни: 1240 → ряд 12, 1250 → ряд 13 (floor(12.5+0.5));
+        # банковский round дал бы 12 обоим и поставил «P» раньше «B» по x
+        F("carousel 1", 1400, 1240, 2718, 300, "B Titel"),
+        F("carousel 1", 0, 1250, 2718, 300, "P Titel"),
+        F("carousel 1", 0, 1700, 1398, 300, "B mobil"),           # мобайл — свой счёт
+        F("carousel 3.1", 1400, 1700, 1398, 300, "C mobil"),
+        # второй товар, подпись с типом A+: блок над слайдами всё равно его
+        dict(T("A+ Premium Content_B0BBBBBBB2"), **B(4000, 0, 3000, 40)),
+        F("carousel 2.2", 4000, 100, 2718, 300, "X Titel"),
+        F("B0BBBBBBB2.PT01", 4000, 500, 1000, 1000, "Folie 2"),
+        F("carousel 5", 4000, 1600, 2718, 300, "Y Titel"),
+        # сирота: центр вне ширины любой подписи
+        F("carousel 7", 9000, 100, 2718, 300, "verloren"),
+    ],
+}
+for _i, _n in enumerate(APLUS_PAGE["children"]):     # id узла — ключ привязки у обоих
+    _n["id"] = f"n{_i}"
+
+
+def python_aplus(page: dict) -> dict:
+    """slot → текст так, как parse_document кладёт A+ в базу."""
+    amap = figma.attach_aplus(page["children"])
+    out = {}
+    for node in page["children"]:
+        if node.get("type") != "FRAME":
+            continue
+        name = str(node.get("name") or "")
+        if figma.APLUS_RE.match(name):
+            hit = amap.get(str(node.get("id")))
+            if hit is None:
+                continue
+            frame, real = hit[1], hit[2]
+        else:
+            frame, real = name, None
+        found: list = []
+        figma._walk_text(node, found, frame=frame, label=real)
+        for f in found:
+            out[f["slot"]] = f["source_text"]
+    return out
+
+
 # ---------------------------------------------------------------- Python
 def python_slots(page: dict) -> list[tuple[str, str]]:
     out: list = []
@@ -120,7 +186,11 @@ def python_slots(page: dict) -> list[tuple[str, str]]:
 HARNESS = """
 var PAGE = %(page)s;
 var LAYERS = %(layers)s;
+var APLUS_PAGE = %(aplus)s;
 var bySlot = indexPage(PAGE);
+var aplusIdx = indexPage(APLUS_PAGE);
+var aplusSlots = {};
+Object.keys(aplusIdx).forEach(function (s) { aplusSlots[s] = aplusIdx[s].map(function (f) { return f.text; }).join("|"); });
 var slots = [];
 (PAGE.children || []).forEach(function (fr) {
   if (fr.type !== "FRAME") return;
@@ -141,6 +211,7 @@ var RESULT = JSON.stringify({
            skipped: multi.skipped },
   single_items: single.length,
   slots: slots,
+  aplus: aplusSlots,
   page_lang: PAGE_LANG,
   frame_re: %(names)s.map(function (n) { var m = FRAME_RE.exec(n);
     return m ? [m[1], m[2], m[3]] : null; }),
@@ -157,6 +228,7 @@ def run_js() -> dict:
         "page": json.dumps(PAGE, ensure_ascii=False),
         "layers": json.dumps(LAYERS, ensure_ascii=False),
         "names": json.dumps(NAMES),
+        "aplus": json.dumps(APLUS_PAGE, ensure_ascii=False),
     }
     if shutil.which("node"):
         r = subprocess.run(["node", "-e", src + "\nconsole.log(RESULT);"],
@@ -193,6 +265,31 @@ check("верхний фрейм пути не даёт: прямой ребён
 check("секция верхнего уровня не обходится ни одним из двух",
       not any("B0INSECTIO" in s for s, _ in py)
       and not any("B0INSECTIO" in s for s, _ in js["slots"]))
+
+# --- 1б. модули A+: привязка и нумерация совпадают у Python и плагина
+# Ошибка здесь тоже правдоподобна: модуль привязан не к тому товару
+# или не под тем номером — перевод встанет в чужой блок.
+pa = python_aplus(APLUS_PAGE)
+check(f"A+: Python и плагин дали одни и те же слоты ({len(pa)} шт.)", pa == js["aplus"])
+if pa != js["aplus"]:
+    print("       python:", sorted(pa.items()))
+    print("       js:    ", sorted(js["aplus"].items()))
+check("подпись без типа: блок ниже слайдов — её, блок выше их низа — нет",
+      pa.get("B0AAAAAAA1.A+d01#0") == "A Titel" and "fremd" not in pa.values()
+      and "fremd" not in js["aplus"].values())
+check("нумерация по рядам сверху вниз и слева направо, внутри варианта",
+      pa.get("B0AAAAAAA1.A+m01#0") == "B mobil" and pa.get("B0AAAAAAA1.A+m02#0") == "C mobil")
+check("ряд на границе сотни: 1240 раньше 1250, а не по x (банковский round)",
+      pa.get("B0AAAAAAA1.A+d02#0") == "B Titel" and pa.get("B0AAAAAAA1.A+d03#0") == "P Titel")
+check("подпись с типом A+: блок над слайдами всё равно её",
+      pa.get("B0BBBBBBB2.A+d01#0") == "X Titel" and pa.get("B0BBBBBBB2.A+d02#0") == "Y Titel")
+check("модуль без подписи — сирота у обоих, а не чей-то",
+      "verloren" not in pa.values() and "verloren" not in js["aplus"].values())
+check("обычные фреймы на той же странице не пострадали",
+      pa.get("B0AAAAAAA1.PT01#0") == "Folie" and js["aplus"].get("B0BBBBBBB2.PT01#0") == "Folie 2")
+check("порог ряда одинаков: floor(x+0.5), не round — заперто в обоих",
+      "_half_up" in (ROOT / "services/figma.py").read_text(encoding="utf-8")
+      and "Math.floor(x + 0.5)" in CODE_JS and "Math.round(" not in CODE_JS)
 
 # --- 2. общие константы не разошлись
 check(f"PAGE_LANG одинаковый ({js['page_lang']})", js["page_lang"] == figma.PAGE_LANG)
