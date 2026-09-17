@@ -765,6 +765,33 @@ def save_coverage(asin: str, mp: str, cov: dict) -> None:
         pass
 
 
+def edit_gen(asin: str, mp: str) -> int:
+    """Поколение полей правки карточки. Растёт с каждым новым результатом."""
+    return int(st.session_state.get(f"edit-gen-{asin}-{mp}", 0))
+
+
+def new_result(asin: str, mp: str) -> None:
+    """Пришёл новый результат — поля правки пересоздать (правило 7б).
+
+    Поля правки объявлены с key, и Streamlit берёт их значение из
+    session_state, а не из `value=`; снять ключ мало — состояние
+    виджета живёт ещё и в браузере и приезжает оттуда на следующем
+    прогоне. После «Перегенерировать» в открытой правке это выглядело
+    так: модель дала новый тайтл, а в поле, счётчике и проверках —
+    прежний отредактированный текст, и человек принимал СТАРОЕ,
+    думая, что смотрит на новое. Шестой случай одного класса.
+
+    Лечится ключом: поколение подмешано в key, после нового результата
+    растёт, поля создаются заново и берут текст из результата.
+    Зовётся везде, где результат появляется: одиночная генерация,
+    перегенерация, партия.
+    """
+    g = edit_gen(asin, mp)
+    for k in (f"edit-{asin}-{mp}-{g}-title", f"edit-{asin}-{mp}-{g}-hl"):
+        st.session_state.pop(k, None)
+    st.session_state[f"edit-gen-{asin}-{mp}"] = g + 1
+
+
 def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
     """Пакетная генерация: только черновики, ничего не применяется."""
     done, failed, unsaved = 0, 0, 0
@@ -821,6 +848,7 @@ def batch_generate(items: list, skill_text: str, skill_version: int) -> dict:
             # считаем именно сохранение: раньше done увеличивался после
             # генерации, и партия рапортовала «5 готово» при пустой таблице
             if save_draft(asin, mp, title, res, skill_version):
+                new_result(asin, mp)
                 if not kw.empty:
                     save_coverage(asin, mp, coverage(
                         kw, res.get("title", ""), res.get("highlights", "")))
@@ -1639,9 +1667,12 @@ def render_result(asin: str, mp: str, before: str, draft) -> tuple[str, str]:
     # результата, ни черновика, карточка рисуется из ПРИНЯТОЙ правки,
     # и draft.get() уходил в None. Источников три, а знали про два.
     base_after, base_hl = after, hl
+    # ключи полей с поколением: новый результат — новые поля (см. new_result)
+    gen = edit_gen(asin, mp)
+    k_title, k_hl = f"{edit_key}-{gen}-title", f"{edit_key}-{gen}-hl"
     if editing:
-        after = str(st.session_state.get(f"{edit_key}-title", after) or "")
-        hl = str(st.session_state.get(f"{edit_key}-hl", hl) or "")
+        after = str(st.session_state.get(k_title, after) or "")
+        hl = str(st.session_state.get(k_hl, hl) or "")
 
     checks = run_checks(after, hl, [], [])
     failed = [m for ok, m in checks if not ok]
@@ -1704,7 +1735,7 @@ def render_result(asin: str, mp: str, before: str, draft) -> tuple[str, str]:
                 f'{t("synth.became")} {counter_html(len(after), TITLE_LIMIT)}'
                 f'</div>', unsafe_allow_html=True)
             st.text_area(t("synth.became"), value=after, height=80,
-                         key=f"{edit_key}-title", label_visibility="collapsed")
+                         key=k_title, label_visibility="collapsed")
             st.markdown(
                 f'<div style="font-size:11.5px;letter-spacing:.06em;'
                 f'color:#57534A;text-transform:uppercase;margin:8px 0 2px;">'
@@ -1712,7 +1743,7 @@ def render_result(asin: str, mp: str, before: str, draft) -> tuple[str, str]:
                 f'{counter_html(len(hl), HIGHLIGHTS_LIMIT)}</div>',
                 unsafe_allow_html=True)
             st.text_area("item highlights", value=hl, height=80,
-                         key=f"{edit_key}-hl", label_visibility="collapsed")
+                         key=k_hl, label_visibility="collapsed")
             st.caption(t("synth.edit_hint"))
         else:
             st.caption(t("synth.diff_hint"))
@@ -1744,9 +1775,9 @@ def render_result(asin: str, mp: str, before: str, draft) -> tuple[str, str]:
                              {"title": after, "highlights": hl,
                               "dropped": dropped},
                              cov, skill_v, TITLE_MODEL, source):
-                for k in (f"res-{asin}-{mp}", edit_key,
-                          f"{edit_key}-title", f"{edit_key}-hl"):
+                for k in (f"res-{asin}-{mp}", edit_key, k_title, k_hl):
                     st.session_state.pop(k, None)
+                new_result(asin, mp)      # принятое — тоже новое основание
                 st.success(t("synth.accepted_ok"))
                 st.rerun()
 
@@ -1794,8 +1825,10 @@ def render_result(asin: str, mp: str, before: str, draft) -> tuple[str, str]:
                          key=f"q-save-{asin}-{mp}"):
                 _save("manual" if changed else "ai")
             if a2.button(t("synth.edit_cancel"), key=f"q-ecancel-{asin}-{mp}"):
-                for k in (edit_key, f"{edit_key}-title", f"{edit_key}-hl"):
-                    st.session_state.pop(k, None)
+                # «Отмена» — тоже новое основание: иначе следующее
+                # открытие правки поднимет из браузера отменённый текст
+                st.session_state.pop(edit_key, None)
+                new_result(asin, mp)
                 st.rerun()
             if changed:
                 a4.caption(t("synth.edit_changed"))
@@ -2694,6 +2727,7 @@ with feed:
                             kw, res.get("title", ""),
                             res.get("highlights", "")))
                     st.session_state[f"res-{asin}-{mp}"] = res
+                    new_result(asin, mp)
                     invalidate_change(asin, mp)
                     st.rerun()
 

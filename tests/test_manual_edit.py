@@ -189,6 +189,44 @@ check("после отмены вернулись обычные кнопки к
       and by_key(at, f"q-edit-{ASIN}-{MP}") is not None)
 check("отмена ничего не сохранила", not SAVED)
 
+# --- после перегенерации поле правки — НОВЫЙ виджет с новым текстом
+# Поля правки объявлены с key, и состояние виджета живёт ещё и в
+# браузере (правило 7б): снятый из session_state ключ на следующем
+# прогоне приезжает оттуда с прежним текстом. Сценарий: правка →
+# отмена → «Перегенерировать» → снова правка. Раньше ключ был тот же,
+# и поле поднимало отменённый текст поверх нового результата —
+# человек принимал СТАРОЕ, думая, что смотрит на новое. Браузер
+# AppTest не имитирует, поэтому проверяется то, что от него не
+# зависит: ключ поля ОБЯЗАН смениться, а значение — стать новым.
+import services.ai as ai_mod                              # noqa: E402
+NEW_TITLE = "Martillo Percutor BH-20 1500W SDS-Plus Dnipro-M"
+ai_mod.generate_json = lambda *a, **k: {"title": NEW_TITLE,
+                                        "highlights": "nuevo", "dropped": []}
+at = fresh()
+button(at, "Редактировать").click().run()
+at.text_area[0].set_value("моя правка руками").run()
+_key_before = str(at.text_area[0].key)
+button(at, "Отмена").click().run()
+by_key(at, f"q-re-{ASIN}-{MP}").click().run()
+check("перегенерация прошла без падения", not at.exception)
+button(at, "Редактировать").click().run()
+check("поле правки создано заново — ключ другой",
+      len(at.text_area) > 0 and str(at.text_area[0].key) != _key_before)
+check(f"и в нём НОВЫЙ тайтл, а не отменённая правка ({at.text_area[0].value[:30]}…)",
+      at.text_area[0].value == NEW_TITLE)
+check("ключ несёт поколение, а не просто другой суффикс",
+      "-1-title" in str(at.text_area[0].key) or "-2-title" in str(at.text_area[0].key))
+
+# то же после принятия: принятое — новое основание
+at.text_area[0].set_value("ещё одна правка").run()
+_key_edit = str(at.text_area[0].key)
+SAVED.clear()
+button(at, "Сохранить правку").click().run()
+check("сохранилось то, что в поле", SAVED and SAVED[-1]["title"] == "ещё одна правка")
+button(at, "Редактировать").click().run()
+check("после принятия поле снова новое",
+      len(at.text_area) > 0 and str(at.text_area[0].key) != _key_edit)
+
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
       else f"{len(FAILS)} провалов: {FAILS}")
