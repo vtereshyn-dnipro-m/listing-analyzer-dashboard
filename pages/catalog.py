@@ -795,10 +795,27 @@ exp = pd.DataFrame([{
 # Два формата: CSV — для скриптов и pandas, XLSX — для людей: Excel
 # открывает CSV с кириллицей и разделителями по-своему на каждой машине.
 def _xlsx_bytes(frame: pd.DataFrame) -> bytes:
+    """XLSX с ASIN-гиперссылкой на карточку Amazon.
+
+    Ссылка — через product_url, не шаблоном по коду рынка: у Бельгии
+    витрина amazon.com.be, и шаблон дал бы несуществующий домен
+    (см. services/marketplaces.py и test_marketplace_maps). В ячейке остаётся сам ASIN — по нему
+    фильтруют и ищут; ссылка живёт в свойстве ячейки. В CSV ссылок нет.
+    """
     import io
     buf = io.BytesIO()
     with pd.ExcelWriter(buf, engine="openpyxl") as xw:
         frame.to_excel(xw, index=False, sheet_name="catalog")
+        ws = xw.sheets["catalog"]
+        cols = list(frame.columns)
+        if "asin" in cols and "mp" in cols:
+            c_asin, c_mp = cols.index("asin") + 1, cols.index("mp") + 1
+            for i in range(len(frame)):
+                cell = ws.cell(row=i + 2, column=c_asin)
+                url = product_url(cell.value, ws.cell(row=i + 2, column=c_mp).value)
+                if url:
+                    cell.hyperlink = url
+                    cell.style = "Hyperlink"
     return buf.getvalue()
 
 

@@ -242,15 +242,28 @@ def add_matrix_rows(conn, rows: list[tuple[str, str, str, bool]]) -> int:
     """rows: (sku_group, asin, marketplace, is_competitor). Идемпотентно."""
     if not rows:
         return 0
+    # SKU, если его не ввели, берётся из зеркала каталога Amazon
+    # (catalog_source) по той же паре; нет и там — пустая строка
+    # (колонка NOT NULL). ASIN на его место не подставляется никогда:
+    # ASIN в колонке SKU — это ложь, которую не отличить от правды.
+    # При повторе пары пустой ввод не затирает уже известный SKU.
     sql = """
     INSERT INTO product_matrix (sku_group, asin, marketplace, is_competitor)
-    VALUES (%s, %s, %s, %s)
+    VALUES (COALESCE(NULLIF(%(sku)s, ''),
+                     (SELECT c.sku_group FROM catalog_source c
+                       WHERE c.asin = %(asin)s AND c.marketplace = %(mp)s
+                         AND c.sku_group IS NOT NULL AND c.sku_group <> ''
+                       LIMIT 1),
+                     ''),
+            %(asin)s, %(mp)s, %(comp)s)
     ON CONFLICT (asin, marketplace) DO UPDATE SET
-        sku_group = EXCLUDED.sku_group,
+        sku_group = COALESCE(NULLIF(EXCLUDED.sku_group, ''), product_matrix.sku_group),
         is_competitor = EXCLUDED.is_competitor
     """
     with conn, conn.cursor() as cur:
-        cur.executemany(sql, rows)
+        cur.executemany(sql, [{"sku": str(sku or "").strip(), "asin": asin,
+                               "mp": mp, "comp": comp}
+                              for sku, asin, mp, comp in rows])
     return len(rows)
 
 
@@ -312,5 +325,9 @@ def parse_asin_lines(text: str) -> list[tuple[str, str, str, bool]]:
                 mp = parts[2].lower()
             if len(parts) > 3:
                 comp = parts[3].strip().lower() in ("1", "true", "comp", "competitor", "конкурент")
-        out.append((sku or asin, asin, mp, comp))
+        # Пусто — значит пусто. Раньше стояло `sku or asin`, и голый ASIN
+        # записывался в sku_group как есть: в Каталоге и выгрузке у товара
+        # «sku B0G4S9SJ3M», то есть ASIN, выдающий себя за SKU. Настоящий
+        # SKU подставляет add_matrix_rows из зеркала каталога.
+        out.append((sku, asin, mp, comp))
     return out 
