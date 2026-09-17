@@ -129,7 +129,8 @@ CREATE VIEW listing_data.listing_latest AS
         s.fetched_at, s.ok, s.title, s.list_price, s.display_price,
         s.b2b_price, s.in_stock, s.rating, s.review_count, s.bullet_points,
         s.raw,
-        COALESCE(stable.has_aplus, false) AS has_aplus
+        COALESCE(stable.has_aplus, false) AS has_aplus,
+        s.buy_box_owner, s.buy_box_seller, s.bsr_rank, s.bsr_category
    FROM listing_data.listing_snapshots s
    LEFT JOIN LATERAL (
         SELECT bool_or(x.has_a) AS has_aplus

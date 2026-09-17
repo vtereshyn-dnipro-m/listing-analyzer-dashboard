@@ -18,6 +18,8 @@ import streamlit as st
 from config import TITLE_LIMIT as _TL_DEFAULT
 from i18n import t, plural
 from services import collector
+from services.bsr import parse_bsr
+from services.buybox import buy_box_of, OWN, AMAZON, OTHER, NONE
 from services.cells import cell_text
 from services.db import get_conn, get_engine, safe_read
 from services.settings import get_int, get_float
@@ -82,13 +84,15 @@ def load_catalog() -> tuple[pd.DataFrame, str | None]:
                             MOD(ABS(HASHTEXT(m.asin || m.marketplace)), 7)) AS weekly_day,
                    s.fetched_at, s.ok, s.title, s.in_stock, s.review_count,
                    s.is_amazon_choice, s.raw,
+                   s.buy_box_owner, s.buy_box_seller, s.bsr_rank, s.bsr_category,
                    ll.has_aplus
             FROM product_matrix m
             LEFT JOIN listing_latest ll
                    ON ll.asin = m.asin AND ll.marketplace = m.marketplace
             LEFT JOIN LATERAL (
                 SELECT fetched_at, ok, title, in_stock, review_count,
-                       is_amazon_choice, raw
+                       is_amazon_choice, raw,
+                       buy_box_owner, buy_box_seller, bsr_rank, bsr_category
                 FROM listing_snapshots s
                 WHERE s.asin = m.asin AND s.marketplace = m.marketplace
                   AND s.ok = TRUE
@@ -124,25 +128,25 @@ def metrics(row: pd.Series) -> dict:
         if isinstance(u, str):
             ids.add(u.rsplit("/I/", 1)[-1].split(".")[0])
 
-    # BSR: ключ и формат зависят от языка страницы
-    bsr_txt = ""
-    for k, v in info.items():
-        if re.search(r"best.?sellers|clasificaci|bestseller|classement|"
-                     r"posizione|migliori|rank", str(k), re.I):
-            bsr_txt = str(v)
-            break
+    # BSR — из колонки, которую пишет сборщик; у снапшотов до 18.09
+    # колонки нет, и для них тот же парсер (services/bsr.py) читает raw.
+    # Один парсер на сборщик и экран: раньше здесь была своя регулярка,
+    # которая брала ПЕРВЫЙ подходящий ключ и на ES/IT ловила соседей.
     bsr = None
-    if bsr_txt:
-        clean = re.sub(r"\([^)]*\)", " ", bsr_txt)   # убрать "(Ver el Top 100 ...)"
-        m = re.findall(
-            r"(?:n[ºo°]\s*|nr\.?\s*)?([\d][\d.,]*)\s+(?:in|en|dans|nella|di)\s+"
-            r"([^,;]+?)(?=\s*(?:n[ºo°]\s*[\d]|nr\.?\s*[\d]|[\d]+\s+(?:in|en)\s|$))",
-            clean, re.I)
-        if m:
-            try:
-                bsr = (int(re.sub(r"[^\d]", "", m[-1][0])), m[-1][1].strip(" ,.·"))
-            except ValueError:
-                bsr = None
+    _rank = row.get("bsr_rank")
+    if pd.notna(_rank):
+        bsr = (int(_rank), cell_text(row, "bsr_category"))
+    else:
+        _r, _c = parse_bsr(info)
+        if _r:
+            bsr = (_r, _c or "")
+
+    # Buy Box — так же: колонка, иначе из raw той же функцией
+    _owner = cell_text(row, "buy_box_owner")
+    if _owner:
+        buy_box = (_owner, cell_text(row, "buy_box_seller") or None)
+    else:
+        buy_box = buy_box_of(d) if collected else (None, None)
 
     main_img = d.get("main_image") or (imgs[0] if imgs else "")
 
@@ -187,6 +191,7 @@ def metrics(row: pd.Series) -> dict:
         "bsr": bsr,
         "in_stock": in_stock,
         "seller": d.get("sold_by") or "",
+        "buy_box": buy_box,
         "econ": {},
         "main_img": main_img,
         "coupon": bool(d.get("is_coupon_exists")),
@@ -578,6 +583,26 @@ RULE_PAIRS = load_rule_pairs()
 LOST_CHOICE = load_lost_choice()
 
 
+def buy_box_chip(mx: dict) -> list[str]:
+    """«Buy Box: наш / Amazon / чужой · имя / нет предложения».
+
+    Показывается всегда, когда снапшот есть: отсутствие предложения —
+    состояние, а не пустота, и оно объясняет продажи не хуже цены.
+    Правила Диагноза под это пока нет — см. services/buybox.py.
+    """
+    owner, seller = mx.get("buy_box") or (None, None)
+    if not owner:
+        return []
+    if owner == OWN:
+        return [chip(t("metric.buy_box"), t("metric.bb_own"), "ok")]
+    if owner == AMAZON:
+        return [chip(t("metric.buy_box"), t("metric.bb_amazon"), "warn")]
+    if owner == OTHER:
+        return [chip(t("metric.buy_box"),
+                     f'{t("metric.bb_other")} · {str(seller or "")[:18]}', "err")]
+    return [chip(t("metric.buy_box"), t("metric.bb_none"), "warn")]
+
+
 def choice_chips(mx: dict, asin: str, mp: str) -> list[str]:
     """Плашки Amazon's Choice: зелёная «есть», красная «потерян».
 
@@ -759,6 +784,9 @@ exp = pd.DataFrame([{
     "aplus": x["mx"]["aplus"], "reviews": x["mx"]["reviews"],
     "rating": x["mx"]["rating"], "price": x["mx"]["price"],
     "bsr": x["mx"]["bsr"][0] if x["mx"]["bsr"] else None,
+    "bsr_cat": x["mx"]["bsr"][1] if x["mx"]["bsr"] else None,
+    "buy_box": (x["mx"].get("buy_box") or (None, None))[0],
+    "buy_box_seller": (x["mx"].get("buy_box") or (None, None))[1],
     "in_stock": x["mx"]["in_stock"], "name": x["mx"]["title"],
     # сбор: статус, график и возраст — ровно то, что подписано на карточке
     "status": pair_status(x["r"]), "tier": pair_tier(x["r"]),
@@ -857,7 +885,6 @@ if mode == "table":
     # говорила то же самое и занимала место
     tv["asin"] = [product_url(x["r"]["asin"], x["r"]["marketplace"])
                   for x in rows]
-    tv["bsr_cat"] = [x["mx"]["bsr"][1] if x["mx"]["bsr"] else "" for x in rows]
     tv = tv.rename(columns={"title_len": "len", "in_stock": "stock",
                             "revenue_30d": "rev", "sessions_30d": "sess",
                             "shipping_template": "ship"})
@@ -1117,7 +1144,7 @@ for x in chunk:
                      if mx["bsr"] else "—"), "neutral"),
         chip(t("metric.stock"), t("metric.in_stock") if mx["in_stock"] else t("metric.no"),
              "ok" if mx["in_stock"] else "err"),
-    ] + choice_chips(mx, asin, mp) + ([
+    ] + buy_box_chip(mx) + choice_chips(mx, asin, mp) + ([
         chip(t("metric.revenue"), fmt_money(_ec.get("revenue_30d"), ""),
              "neutral"),
         chip(t("metric.sessions"), str(int(num(_ec.get("sessions_30d")))),
