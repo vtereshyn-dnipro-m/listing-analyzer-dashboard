@@ -418,6 +418,16 @@ def _active_run():
     return collector.active_run()
 
 
+def collect_plan_text(plan: pd.DataFrame) -> str:
+    """«ES, DE · 566 товаров» и разбивка по рынкам, если их больше одного."""
+    by = {str(r["marketplace"]): int(r["pairs"]) for _, r in plan.iterrows()}
+    total = sum(by.values())
+    head = f'{", ".join(m.upper() for m in by)} · {plural("catalog.products_n", total)}'
+    if len(by) > 1:
+        head += f' <span style="color:{MUTED};">({", ".join(f"{m.upper()} {n}" for m, n in by.items())})</span>'
+    return f'<div style="font-size:14px;white-space:nowrap;">{head}</div>'
+
+
 def render_collect(all_markets: list[str]) -> None:
     key = "cat-collect"
     st.markdown(
@@ -441,16 +451,16 @@ def render_collect(all_markets: list[str]) -> None:
     no_client = collector.client() is None
 
     with st.container(key=key):
+        # ряд галочек без подписи читался как список кодов — непонятно,
+        # зачем он; заголовок говорит, что это действие и что выбирать
+        st.markdown(eyebrow(t("catalog.collect_title")), unsafe_allow_html=True)
         cols = st.columns([1] * len(all_markets) + [4, 4], gap="small",
                           vertical_alignment="center")
         picked = [mp for i, mp in enumerate(all_markets)
                   if cols[i].checkbox(mp.upper(), key=f"collect-mp-{mp}")]
         plan, perr = collector.planned(picked)
         n_plan = int(plan["pairs"].sum()) if not plan.empty else 0
-        label = (f'{t("catalog.collect_btn")} · {", ".join(m.upper() for m in picked)} · '
-                 f'{plural("catalog.products_n", n_plan)}' if picked
-                 else t("catalog.collect_btn"))
-        if cols[-2].button(label, key="collect-go", type="primary",
+        if cols[-2].button(t("catalog.collect_btn"), key="collect-go", type="primary",
                            disabled=not picked or not n_plan or run is not None or no_client,
                            help=t("catalog.collect_help")):
             started, serr = collector.start(picked)
@@ -459,12 +469,19 @@ def render_collect(all_markets: list[str]) -> None:
                 _active_run.clear()
                 st.rerun()
             st.session_state["collect-error"] = serr
+        # что уйдёт в сбор — видно ДО нажатия и не зависит от кнопки:
+        # «ES, DE · 566 товаров» — это число запросов, а не «выбрано 2».
+        # Свёрнутые не в счёт: job их не собирает (planned считает так же).
         if no_client:
             cols[-1].caption(t("catalog.collect_no_client"))
         elif perr:
             cols[-1].caption("⚠ " + t("common.read_failed", e=perr))
-        elif picked and not n_plan:
+        elif not picked:
+            cols[-1].caption(t("catalog.collect_pick"))
+        elif not n_plan:
             cols[-1].caption(t("catalog.collect_nothing"))
+        else:
+            cols[-1].markdown(collect_plan_text(plan), unsafe_allow_html=True)
 
     err = st.session_state.pop("collect-error", None)
     if err == "already-running":

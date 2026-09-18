@@ -149,17 +149,28 @@ def box(a, mp):
     return next(c for c in a.checkbox if c.key == f"collect-mp-{mp}")
 
 
-# --- 1. подпись считает только активные пары выбранных рынков
+# --- 1. число видно ДО нажатия и считает только активные пары
+# Ряд галочек без подписи читался как список кодов; число запросов
+# стоит рядом с галочками, а не только в кнопке — кнопка бывает
+# неактивна (идёт утренний прогон), а знать объём нужно всё равно.
+def plan_text(a) -> str:
+    return next((str(m.value) for m in a.markdown
+                 if "товар" in str(m.value) and "white-space" in str(m.value)), "")
+
+
 at = page()
 check("страница отрисована", not at.exception)
+check("над галочками сказано, что это и что выбирать",
+      any("Собрать данные сейчас" in str(m.value) and "выберите рынки" in str(m.value)
+          for m in at.markdown))
 check("без отмеченных рынков кнопка неактивна", btn(at) is not None and btn(at).disabled)
+check("и сказано, что рынки не выбраны", any("не выбраны" in str(c.value) for c in at.caption))
 box(at, "es").set_value(True).run()
-check(f"ES: 3 активных, свёрнутая не в счёт ({btn(at).label})",
-      "ES" in str(btn(at).label) and "3 товара" in str(btn(at).label)
-      and not btn(at).disabled)
+check(f"ES: 3 активных, свёрнутая не в счёт ({plan_text(at)})",
+      "ES · 3 товара" in plan_text(at) and not btn(at).disabled)
 box(at, "de").set_value(True).run()
-check(f"ES + DE: 5 товаров ({btn(at).label})",
-      "DE, ES" in str(btn(at).label) and "5 товаров" in str(btn(at).label))
+check(f"ES + DE: 5 товаров и разбивка по рынкам ({plan_text(at)})",
+      "DE, ES · 5 товаров" in plan_text(at) and "DE 2" in plan_text(at) and "ES 3" in plan_text(at))
 
 # --- 2. запуск: рынки и force уходят в job, второй раз — нет
 CALLS.clear()
