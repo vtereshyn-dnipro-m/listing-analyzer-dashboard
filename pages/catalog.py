@@ -418,6 +418,10 @@ def _active_run():
     return collector.active_run()
 
 
+def _filter_markets(markets: list) -> None:
+    st.session_state["cat_mp"] = list(markets)
+
+
 def collect_plan_text(plan: pd.DataFrame) -> str:
     """«ES, DE · 566 товаров» и разбивка по рынкам, если их больше одного."""
     by = {str(r["marketplace"]): int(r["pairs"]) for _, r in plan.iterrows()}
@@ -461,14 +465,15 @@ def render_collect(all_markets: list[str]) -> tuple:
         # ряд: галочки · «Собрать» · что уйдёт · CSV · Excel — выгрузка
         # рядом со сбором, а не под фильтрами: это два действия над
         # каталогом, и искать их в разных местах не нужно
-        cols = st.columns([1] * len(all_markets) + [4, 4, 1, 1], gap="small",
+        cols = st.columns([1] * len(all_markets) + [4, 4, 3, 1, 1], gap="small",
                           vertical_alignment="center")
         picked = [mp for i, mp in enumerate(all_markets)
                   if cols[i].checkbox(mp.upper(), key=f"collect-mp-{mp}")]
         plan, perr = collector.planned(picked)
         n_plan = int(plan["pairs"].sum()) if not plan.empty else 0
         export_slots = (cols[-2].empty(), cols[-1].empty())
-        cols = cols[:-2]
+        show_col = cols[-3]
+        cols = cols[:-3]
         if cols[-2].button(t("catalog.collect_btn"), key="collect-go", type="primary",
                            disabled=not picked or not n_plan or run is not None or no_client,
                            help=t("catalog.collect_help")):
@@ -481,9 +486,7 @@ def render_collect(all_markets: list[str]) -> tuple:
         # что уйдёт в сбор — видно ДО нажатия и не зависит от кнопки:
         # «ES, DE · 566 товаров» — это число запросов, а не «выбрано 2».
         # Свёрнутые не в счёт: job их не собирает (planned считает так же).
-        if no_client:
-            cols[-1].caption(t("catalog.collect_no_client"))
-        elif perr:
+        if perr:
             cols[-1].caption("⚠ " + t("common.read_failed", e=perr))
         elif not picked:
             cols[-1].caption(t("catalog.collect_pick"))
@@ -491,6 +494,15 @@ def render_collect(all_markets: list[str]) -> tuple:
             cols[-1].caption(t("catalog.collect_nothing"))
         else:
             cols[-1].markdown(collect_plan_text(plan), unsafe_allow_html=True)
+            # Галочки — про сбор, список они не режут, и это путали:
+            # собрал PL, скачал CSV — а там весь каталог. Ссылка ставит
+            # те же рынки в фильтр списка, и выгрузка становится «только
+            # PL». Через колбэк: фильтр рисуется ниже, а писать в ключ
+            # виджета можно только до его создания (правило 7б).
+            show_col.button(t("catalog.collect_show_in_list"), key="collect-show",
+                            type="tertiary", on_click=_filter_markets, args=(picked,))
+        if no_client:
+            st.caption(t("catalog.collect_no_client"))
 
     err = st.session_state.pop("collect-error", None)
     if err == "already-running":
@@ -726,8 +738,8 @@ who = f1.segmented_control(
     "кто", _who_opts, default="all", format_func=lambda k: _who_lbl[k],
     selection_mode="single", label_visibility="collapsed", key="cat_who") or "all"
 mps = sorted(df["marketplace"].unique())
-mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
-                        placeholder=t("list.all_mp"))
+mp_sel = f2.multiselect("MP", mps, label_visibility="collapsed",
+                        placeholder=t("list.all_mp"), key="cat_mp")
 only_problems = f3.checkbox(t("catalog.only_problems"))
 
 # фильтр по источнику проблемы, счётчики — по парам (asin, marketplace).

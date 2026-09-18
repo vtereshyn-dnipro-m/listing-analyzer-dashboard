@@ -76,6 +76,10 @@ def fake_sql(sql, conn, **kw):
     s = str(sql)
     if "FROM product_matrix m" in s and "is_amazon_choice" in s:
         return CAT.copy()
+    if "count(*) AS pairs" in s:                    # план сбора по рынкам
+        mps = list((kw.get("params") or {}).get("mps") or [])
+        act = CAT[(CAT["status"] == "active") & CAT["marketplace"].isin(mps)]
+        return act.groupby("marketplace").size().rename("pairs").reset_index()
     return pd.DataFrame()
 
 
@@ -147,6 +151,19 @@ at.multiselect[0].set_value(["it"]).run()
 _dl = {b.key: str(b.label) for b in at.get("download_button")}
 check(f"с фильтром IT — две строки в обоих ({_dl.get('cat-export-xlsx')})",
       _dl["cat-export-csv"].endswith("· 2") and _dl["cat-export-xlsx"].endswith("· 2"))
+# Галочки сбора список не режут — и это путали: собрал PL, скачал
+# CSV, а там весь каталог. Ссылка рядом с числом ставит те же рынки
+# в фильтр списка, и выгрузка сужается до них.
+at.multiselect[0].set_value([]).run()
+next(c for c in at.checkbox if c.key == "collect-mp-it").set_value(True).run()
+_dl = {b.key: str(b.label) for b in at.get("download_button")}
+check("галочка сбора сама по себе список не режет",
+      _dl["cat-export-csv"].endswith("· 8"))
+next(b for b in at.button if b.key == "collect-show").click().run()
+_dl = {b.key: str(b.label) for b in at.get("download_button")}
+check(f"«показать эти рынки в списке» ставит фильтр: IT → 2 строки ({_dl.get('cat-export-csv')})",
+      at.multiselect[0].value == ["it"] and _dl["cat-export-csv"].endswith("· 2"))
+at.multiselect[0].set_value(["it"]).run()
 # кнопки стоят в ряду со сбором, пояснение — в подсказке кнопки
 check("и сказано, что выгружается то, что на экране",
       all("то, что на экране" in str(b.help) for b in at.get("download_button")))
