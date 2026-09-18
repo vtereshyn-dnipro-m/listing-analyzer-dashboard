@@ -428,7 +428,10 @@ def collect_plan_text(plan: pd.DataFrame) -> str:
     return f'<div style="font-size:14px;white-space:nowrap;">{head}</div>'
 
 
-def render_collect(all_markets: list[str]) -> None:
+def render_collect(all_markets: list[str]) -> tuple:
+    """Полоса действий. Возвращает два места под кнопки выгрузки:
+    они стоят в этом же ряду, но что выгружать — известно только после
+    фильтров ниже, поэтому заполняются позже (`st.empty`)."""
     key = "cat-collect"
     st.markdown(
         f'<style>.st-key-{key} div[data-testid="stHorizontalBlock"]'
@@ -437,7 +440,8 @@ def render_collect(all_markets: list[str]) -> None:
         '{flex:0 0 auto !important;width:auto !important;min-width:0 !important;}'
         f'.st-key-{key} div[data-testid="stColumn"]:last-child'
         '{flex:1 1 auto !important;}'
-        f'.st-key-{key} .stButton button{{white-space:nowrap !important;width:auto !important;}}'
+        f'.st-key-{key} .stButton button,.st-key-{key} .stDownloadButton button'
+        '{white-space:nowrap !important;width:auto !important;}'
         f'.st-key-{key} label{{white-space:nowrap !important;}}</style>',
         unsafe_allow_html=True)
 
@@ -454,12 +458,17 @@ def render_collect(all_markets: list[str]) -> None:
         # ряд галочек без подписи читался как список кодов — непонятно,
         # зачем он; заголовок говорит, что это действие и что выбирать
         st.markdown(eyebrow(t("catalog.collect_title")), unsafe_allow_html=True)
-        cols = st.columns([1] * len(all_markets) + [4, 4], gap="small",
+        # ряд: галочки · «Собрать» · что уйдёт · CSV · Excel — выгрузка
+        # рядом со сбором, а не под фильтрами: это два действия над
+        # каталогом, и искать их в разных местах не нужно
+        cols = st.columns([1] * len(all_markets) + [4, 4, 1, 1], gap="small",
                           vertical_alignment="center")
         picked = [mp for i, mp in enumerate(all_markets)
                   if cols[i].checkbox(mp.upper(), key=f"collect-mp-{mp}")]
         plan, perr = collector.planned(picked)
         n_plan = int(plan["pairs"].sum()) if not plan.empty else 0
+        export_slots = (cols[-2].empty(), cols[-1].empty())
+        cols = cols[:-2]
         if cols[-2].button(t("catalog.collect_btn"), key="collect-go", type="primary",
                            disabled=not picked or not n_plan or run is not None or no_client,
                            help=t("catalog.collect_help")):
@@ -492,6 +501,7 @@ def render_collect(all_markets: list[str]) -> None:
     render_collect_outcome()
     if run is not None:
         render_collect_progress()
+    return export_slots
 
 
 @st.fragment(run_every="10s" if st.session_state.get("collect-run") else None)
@@ -563,7 +573,7 @@ def render_collect_outcome() -> None:
         st.caption("⚠ " + t("catalog.collect_failed", e=o["err"]))
 
 
-render_collect(sorted(df["marketplace"].unique()))
+_export_slots = render_collect(sorted(df["marketplace"].unique()))
 
 # ---- группы фильтра: по ИСТОЧНИКУ проблемы, а не по конкретной причине.
 # Amazon — состояние пары из listing_issues; Контент и Поиск — правила
@@ -884,29 +894,20 @@ def _xlsx_bytes(frame: pd.DataFrame) -> bytes:
 
 
 _stamp = pd.Timestamp.now(tz="Europe/Kyiv").strftime("%Y-%m-%d")
-_exp_key = "cat-export"
-st.markdown(
-    f'<style>.st-key-{_exp_key} div[data-testid="stHorizontalBlock"]'
-    '{gap:10px !important;align-items:center;flex-wrap:wrap;}'
-    f'.st-key-{_exp_key} div[data-testid="stColumn"]'
-    '{flex:0 0 auto !important;width:auto !important;min-width:0 !important;}'
-    f'.st-key-{_exp_key} div[data-testid="stColumn"]:last-child'
-    '{flex:1 1 auto !important;}'
-    f'.st-key-{_exp_key} .stDownloadButton button'
-    '{white-space:nowrap !important;width:auto !important;}</style>',
-    unsafe_allow_html=True)
-with st.container(key=_exp_key):
-    e1, e2, e3 = st.columns([1, 1, 4], gap="small", vertical_alignment="center")
-    e1.download_button(f'{t("catalog.export_csv")} · {len(exp)}',
-                       exp.to_csv(index=False).encode("utf-8-sig"),
-                       file_name=f"catalog-{_stamp}.csv", mime="text/csv",
-                       key="cat-export-csv")
-    e2.download_button(f'{t("catalog.export_xlsx")} · {len(exp)}',
-                       _xlsx_bytes(exp),
-                       file_name=f"catalog-{_stamp}.xlsx",
-                       mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                       key="cat-export-xlsx")
-    e3.caption(t("catalog.export_note"))
+# Кнопки стоят в ряду со сбором (места отданы render_collect), но число
+# в подписи — от строк ПОСЛЕ фильтров: файл «всего каталога» вместо
+# отфильтрованного был бы тихой подменой. Пояснение — в подсказке.
+_export_slots[0].download_button(
+    f'{t("catalog.export_csv")} · {len(exp)}',
+    exp.to_csv(index=False).encode("utf-8-sig"),
+    file_name=f"catalog-{_stamp}.csv", mime="text/csv",
+    key="cat-export-csv", type="primary", help=t("catalog.export_note"))
+_export_slots[1].download_button(
+    f'{t("catalog.export_xlsx")} · {len(exp)}',
+    _xlsx_bytes(exp),
+    file_name=f"catalog-{_stamp}.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    key="cat-export-xlsx", type="primary", help=t("catalog.export_note"))
 
 # ---- пагинация
 pages = max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE)
