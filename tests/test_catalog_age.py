@@ -151,19 +151,28 @@ at.multiselect[0].set_value(["it"]).run()
 _dl = {b.key: str(b.label) for b in at.get("download_button")}
 check(f"с фильтром IT — две строки в обоих ({_dl.get('cat-export-xlsx')})",
       _dl["cat-export-csv"].endswith("· 2") and _dl["cat-export-xlsx"].endswith("· 2"))
-# Галочки сбора список не режут — и это путали: собрал PL, скачал
-# CSV, а там весь каталог. Ссылка рядом с числом ставит те же рынки
-# в фильтр списка, и выгрузка сужается до них.
+# Отметил рынок для сбора — выгрузка идёт ПО НЕМУ, без промежуточного
+# нажатия: «выбрал PL, собрал, скачал по нему же». Список при этом
+# не режется (собирать три рынка и смотреть весь каталог — нормально),
+# а подпись кнопки говорит, что в файле: «CSV · 2 (IT)».
 at.multiselect[0].set_value([]).run()
 next(c for c in at.checkbox if c.key == "collect-mp-it").set_value(True).run()
 _dl = {b.key: str(b.label) for b in at.get("download_button")}
-check("галочка сбора сама по себе список не режет",
-      _dl["cat-export-csv"].endswith("· 8"))
+check(f"галочка IT сужает выгрузку до IT и говорит об этом ({_dl.get('cat-export-csv')})",
+      _dl["cat-export-csv"].endswith("· 2 (IT)") and _dl["cat-export-xlsx"].endswith("· 2 (IT)"))
+check("список при этом не режется — 8 строк на экране",
+      any("8 товаров" in str(m.value) for m in at.markdown))
+check("и подсказка называет рынки, а не «то, что на экране»",
+      all("IT" in str(b.help) and "то, что на экране" not in str(b.help)
+          for b in at.get("download_button")))
+# ссылка «показать в списке» остаётся для просмотра — и режет уже список
 next(b for b in at.button if b.key == "collect-show").click().run()
+check("«показать эти рынки в списке» ставит фильтр списка на IT",
+      at.multiselect[0].value == ["it"])
+next(c for c in at.checkbox if c.key == "collect-mp-it").set_value(False).run()
 _dl = {b.key: str(b.label) for b in at.get("download_button")}
-check(f"«показать эти рынки в списке» ставит фильтр: IT → 2 строки ({_dl.get('cat-export-csv')})",
-      at.multiselect[0].value == ["it"] and _dl["cat-export-csv"].endswith("· 2"))
-at.multiselect[0].set_value(["it"]).run()
+check(f"сняли галочку — выгрузка снова по фильтрам списка ({_dl.get('cat-export-csv')})",
+      _dl["cat-export-csv"].endswith("· 2") and "(IT)" not in _dl["cat-export-csv"])
 # кнопки стоят в ряду со сбором, пояснение — в подсказке кнопки
 check("и сказано, что выгружается то, что на экране",
       all("то, что на экране" in str(b.help) for b in at.get("download_button")))
