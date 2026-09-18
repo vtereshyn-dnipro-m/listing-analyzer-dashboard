@@ -147,8 +147,11 @@ at.multiselect[0].set_value(["it"]).run()
 _dl = {b.key: str(b.label) for b in at.get("download_button")}
 check(f"с фильтром IT — две строки в обоих ({_dl.get('cat-export-xlsx')})",
       _dl["cat-export-csv"].endswith("· 2") and _dl["cat-export-xlsx"].endswith("· 2"))
+# кнопки стоят в ряду со сбором, пояснение — в подсказке кнопки
 check("и сказано, что выгружается то, что на экране",
-      any("то, что на экране" in str(c.value) for c in at.caption))
+      all("то, что на экране" in str(b.help) for b in at.get("download_button")))
+check("выгрузка стоит в ряду со сбором и выделена",
+      all(b.proto.type == "primary" for b in at.get("download_button")))
 
 import io, re  # noqa: E402
 _src = (ROOT / "pages/catalog.py").read_text(encoding="utf-8")
