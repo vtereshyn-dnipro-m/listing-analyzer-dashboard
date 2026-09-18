@@ -157,6 +157,14 @@ check(f"с фильтром IT — две строки в обоих ({_dl.get('
 # а подпись кнопки говорит, что в файле: «CSV · 2 (IT)».
 at.multiselect[0].set_value([]).run()
 next(c for c in at.checkbox if c.key == "collect-mp-it").set_value(True).run()
+# Нажимая «собрать», надо видеть, когда собирали в прошлый раз: рядом
+# с числом — дата самого свежего снапшота рынка (у IT — вчера).
+_plan = next((str(m.value) for m in at.markdown
+              if "white-space" in str(m.value) and "товар" in str(m.value)), "")
+_it_last = (NOW - pd.Timedelta(days=1, hours=1)).strftime("%d.%m")
+check(f"рядом с числом — дата последнего сбора рынка ({_plan[-60:]})",
+      "последний сбор" in _plan and _it_last in _plan)
+
 _dl = {b.key: str(b.label) for b in at.get("download_button")}
 check(f"галочка IT сужает выгрузку до IT и говорит об этом ({_dl.get('cat-export-csv')})",
       _dl["cat-export-csv"].endswith("· 2 (IT)") and _dl["cat-export-xlsx"].endswith("· 2 (IT)"))
@@ -174,6 +182,15 @@ _dl = {b.key: str(b.label) for b in at.get("download_button")}
 check(f"сняли галочку — выгрузка снова по фильтрам списка ({_dl.get('cat-export-csv')})",
       _dl["cat-export-csv"].endswith("· 2") and "(IT)" not in _dl["cat-export-csv"])
 # кнопки стоят в ряду со сбором, пояснение — в подсказке кнопки
+# в табличном виде дата сбора — колонкой, как на карточке
+at.session_state["cat_mode"] = "table"
+at.run()
+_tbl = at.dataframe[0].value if at.dataframe else None
+check("в таблице есть колонка «Собрано» с датой снапшота",
+      _tbl is not None and "fetched" in _tbl.columns
+      and _tbl["fetched"].dropna().astype(str).str.match(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}").all())
+at.session_state["cat_mode"] = "cards"
+at.run()
 check("и сказано, что выгружается то, что на экране",
       all("то, что на экране" in str(b.help) for b in at.get("download_button")))
 check("выгрузка стоит в ряду со сбором и выделена",
