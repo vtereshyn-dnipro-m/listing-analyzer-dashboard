@@ -422,17 +422,29 @@ def _filter_markets(markets: list) -> None:
     st.session_state["cat_mp"] = list(markets)
 
 
-def collect_plan_text(plan: pd.DataFrame) -> str:
-    """«ES, DE · 566 товаров» и разбивка по рынкам, если их больше одного."""
+def _when(ts) -> str:
+    return "" if ts is None or pd.isna(ts) else pd.to_datetime(ts).strftime("%d.%m %H:%M")
+
+
+def collect_plan_text(plan: pd.DataFrame, last_by_mp: dict | None = None) -> str:
+    """«ES, DE · 566 товаров · последний сбор 17.09 10:00» и разбивка
+    по рынкам, если их больше одного. Дата — самый свежий снапшот
+    рынка: нажимая «собрать», надо видеть, когда собирали в прошлый раз."""
+    last_by_mp = last_by_mp or {}
     by = {str(r["marketplace"]): int(r["pairs"]) for _, r in plan.iterrows()}
     total = sum(by.values())
     head = f'{", ".join(m.upper() for m in by)} · {plural("catalog.products_n", total)}'
+    lasts = [last_by_mp.get(m) for m in by if last_by_mp.get(m) is not None]
+    if lasts:
+        head += f' · {t("catalog.last_collect", date=_when(max(lasts)))}'
     if len(by) > 1:
-        head += f' <span style="color:{MUTED};">({", ".join(f"{m.upper()} {n}" for m, n in by.items())})</span>'
+        parts = [f"{m.upper()} {n}" + (f" · {_when(last_by_mp[m])}" if last_by_mp.get(m) is not None else "")
+                 for m, n in by.items()]
+        head += f' <span style="color:{MUTED};">({", ".join(parts)})</span>'
     return f'<div style="font-size:14px;white-space:nowrap;">{head}</div>'
 
 
-def render_collect(all_markets: list[str]) -> tuple:
+def render_collect(all_markets: list[str], last_by_mp: dict | None = None) -> tuple:
     """Полоса действий. Возвращает два места под кнопки выгрузки и
     отмеченные рынки: кнопки стоят в этом же ряду, но что выгружать —
     известно только после фильтров ниже, поэтому заполняются позже
@@ -494,7 +506,7 @@ def render_collect(all_markets: list[str]) -> tuple:
         elif not n_plan:
             cols[-1].caption(t("catalog.collect_nothing"))
         else:
-            cols[-1].markdown(collect_plan_text(plan), unsafe_allow_html=True)
+            cols[-1].markdown(collect_plan_text(plan, last_by_mp), unsafe_allow_html=True)
             # Галочки — про сбор, список они не режут, и это путали:
             # собрал PL, скачал CSV — а там весь каталог. Ссылка ставит
             # те же рынки в фильтр списка, и выгрузка становится «только
@@ -586,7 +598,10 @@ def render_collect_outcome() -> None:
         st.caption("⚠ " + t("catalog.collect_failed", e=o["err"]))
 
 
-_export_slots, _collect_mps = render_collect(sorted(df["marketplace"].unique()))
+_last_by_mp = {str(m): v for m, v in
+               pd.to_datetime(df["fetched_at"], utc=True).groupby(df["marketplace"]).max().items()
+               if pd.notna(v)}
+_export_slots, _collect_mps = render_collect(sorted(df["marketplace"].unique()), _last_by_mp)
 
 # ---- группы фильтра: по ИСТОЧНИКУ проблемы, а не по конкретной причине.
 # Amazon — состояние пары из listing_issues; Контент и Поиск — правила
@@ -946,8 +961,8 @@ if mode == "table":
                   for x in rows]
     tv = tv.rename(columns={"title_len": "len", "in_stock": "stock",
                             "revenue_30d": "rev", "sessions_30d": "sess",
-                            "shipping_template": "ship"})
-    cols = [c for c in ["img", "sku", "asin", "mp", "who", "health", "len",
+                            "shipping_template": "ship", "fetched_at": "fetched"})
+    cols = [c for c in ["img", "sku", "asin", "mp", "fetched", "who", "health", "len",
                         "photos", "video", "aplus", "reviews", "rating",
                         "price", "bsr", "bsr_cat", "stock", "rev", "sess",
                         "ship", "name"] if c in tv.columns]
@@ -960,6 +975,8 @@ if mode == "table":
             "asin": st.column_config.LinkColumn(
                 "ASIN", display_text=ASIN_IN_URL, width="small"),
             "mp": st.column_config.TextColumn("MP", width="small"),
+            "fetched": st.column_config.TextColumn(t("catalog.col_collected"),
+                                                   width="small"),
             "who": st.column_config.TextColumn(t("common.our"), width="small"),
             "health": st.column_config.TextColumn(t("catalog.h_ok"),
                                                   width="small"),
