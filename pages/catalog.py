@@ -433,9 +433,10 @@ def collect_plan_text(plan: pd.DataFrame) -> str:
 
 
 def render_collect(all_markets: list[str]) -> tuple:
-    """Полоса действий. Возвращает два места под кнопки выгрузки:
-    они стоят в этом же ряду, но что выгружать — известно только после
-    фильтров ниже, поэтому заполняются позже (`st.empty`)."""
+    """Полоса действий. Возвращает два места под кнопки выгрузки и
+    отмеченные рынки: кнопки стоят в этом же ряду, но что выгружать —
+    известно только после фильтров ниже, поэтому заполняются позже
+    (`st.empty`); отмеченные рынки сужают выгрузку до себя."""
     key = "cat-collect"
     st.markdown(
         f'<style>.st-key-{key} div[data-testid="stHorizontalBlock"]'
@@ -513,7 +514,7 @@ def render_collect(all_markets: list[str]) -> tuple:
     render_collect_outcome()
     if run is not None:
         render_collect_progress()
-    return export_slots
+    return export_slots, picked
 
 
 @st.fragment(run_every="10s" if st.session_state.get("collect-run") else None)
@@ -585,7 +586,7 @@ def render_collect_outcome() -> None:
         st.caption("⚠ " + t("catalog.collect_failed", e=o["err"]))
 
 
-_export_slots = render_collect(sorted(df["marketplace"].unique()))
+_export_slots, _collect_mps = render_collect(sorted(df["marketplace"].unique()))
 
 # ---- группы фильтра: по ИСТОЧНИКУ проблемы, а не по конкретной причине.
 # Amazon — состояние пары из listing_issues; Контент и Поиск — правила
@@ -906,20 +907,29 @@ def _xlsx_bytes(frame: pd.DataFrame) -> bytes:
 
 
 _stamp = pd.Timestamp.now(tz="Europe/Kyiv").strftime("%Y-%m-%d")
-# Кнопки стоят в ряду со сбором (места отданы render_collect), но число
+# Кнопки стоят в ряду со сбором (места отданы render_collect), число
 # в подписи — от строк ПОСЛЕ фильтров: файл «всего каталога» вместо
-# отфильтрованного был бы тихой подменой. Пояснение — в подсказке.
+# отфильтрованного был бы тихой подменой. Если рынки отмечены для
+# сбора, выгрузка идёт ПО НИМ: «выбрал PL, собрал, скачал по нему же» —
+# без промежуточного нажатия; и подпись говорит об этом: «CSV · 1 (PL)».
+# Без отметок — весь список по фильтрам, как раньше.
+if _collect_mps:
+    exp = exp[exp["mp"].isin(_collect_mps)]
+    _exp_tag = f' ({", ".join(m.upper() for m in _collect_mps)})'
+    _exp_help = t("catalog.export_note_mps", mps=", ".join(m.upper() for m in _collect_mps))
+else:
+    _exp_tag, _exp_help = "", t("catalog.export_note")
 _export_slots[0].download_button(
-    f'{t("catalog.export_csv")} · {len(exp)}',
+    f'{t("catalog.export_csv")} · {len(exp)}{_exp_tag}',
     exp.to_csv(index=False).encode("utf-8-sig"),
     file_name=f"catalog-{_stamp}.csv", mime="text/csv",
-    key="cat-export-csv", type="primary", help=t("catalog.export_note"))
+    key="cat-export-csv", type="primary", help=_exp_help)
 _export_slots[1].download_button(
-    f'{t("catalog.export_xlsx")} · {len(exp)}',
+    f'{t("catalog.export_xlsx")} · {len(exp)}{_exp_tag}',
     _xlsx_bytes(exp),
     file_name=f"catalog-{_stamp}.xlsx",
     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    key="cat-export-xlsx", type="primary", help=t("catalog.export_note"))
+    key="cat-export-xlsx", type="primary", help=_exp_help)
 
 # ---- пагинация
 pages = max(1, (len(rows) + PAGE_SIZE - 1) // PAGE_SIZE)
