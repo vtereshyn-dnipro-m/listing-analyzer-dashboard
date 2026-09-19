@@ -46,6 +46,14 @@ PAGE_LANG = {
     "FR": "fr",
 }
 
+
+
+def page_lang(name: str) -> str | None:
+    """Язык страницы по имени: без хвостовых пробелов и регистра.
+    «DE » — та же страница, что «DE»; плагин сравнивает так же."""
+    return PAGE_LANG.get(str(name or "").strip().upper())
+
+
 # Подпись товара на холсте. Написана людьми и потому пишется
 # по-разному — восемь вариантов на 44 подписи страницы UK/US:
 #
@@ -481,7 +489,7 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
     dupe_frames: list[str] = []
     for page in pages:
         page_name = str(page.get("name") or "")
-        lang = PAGE_LANG.get(page_name)
+        lang = page_lang(page_name)
         if lang is None:
             skipped_pages.append(page_name)
             continue

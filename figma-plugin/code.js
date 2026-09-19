@@ -241,10 +241,19 @@ function summarize(rows) {
 }
 
 // ---- сторона Figma. Ниже — только то, что требует figma.*
+// Язык страницы по имени — зеркало services/figma.py::page_lang.
+// Имя сравнивается без хвостовых пробелов и регистра: «DE » и «de»
+// — та же страница, а точное сравнение отвечало «страницы нет»
+// на файле, где она есть.
+function pageLang(name) {
+  return PAGE_LANG[String(name || "").trim().toUpperCase()] || null;
+}
+
 function findPage(lang) {
   var pages = figma.root.children;
+  var want = String(lang || "").trim().toLowerCase();
   for (var i = 0; i < pages.length; i++) {
-    if (PAGE_LANG[pages[i].name] === lang) return pages[i];
+    if (pageLang(pages[i].name) === want) return pages[i];
   }
   return null;
 }
@@ -285,9 +294,13 @@ async function plan(payload) {
   if (got.skipped.length) {
     var byLang = {};
     got.skipped.forEach(function (x) { (byLang[x.lang] = byLang[x.lang] || []).push(x.asin); });
+    // страницы файла — как их видит плагин: расхождение имени
+    // («DE» против «DE ») видно сразу, а не после переписки
+    var names = figma.root.children.map(function (p) { return "«" + p.name + "»"; }).join(", ");
     Object.keys(byLang).forEach(function (l) {
       warnings.push("Языковой страницы «" + l.toUpperCase() + "» в файле нет — пропущено товаров: " +
-        byLang[l].length + " (" + byLang[l].join(", ") + "). Копирование макета на новую страницу — следующий шаг.");
+        byLang[l].length + " (" + byLang[l].join(", ") + "). Страницы в файле: " + names +
+        ". Ожидаются имена " + Object.keys(PAGE_LANG).join(", ") + ".");
     });
   }
   if (!got.rows.length) {
