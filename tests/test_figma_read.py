@@ -101,7 +101,8 @@ DOC = {"document": {"children": [
          "absoluteBoundingBox": {"x": 0, "y": 5100, "width": 2718, "height": 600},
          "children": [text_node("1:22", "t", "Two-year warranty", 220, 20, 16)]},
     ]},
-    {"name": "ES", "children": [
+    # хвостовой пробел в имени страницы — та же страница
+    {"name": "ES ", "children": [
         {"id": "2:1", "type": "FRAME", "name": "B0G4S9SJ3M.PT01", "children": [
             {"id": "2:3", "type": "FRAME", "name": "Frame 35841", "children": [
                 {"id": "2:4", "type": "FRAME", "name": "Frame 1614", "children": [

@@ -215,12 +215,15 @@ var RESULT = JSON.stringify({
   page_lang: PAGE_LANG,
   frame_re: %(names)s.map(function (n) { var m = FRAME_RE.exec(n);
     return m ? [m[1], m[2], m[3]] : null; }),
+  page_of: %(pages)s.map(pageLang),
   plan: rows.map(function (r) { return [r.slot, r.state, r.now, r.want, r.typo]; }),
   summary: summarize(rows)
 });
 """
 NAMES = ["B0G4S9SJ3M.PT01", "BB0GJMT58WT.MAIN", "XB0FXY75N5G.MAIN",
          "carousel 2.2", "B0G4S9SJ3M", "ABCB0G4S9SJ3M.PT01", "b0g4s9sj3m.pt01"]
+# имена страниц: точные, с хвостовым пробелом, в другом регистре, чужие
+PAGES = ["DE", "DE ", " de", "UK/US", "UK/US (OLD)", "ES - from ukranian website", "Fr", "", "Gazi"]
 
 
 def run_js() -> dict:
@@ -228,6 +231,7 @@ def run_js() -> dict:
         "page": json.dumps(PAGE, ensure_ascii=False),
         "layers": json.dumps(LAYERS, ensure_ascii=False),
         "names": json.dumps(NAMES),
+        "pages": json.dumps(PAGES),
         "aplus": json.dumps(APLUS_PAGE, ensure_ascii=False),
     }
     if shutil.which("node"):
@@ -298,6 +302,13 @@ py_re = [([g or "" for g in m] if m else None) for m in py_re]
 check(f"FRAME_RE даёт те же разборы на {len(NAMES)} именах", py_re == js["frame_re"])
 check("опечатка BB0… разбирается обоими, три лишние буквы — ни одним",
       py_re[1] is not None and py_re[5] is None)
+# Страница ищется по имени без хвостовых пробелов и регистра — и одинаково
+# у обоих: живой отказ «Языковой страницы DE в файле нет» при открытой DE.
+py_pl = [figma.page_lang(n) for n in PAGES]
+check(f"язык страницы по имени совпадает у Python и плагина ({py_pl})",
+      py_pl == js["page_of"])
+check("«DE », « de», «Fr» — те же страницы; «UK/US (OLD)» и «ES - from…» — нет",
+      py_pl == ["de", "de", "de", "en", None, None, "fr", None, None])
 
 # --- 3. план: каждое состояние названо, ничего не выбрано «первым попавшимся»
 plan = {slot: (state, now, want, typo) for slot, state, now, want, typo in js["plan"]}
