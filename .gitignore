@@ -11,3 +11,4 @@ nav_test.py
 
 # креды MCP к Lakebase
 .mcp.json
+.claude/settings.local.json
