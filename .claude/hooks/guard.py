@@ -38,8 +38,11 @@ def gather(tool_name: str, tool_input: dict) -> str:
     if tool_name == "Bash":
         cmd = tool_input.get("command", "") or ""
         parts.append(cmd)
-        # файлы, на которые ссылается команда (SQL для run_sql.py, скрипты с вызовами API)
-        for path in re.findall(r"(?<![\w-])((?:/|\./|~/)?[\w./@~-]+\.(?:sql|py|sh))\b", cmd):
+        # файлы, которые команда ИСПОЛНЯЕТ (аргумент интерпретатора или run_sql.py): их содержимое — часть команды.
+        # Файлы, которые команда только читает (grep/cat/sed), не смотрим: иначе grep по загрузчику с TRUNCATE
+        # внутри блокировался как сам TRUNCATE (так и случилось 21.09.2026)
+        exec_re = r"(?:\bpython3?\b|\bbash\b|\bsh\b|\bpsql\b[^|;&\n]*-f|run_sql\.py)\s+(?:-[\w-]+\s+)*[\"']?((?:/|\./|~/)?[\w./@~-]+\.(?:sql|py|sh))\b"
+        for path in re.findall(exec_re, cmd):
             p = os.path.expanduser(path)
             if not os.path.isabs(p):
                 p = os.path.join(os.getcwd(), p)
