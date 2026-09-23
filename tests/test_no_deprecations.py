@@ -112,10 +112,17 @@ import services.db as db                                # noqa: E402
 
 src_db = (ROOT / "services/db.py").read_text(encoding="utf-8")
 check("get_engine существует", hasattr(db, "get_engine"))
-check("движок строится поверх нашего get_conn, а не поверх строки подключения",
-      "creator=get_conn" in src_db)
-check("пул отключён — токен Lakebase живёт около часа",
-      "NullPool" in src_db)
+check("движок строится поверх нашего коннектора, а не поверх строки подключения",
+      "creator=connect_physical" in src_db)
+# Раньше здесь стоял «пул отключён — токен живёт около часа». Это было
+# неверно понятое ограничение: пароль Postgres проверяет только при
+# подключении, открытое соединение переживает истечение токена. Пул
+# включён 21.09 (первый показ Каталога стоил 11 соединений по ~1,5 с),
+# а от протухшего токена страхуют pool_recycle и свежий токен в creator.
+check("пул включён и соединение проверяется перед выдачей",
+      "pool_size=" in src_db and "pool_pre_ping=True" in src_db)
+check("соединение не живёт дольше токена Lakebase",
+      "pool_recycle=" in src_db and db.POOL_RECYCLE_S <= db.TOKEN_TTL_S)
 check("движок кэшируется как ресурс, а не пересоздаётся на каждый запрос",
       "@st.cache_resource" in src_db)
 check("sqlalchemy объявлена в зависимостях",

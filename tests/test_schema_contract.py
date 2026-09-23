@@ -226,11 +226,19 @@ _ctes = {m.lower() for m in CTE.findall(_probe)}
 check("CTE не принимается за таблицу", not (_names - _ctes - {"diagnosis"}))
 check("LATERAL не принимается за таблицу", "lateral" not in _names - _ctes)
 
-# --- снимок и реестр в CLAUDE.md не должны расходиться молча
-_doc = (ROOT / "CLAUDE.md").read_text(encoding="utf-8")
+# --- снимок и реестр в AGENTS.md не должны расходиться молча.
+# Файл переехал 21.09 (CLAUDE.md стал ссылкой «@AGENTS.md»), и проверка
+# молча стала читать одиннадцать байт: все таблицы «не описаны» — это
+# ровно тот вид отказа, ради которого тест и написан, только у самого
+# теста. Берём первый существующий и НАЗЫВАЕМ его в подписи.
+_doc_file = next((f for f in ("AGENTS.md", "CLAUDE.md")
+                  if (ROOT / f).exists() and len((ROOT / f).read_text(encoding="utf-8")) > 1000),
+                 None)
+assert _doc_file, "ни AGENTS.md, ни CLAUDE.md не похожи на реестр"
+_doc = (ROOT / _doc_file).read_text(encoding="utf-8")
 _undocumented = sorted(n for n in USED
                        if n in KNOWN and f"`{n}`" not in _doc)
-check(f"каждая читаемая таблица описана в CLAUDE.md ({_undocumented or 'все'})",
+check(f"каждая читаемая таблица описана в {_doc_file} ({_undocumented or 'все'})",
       not _undocumented)
 
 print()
