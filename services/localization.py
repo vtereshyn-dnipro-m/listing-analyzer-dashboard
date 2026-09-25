@@ -85,12 +85,33 @@ def over_rows(df: pd.DataFrame) -> int:
                if fits(r.get("translated_text"), r.get("char_limit"))[2] == "over")
 
 
-def product_state(langs_done: set) -> str:
-    """Состояние товара по набору готовых языков: all / partial / none."""
+def product_state(langs_done: set, cov: dict | None = None) -> str:
+    """Состояние товара: all / partial / none.
+
+    «Только английский» — это когда переводов НЕТ ВОВСЕ. Раньше сюда
+    попадал и товар с 97 переведёнными строками из 107: язык считался
+    готовым только при нуле пробелов, а готовых языков не осталось —
+    и список называл английскими три воздуходувки, где Мария перевела
+    все слайды (проверено 25.09: `Main Images` 30 из 30 на ES и IT,
+    дыры только в новых модулях A+). Ярлык отвечал на вопрос «есть ли
+    язык, доделанный до конца», а читался как «есть ли перевод».
+
+    Поэтому состояний по-прежнему три, но граница другая: «все языки» —
+    ноль пробелов (как было), «только англ.» — ноль переведённых строк,
+    остальное — «частично», и сколько именно, говорит чип покрытия.
+    """
     have = {lg for lg in TARGET_LANGS if lg in langs_done}
     if len(have) == len(TARGET_LANGS):
         return "all"
+    if cov:
+        done = sum(int((cov.get(lg) or {}).get("done", 0)) for lg in TARGET_LANGS)
+        return "partial" if done else "none"
     return "partial" if have else "none"
+
+
+def row_state(r) -> str:
+    """Состояние строки списка — по покрытию, а не по одному набору."""
+    return product_state(set(r.get("langs_done") or ()), r.get("lang_cov") or {})
 
 
 def summarize(products: pd.DataFrame) -> dict:
@@ -99,7 +120,7 @@ def summarize(products: pd.DataFrame) -> dict:
         return {"total": 0, "all": 0, "partial": 0, "none": 0}
     counts = {"all": 0, "partial": 0, "none": 0}
     for _, r in products.iterrows():
-        counts[product_state(set(r.get("langs_done") or ()))] += 1
+        counts[row_state(r)] += 1
     return {"total": len(products), **counts}
 
 
@@ -224,7 +245,7 @@ def load_products() -> tuple[pd.DataFrame, str | None]:
             FROM figma_products p
             ORDER BY p.name
             """, get_engine())
-        gaps = lang_gaps()
+        cov = lang_coverage()
         # «Готов» — язык, где НЕ ОСТАЛОСЬ непереведённых строк. Раньше
         # готовым считался язык с хотя бы одной переведённой строкой:
         # одна строка, переведённая кнопкой ↻, красила язык в готовый
@@ -232,7 +253,9 @@ def load_products() -> tuple[pd.DataFrame, str | None]:
         # и список говорил «все языки готовы» там, где не сделано
         # ничего. Пятый случай за неделю, когда правда лежала в базе,
         # а экран показывал другое.
-        df["lang_gaps"] = df["id"].map(lambda i: gaps.get(int(i), {}))
+        df["lang_cov"] = df["id"].map(lambda i: cov.get(int(i), {}))
+        df["lang_gaps"] = df["lang_cov"].map(
+            lambda c: {lg: v["total"] - v["done"] for lg, v in c.items()})
         df["langs_done"] = df["lang_gaps"].map(
             lambda g: {lg for lg in TARGET_LANGS if not g.get(lg, 0)})
         return df, None
@@ -328,21 +351,41 @@ def export_payload(file_key: str | None, rows) -> dict:
     return {"file_key": file_key, "items": list(items.values())}
 
 @st.cache_data(ttl=120)
-def lang_gaps() -> dict:
-    """{product_id: {lang: сколько строк ещё без перевода}} по всем товарам.
+def lang_coverage() -> dict:
+    """{product_id: {lang: {done, total, main, aplus}}} по всем товарам.
 
     Один запрос на весь список, а не четыре на товар: в списке
     двадцать товаров, и ходить в базу по восемьдесят раз ради чипов —
     это и медленно, и не нужно.
+
+    `main` и `aplus` — пары (переведено, всего) по типу места. Разнести
+    их обязательно: слайды карточки у трёх воздуходувок переведены
+    целиком, а дыры — в модулях A+, и «ES 97/107» без этой разбивки
+    отправляет дизайнера искать пропущенное по всей карточке.
     """
     cov = _coverage()
     out: dict = {}
     for _, r in cov.iterrows():
-        g = out.setdefault(int(r["product_id"]), {lg: 0 for lg in TARGET_LANGS})
+        per = out.setdefault(int(r["product_id"]),
+                             {lg: {"done": 0, "total": 0,
+                                   "main": [0, 0], "aplus": [0, 0]}
+                              for lg in TARGET_LANGS})
+        kind = "aplus" if aplus_part(slide_of(r["slot"])) else "main"
         for lg in TARGET_LANGS:
-            if lg not in r["have"]:
-                g[lg] += 1
+            c = per[lg]
+            c["total"] += 1
+            c[kind][1] += 1
+            if lg in r["have"]:
+                c["done"] += 1
+                c[kind][0] += 1
     return out
+
+
+def lang_gaps() -> dict:
+    """{product_id: {lang: сколько строк ещё без перевода}} — то, по чему
+    считаются кнопки и планы перевода."""
+    return {pid: {lg: c["total"] - c["done"] for lg, c in per.items()}
+            for pid, per in lang_coverage().items()}
 
 
 def missing_plan(product_id: int) -> tuple[dict, str | None]:

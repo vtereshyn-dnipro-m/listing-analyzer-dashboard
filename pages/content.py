@@ -35,7 +35,7 @@ from services.localization import (
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
     demo_layers, demo_products, export_payload, export_rows, fits, glossary,
     lang_gaps, load_layers, load_products, missing_plan,
-    load_prompt, needs_sync, over_rows, preview_node, product_state,
+    lang_coverage, load_prompt, needs_sync, over_rows, preview_node, row_state,
     preview_png, save_model_translation, save_parsed, save_prompt,
     save_translation, summarize, sync_age_hours,
 )
@@ -96,21 +96,52 @@ def summary_html(s: dict) -> str:
             f'margin-bottom:14px;">{cells}</div>')
 
 
-def lang_chips(done: set) -> str:
-    """Метки языков: зелёная — перевод есть, серая — нет."""
+def cov_hint(lg: str, c: dict) -> str:
+    """Подсказка чипа: покрытие по типам мест. «Main 30/30 · A+ 67/77».
+
+    Разнести обязательно: у трёх воздуходувок слайды карточки переведены
+    целиком, а дыры — только в модулях A+. Общее «97/107» отправляло бы
+    искать пропущенное по всей карточке.
+    """
+    main, ap = c.get("main") or (0, 0), c.get("aplus") or (0, 0)
+    parts = [f'{t("loc.cov_main")} {main[0]}/{main[1]}']
+    if ap[1]:
+        parts.append(f'{t("loc.cov_aplus")} {ap[0]}/{ap[1]}')
+    return f'{lg.upper()}: ' + " · ".join(parts)
+
+
+def lang_chips(done: set, cov: dict | None = None) -> str:
+    """Метки языков с покрытием: «ES 97/107».
+
+    Зелёная — переведено всё, янтарная — часть (и видно, какая),
+    серая — ничего. Двух цветов не хватало: язык с 97 строками из 107
+    красился так же, как язык, где не начинали.
+    """
+    cov = cov or {}
     out = []
     for lg in ALL_LANGS:
-        have = lg == "en" or lg in done
-        bg, fg = ("#E4EFE6", OK_GREEN) if have else ("#F1EFE9", MUTED)
-        out.append(f'<span style="background:{bg};color:{fg};font-size:11px;'
-                   f'font-weight:600;border-radius:5px;padding:2px 7px;'
-                   f'margin-right:4px;">{lg.upper()}</span>')
+        c = cov.get(lg) or {}
+        total, got = int(c.get("total") or 0), int(c.get("done") or 0)
+        if lg == "en":
+            bg, fg, text, hint = "#E4EFE6", OK_GREEN, "EN", t("loc.cov_source")
+        elif total and got >= total:
+            bg, fg, text, hint = "#E4EFE6", OK_GREEN, lg.upper(), cov_hint(lg, c)
+        elif got:
+            bg, fg = "#FBEFD9", "#8A5A12"
+            text, hint = f"{lg.upper()} {got}/{total}", cov_hint(lg, c)
+        else:
+            bg, fg, text = "#F1EFE9", MUTED, lg.upper()
+            hint = cov_hint(lg, c) if total else t("loc.cov_none")
+        out.append(f'<span title="{hint}" style="background:{bg};color:{fg};'
+                   f'font-size:11px;font-weight:600;border-radius:5px;'
+                   f'padding:2px 7px;margin-right:4px;">{text}</span>')
     return "".join(out)
 
 
 def product_row_html(r: pd.Series) -> str:
     done = set(r.get("langs_done") or ())
-    edge = STATE_COLOR[product_state(done)]
+    cov = r.get("lang_cov") or {}
+    edge = STATE_COLOR[row_state(r)]
     sku = cell_text(r, "sku")
     return (
         f'<div class="ls-card" style="background:#fff;border:1px solid {BORDER};'
@@ -123,7 +154,7 @@ def product_row_html(r: pd.Series) -> str:
         f'<div class="ls-mono" style="font-size:11px;color:{MUTED};">'
         f'{r.get("asin")}{" · " + sku if sku else ""}'
         f' · {cell_text(r, "section_type")}</div></div>'
-        f'<div style="flex:0 0 auto;">{lang_chips(done)}</div>'
+        f'<div style="flex:0 0 auto;">{lang_chips(done, cov)}</div>'
         f'<div class="ls-mono" style="flex:0 0 auto;font-size:12px;'
         f'color:{MUTED};white-space:nowrap;">'
         f'{t("loc.layers_n", n=int(r.get("layers_count") or 0))}</div></div>')
@@ -474,8 +505,8 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
 
     # без перевода — наверх: это и есть очередь работы
     view = products.copy()
-    view["_o"] = view["langs_done"].map(
-        lambda d: {"none": 0, "partial": 1, "all": 2}[product_state(set(d or ()))])
+    view["_o"] = view.apply(
+        lambda r: {"none": 0, "partial": 1, "all": 2}[row_state(r)], axis=1)
     view = view.sort_values(["_o", "name"])
 
     sel = render_bulk_bar(view, demo)
@@ -751,7 +782,7 @@ def _invalidate() -> None:
     """Всё, что считает от переводов: строки, список, пробелы, выгрузка."""
     load_layers.clear()
     load_products.clear()
-    lang_gaps.clear()
+    lang_coverage.clear()      # чипы, кнопки и планы считаются от него
     export_rows.clear()
 
 
