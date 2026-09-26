@@ -258,6 +258,62 @@ _uses = sum(p.read_text(encoding="utf-8").count("cell_text(")
             for p in ROOT.glob("pages/*.py"))
 check(f"на замену пришёл cell_text ({_uses} мест)", _uses >= 9)
 
+# --- CSS по ключу контейнера обязан совпадать с классом Streamlit
+# Streamlit делает из `key` класс `st-key-<ключ>`, заменяя всё, кроме
+# [A-Za-z0-9_-], на «-». Селектор из сырого ключа молча не срабатывает:
+# id слоя «1021:737» на «Контенте» (26.09: не работала ни подсветка
+# строки, которая не влезает в макет, ни ширина колонок — ↻ сжималась
+# в пустую рамку) и рынок «co.uk» на Синтезе. Правило: ключ, собранный
+# f-строкой и использованный в селекторе, проходит через css_key.
+import re as _re                                         # noqa: E402
+from components.ui import css_key                        # noqa: E402
+
+check("css_key даёт тот же класс, что Streamlit (проверено в DOM 26.09)",
+      css_key("locrow-18-es-1021:737") == "locrow-18-es-1021-737"
+      and css_key("rescard-B0X-co.uk") == "rescard-B0X-co-uk")
+import ast as _ast                                       # noqa: E402
+
+
+def _selector_names(node) -> set:
+    """Имена, подставленные в f-строку сразу после «st-key-»."""
+    out = set()
+    for js in _ast.walk(node):
+        if not isinstance(js, _ast.JoinedStr):
+            continue
+        vals = js.values
+        for i, v in enumerate(vals[:-1]):
+            if (isinstance(v, _ast.Constant) and str(v.value).endswith("st-key-")
+                    and isinstance(vals[i + 1], _ast.FormattedValue)):
+                fv = vals[i + 1].value
+                out.add(fv.id if isinstance(fv, _ast.Name) else "<выражение>")
+    return out
+
+
+_raw_css_keys = []
+for _p in sorted((ROOT / "pages").glob("*.py")) + [ROOT / "components/ui.py"]:
+    _tree = _ast.parse(_p.read_text(encoding="utf-8"))
+    # область — функция (или модуль): там, где собран селектор, смотрим,
+    # чем присвоено подставленное имя
+    scopes = [_tree] + [n for n in _ast.walk(_tree)
+                        if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef))]
+    for sc in scopes:
+        body = sc.body
+        names = set()
+        for stmt in body:
+            if not isinstance(stmt, (_ast.FunctionDef, _ast.AsyncFunctionDef)):
+                names |= _selector_names(stmt)
+        if "<выражение>" in names:
+            _raw_css_keys.append(f"{_p.name}: подстановка выражения в st-key-")
+        for stmt in _ast.walk(_ast.Module(body=[b for b in body if not isinstance(
+                b, (_ast.FunctionDef, _ast.AsyncFunctionDef))], type_ignores=[])):
+            if isinstance(stmt, _ast.Assign) and any(
+                    isinstance(tg, _ast.Name) and tg.id in names for tg in stmt.targets):
+                if isinstance(stmt.value, _ast.JoinedStr):
+                    _raw_css_keys.append(
+                        f"{_p.name}:{stmt.lineno} {stmt.targets[0].id} = f\"…\" без css_key")
+check(f"ключи под CSS собираются через css_key ({_raw_css_keys or '—'})",
+      not _raw_css_keys)
+
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
       else f"{len(FAILS)} провалов: {FAILS}")

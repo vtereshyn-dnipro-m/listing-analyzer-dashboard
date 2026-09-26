@@ -14,6 +14,8 @@ components/ui.py — визуальные компоненты Listing Suite (м
 
 from __future__ import annotations
 
+import re
+
 import streamlit as st
 
 from services.marketplaces import asin_link
@@ -135,6 +137,19 @@ def mobile_switch() -> None:
     """Тумблер предпросмотра мобильной вёрстки. Ставится в сайдбар."""
     st.toggle(t("sidebar.mobile"), key="mobile_preview",
               help=t("sidebar.mobile_help"))
+
+
+def css_key(key: str) -> str:
+    """Ключ контейнера, из которого Streamlit сделает РОВНО такой же класс.
+
+    Streamlit превращает `key` в класс `st-key-<ключ>`, заменяя всё, кроме
+    букв, цифр, «_» и «-», на «-». Селектор, собранный из сырого ключа,
+    с этим классом не совпадает и молча не срабатывает: id слоя Figma
+    «1021:737» и рынок «co.uk» (точка в селекторе — это ещё и цепочка
+    классов) ломали CSS строк перевода и карточек Синтеза. Ключ для
+    контейнера, на который пишется CSS, собирается ТОЛЬКО через эту
+    функцию — `test_silent_failures` это запирает."""
+    return re.sub(r"[^A-Za-z0-9_-]", "-", str(key))
 
 
 def eyebrow(text: str) -> str:

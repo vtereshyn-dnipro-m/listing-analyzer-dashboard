@@ -471,3 +471,17 @@ def build_pains(imap: dict | None = None) -> pd.DataFrame:
             "_family_alive": family_alive,
         })
     return pd.DataFrame(recs)
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def build_pains_cached(lang: str) -> pd.DataFrame:
+    """build_pains с кешем — для Диагноза.
+
+    Без кеша сборка шла на КАЖДОМ прогоне страницы, то есть на каждом
+    клике по фильтру: на объёмах 26.09 (1025 строк Issues) — 0,64 с из
+    0,86 с всего скрипта, три четверти времени смены рынка, при том что
+    исходные данные уже лежат в кеше и меняются раз в сутки. Язык —
+    в ключе кеша: тексты болей и действий идут через t(). TTL тот же,
+    что у загрузчиков Issues, — свежее, чем исходник, результат не станет.
+    """
+    return build_pains()
