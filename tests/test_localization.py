@@ -204,6 +204,28 @@ check("на пустых таблицах тоже показывается де
 _labels = [str(b.label) for b in at.button if str(b.key or "").startswith("loc-open-")]
 check(f"кнопка ведёт на непереведённый язык ({_labels[:1]})",
       bool(_labels) and _labels[0].endswith("DE"))
+# Кнопка ОТКРЫВАЕТ редактор, а не переводит — и так называется.
+# Подпись «Перевести · ES» принимали за запуск модели (веб-агент 27.09
+# держал её в запрещённых и в редактор не попал вовсе).
+check(f"подпись — «Открыть · DE», без глагола «перевести» ({_labels[:1]})",
+      bool(_labels) and _labels[0] == "Открыть · DE"
+      and not any("Перевести" in l for l in _labels))
+# Название товара — тоже вход: жмут на название, а не ищут кнопку.
+_names = [b for b in at.button if str(b.key or "").startswith("loc-name-")]
+check(f"название товара — кнопка в списке ({[str(b.label) for b in _names][:1]})",
+      len(_names) == len(_labels) and all(str(b.label) != "" for b in _names))
+_tr_calls: list = []
+import services.translate as _tr_mod                      # noqa: E402
+_tr_saved_run = _tr_mod.run
+_tr_mod.run = lambda *a, **k: (_tr_calls.append(1), ({}, "x"))[1]
+_names[0].click().run()
+check("клик по названию открывает редактор товара",
+      at.session_state["loc-product"] is not None
+      and any("← К списку" in str(b.label) or "К списку" in str(b.label) for b in at.button))
+check("и модель при этом не вызывается", not _tr_calls)
+_tr_mod.run = _tr_saved_run
+# назад в список — той же кнопкой, что у человека
+next(b for b in at.button if b.key == "loc-back").click().run()
 # У товара, где переводить нечего, кнопка не обещает перевод: она
 # «Открыть» и вторичная. Раньше она звала «Перевести · DE» и была
 # такой же, как у товара с работой, — по ней нельзя было понять,

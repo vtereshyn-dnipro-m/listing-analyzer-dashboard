@@ -135,7 +135,7 @@ _ns: dict = {"t": lambda k, **kw: {"loc.cov_main": "Карточка",
                                    "loc.cov_none": "Строк пока нет"}.get(k, k),
              "ALL_LANGS": loc.ALL_LANGS, "OK_GREEN": "#2F6B3A", "MUTED": "#57534A"}
 _start = _src.index("def cov_hint(")
-_end = _src.index("def product_row_html(")
+_end = _src.index("def product_meta_html(")
 exec(compile(_src[_start:_end], "chips", "exec"), _ns)
 chips = _ns["lang_chips"]
 
