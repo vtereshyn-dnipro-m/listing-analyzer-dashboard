@@ -125,58 +125,76 @@ def flex_row_css(key: str) -> str:
             '{white-space:nowrap !important;width:auto !important;}</style>')
 
 
-def lang_chips(done: set, cov: dict | None = None) -> str:
-    """Метки языков с покрытием: «ES 97/107».
+def chip_spec(lg: str, c: dict) -> tuple[str, str, str, str]:
+    """Чип языка: (фон, цвет, подпись, подсказка).
 
-    Зелёная — переведено всё, янтарная — часть (и видно, какая),
-    серая — ничего. Двух цветов не хватало: язык с 97 строками из 107
-    красился так же, как язык, где не начинали.
+    Зелёный — переведено всё, янтарный — часть и видно, какая («ES
+    97/107»), серый — ничего. Двух цветов не хватало: язык с 97
+    строками из 107 красился так же, как язык, где не начинали.
     """
-    cov = cov or {}
-    out = []
-    for lg in ALL_LANGS:
-        c = cov.get(lg) or {}
-        total, got = int(c.get("total") or 0), int(c.get("done") or 0)
-        if lg == "en":
-            bg, fg, text, hint = "#E4EFE6", OK_GREEN, "EN", t("loc.cov_source")
-        elif total and got >= total:
-            bg, fg, text, hint = "#E4EFE6", OK_GREEN, lg.upper(), cov_hint(lg, c)
-        elif got:
-            bg, fg = "#FBEFD9", "#8A5A12"
-            text, hint = f"{lg.upper()} {got}/{total}", cov_hint(lg, c)
-        else:
-            bg, fg, text = "#F1EFE9", MUTED, lg.upper()
-            hint = cov_hint(lg, c) if total else t("loc.cov_none")
-        out.append(f'<span title="{hint}" style="background:{bg};color:{fg};'
-                   f'font-size:11px;font-weight:600;border-radius:5px;'
-                   f'padding:2px 7px;margin-right:4px;">{text}</span>')
-    return "".join(out)
+    c = c or {}
+    total, got = int(c.get("total") or 0), int(c.get("done") or 0)
+    if lg == "en":
+        return "#E4EFE6", OK_GREEN, "EN", t("loc.cov_source")
+    if total and got >= total:
+        return "#E4EFE6", OK_GREEN, lg.upper(), cov_hint(lg, c)
+    if got:
+        return "#FBEFD9", "#8A5A12", f"{lg.upper()} {got}/{total}", cov_hint(lg, c)
+    return "#F1EFE9", MUTED, lg.upper(), (cov_hint(lg, c) if total else t("loc.cov_none"))
 
 
-def product_meta_html(r: pd.Series) -> str:
-    """Карточка товара в списке БЕЗ названия: ASIN · SKU · секция, чипы
-    языков, число слоёв. Название рисуется кнопкой над ней — оно
-    открывает редактор (см. render_list)."""
-    done = set(r.get("langs_done") or ())
-    cov = r.get("lang_cov") or {}
+CHIP_CSS = ("font-size:11px;font-weight:600;border-radius:5px;padding:2px 7px;")
+
+
+def product_id_html(r: pd.Series) -> str:
+    """ASIN · SKU · секция — одной строкой с многоточием: при узком окне
+    колонка сжималась, и ASIN ложился в столбик по две буквы."""
     sku = cell_text(r, "sku")
-    return (
-        f'<div style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;">'
-        f'<div style="flex:1 1 180px;min-width:140px;">'
-        # одной строкой с многоточием: при узком окне и длинных чипах
-        # покрытия («ES 97/107») колонка сжималась, и ASIN ложился
-        # в столбик по две буквы — нечитаемо и не копируется
-        f'<div class="ls-mono" style="font-size:11px;color:{MUTED};'
-        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
-        f'{r.get("asin")}{" · " + sku if sku else ""}'
-        f' · {cell_text(r, "section_type")}</div></div>'
-        # на узком окне чипы уходят второй строкой целиком, а не
-        # сжимаются в столбик по одному
-        f'<div style="flex:0 0 auto;display:flex;flex-wrap:wrap;'
-        f'row-gap:4px;">{lang_chips(done, cov)}</div>'
-        f'<div class="ls-mono" style="flex:0 0 auto;font-size:12px;'
-        f'color:{MUTED};white-space:nowrap;">'
-        f'{t("loc.layers_n", n=int(r.get("layers_count") or 0))}</div></div>')
+    return (f'<div class="ls-mono" style="font-size:11px;color:{MUTED};'
+            f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
+            f'{r.get("asin")}{" · " + sku if sku else ""}'
+            f' · {cell_text(r, "section_type")}</div>')
+
+
+def render_meta_row(r: pd.Series, pid: int) -> None:
+    """Строка под названием: ASIN, чипы языков, число слоёв.
+
+    Чипы — КНОПКИ: нажал «FR 31/85» — редактор открылся на FR. Раньше
+    чипы были картинкой, а язык выбирала кнопка «Открыть · ES» — первый
+    язык с работой, и почему ES, а не FR, из строки было не понять.
+    Модель чип не зовёт — только открывает, как название."""
+    cov = r.get("lang_cov") or {}
+    key = css_key(f"loc-meta-{pid}")
+    # текст ряда (ASIN, EN, слои) — на одной линии с кнопками-чипами:
+    # у markdown свой отступ снизу, и без этого он стоял на ~11 px ниже
+    css = [f'.st-key-{key} p{{margin:0 !important;line-height:22px;}}'
+           f'.st-key-{key} div[data-testid="stMarkdown"],'
+           f'.st-key-{key} div[data-testid="stMarkdownContainer"]'
+           '{margin:0 !important;padding:0 !important;}'
+           f'.st-key-{key} div[data-testid="stElementContainer"]'
+           '{margin:0 !important;align-self:center;}']
+    for lg in TARGET_LANGS:
+        bg, fg, _, _ = chip_spec(lg, cov.get(lg))
+        css.append(f'.st-key-loc-chip-{pid}-{lg} button{{background:{bg} !important;'
+                   f'color:{fg} !important;{CHIP_CSS}min-height:0 !important;}}'
+                   f'.st-key-loc-chip-{pid}-{lg} button p{{{CHIP_CSS}padding:0;}}'
+                   f'.st-key-loc-chip-{pid}-{lg} button:hover{{filter:brightness(.95);}}')
+    st.markdown("<style>" + "".join(css) + "</style>", unsafe_allow_html=True)
+    row = st.container(key=key, horizontal=True, wrap=True, gap="small",
+                       vertical_alignment="center")
+    row.markdown(product_id_html(r), unsafe_allow_html=True, width="content")
+    bg, fg, text, hint = chip_spec("en", cov.get("en"))
+    row.markdown(f'<span title="{hint}" style="background:{bg};color:{fg};{CHIP_CSS}">'
+                 f'{text}</span>', unsafe_allow_html=True, width="content")
+    for lg in TARGET_LANGS:
+        _, _, text, hint = chip_spec(lg, cov.get(lg))
+        row.button(text, key=f"loc-chip-{pid}-{lg}", type="tertiary",
+                   help=hint + " · " + t("loc.chip_open", lang=lg.upper()),
+                   on_click=_open_product, args=(pid, lg))
+    row.markdown(f'<span class="ls-mono" style="font-size:12px;color:{MUTED};'
+                 f'white-space:nowrap;">'
+                 f'{t("loc.layers_n", n=int(r.get("layers_count") or 0))}</span>',
+                 unsafe_allow_html=True, width="content")
 
 
 def counter_html(n: int, lim: int | None, state: str) -> str:
@@ -317,9 +335,19 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
 
 
 def _open_product(pid: int, lang: str) -> None:
-    """Открыть товар в редакторе на языке. Колбэк: и название, и кнопка."""
+    """Открыть товар в редакторе на языке. Колбэк: название, чип, кнопка.
+
+    Язык редактора — это не `loc-lang`, а галочки языков (`pick_langs`),
+    и они помнят прошлый заход: ключ `loc-lang-<gen>-<lg>` жив, пока не
+    сменилось поколение, и `value=` он игнорирует (правило 7б). Поэтому
+    до 27.09 любой вход после первого открывал ПРОШЛЫЙ язык: зашёл на
+    DE, вернулся, нажал «Открыть · ES» — снова DE. Вход кладёт набор
+    и растит поколение — галочки создаются заново на нужном языке."""
     st.session_state["loc-product"] = int(pid)
     st.session_state["loc-lang"] = lang
+    st.session_state["loc-langs"] = [lang]
+    st.session_state["loc-langs-preset"] = [lang]
+    st.session_state["loc-langs-gen"] = int(st.session_state.get("loc-langs-gen", 0)) + 1
 
 
 def _toggle_sel(pid: int, key: str) -> None:
@@ -604,15 +632,14 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
                       key=f"loc-name-{pid}", type="tertiary",
                       help=t("loc.open_help", lang=target.upper()),
                       on_click=_open_product, args=(pid, target))
-            st.markdown(product_meta_html(r), unsafe_allow_html=True)
+            render_meta_row(r, pid)
         # Кнопка ОТКРЫВАЕТ редактор, модель она не зовёт — перевод
-        # запускается внутри. Подпись была «Перевести · ES», и её
-        # принимали за запуск модели. Язык в подписи — тот, на котором
-        # редактор откроется; основная, пока на каком-то языке есть
-        # работа, вторичная у готового товара.
-        label = (f'{t("loc.open")} · {target.upper()}' if missing
-                 else t("loc.open"))
-        c2.button(label, key=f"loc-open-{r['id']}",
+        # запускается внутри. Язык в подписи был лишним: «Открыть · ES»
+        # при жёлтых ES и FR не объясняло, почему ES, — какие языки
+        # с работой, говорят чипы, и по ним же можно открыть нужный.
+        # Кнопка открывает на первом языке с работой; основная, пока
+        # работа есть, вторичная у готового товара.
+        c2.button(t("loc.open"), key=f"loc-open-{r['id']}",
                   type="primary" if missing else "secondary",
                   help=t("loc.open_help", lang=target.upper()),
                   on_click=_open_product, args=(pid, target))
