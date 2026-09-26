@@ -520,7 +520,10 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
         # «Выбрать все» стоит выше галочек и переставить их напрямую
         # не может (правило 7б) — кнопка меняет набор и растит
         # поколение, галочки следующего прогона создаются заново.
-        ck.checkbox("", key=f"loc-ck-{gen}-{pid}", value=pid in sel,
+        # подпись скрыта, но она есть: её читает экранный диктор, и пустая
+        # подпись в Streamlit — предупреждение сейчас и ошибка потом
+        ck.checkbox(t("common.pick_row", x=cell_text(r, "name") or cell_text(r, "asin")),
+                    key=f"loc-ck-{gen}-{pid}", value=pid in sel,
                     label_visibility="collapsed",
                     on_change=_toggle_sel, args=(pid, f"loc-ck-{gen}-{pid}"))
         render_thumb(c0, r, demo)
