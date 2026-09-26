@@ -13,7 +13,7 @@ import pandas as pd
 import streamlit as st
 
 from config import TITLE_LIMIT as _TL_DEFAULT, days_to_deadline
-from i18n import t, tr_opt
+from i18n import current_lang, t, tr_opt
 from services.cells import cell_text
 from services.db import get_conn, get_engine
 from services.settings import get_int
@@ -21,7 +21,7 @@ from services.economics import (
     num,
     econ_map, money_at_risk, fmt_money, fmt_conversion,
 )
-from services.issues import build_pains as issue_pains
+from services.issues import build_pains_cached
 from services.marketplaces import product_url, img_or_stub, ASIN_IN_URL
 from components.ui import (
     inject_fonts, verdict, limit_ruler_html, pain_card, eyebrow,
@@ -319,7 +319,7 @@ if diag_error:
     st.error("⚠ " + t("dash.load_failed", e=diag_error))
 # боли Amazon Issues считаются на лету из реплики (свежее, чем автосбор:
 # сбор в 13:00, реплика в 14:00) и в diagnosis не пишутся
-issue_diag = issue_pains()
+issue_diag = build_pains_cached(current_lang())
 titles = load_titles()
 title_map, image_map, fetch_map = {}, {}, {}
 ECON = econ_map()

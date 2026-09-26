@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 import re
 
+from collections import Counter
+
 import pandas as pd
 import streamlit as st
 
@@ -422,14 +424,25 @@ def _when(ts) -> str:
     return "" if ts is None or pd.isna(ts) else pd.to_datetime(ts).strftime("%d.%m %H:%M")
 
 
-def collect_plan_text(plan: pd.DataFrame, last_by_mp: dict | None = None) -> str:
-    """«ES, DE · 566 товаров · последний сбор 17.09 10:00» и разбивка
-    по рынкам, если их больше одного. Дата — самый свежий снапшот
-    рынка: нажимая «собрать», надо видеть, когда собирали в прошлый раз."""
+def collect_plan_text(plan: pd.DataFrame, last_by_mp: dict | None = None,
+                      wound_by_mp: dict | None = None) -> str:
+    """«ES · 301 к сбору · 9 свёрнутых не собираются · последний сбор
+    17.09 10:00» и разбивка по рынкам, если их больше одного.
+
+    Число — то, что уйдёт в сбор (активные пары). Рядом называются
+    свёрнутые: список и выгрузка показывают ВСЕ пары рынка (310 у ES),
+    и одно «301 товар» рядом с «CSV · 310» читалось как ошибка счёта
+    (проверка веб-агента 26.09: 301 active + 9 wound_down). Дата —
+    самый свежий снапшот рынка: нажимая «собрать», надо видеть, когда
+    собирали в прошлый раз."""
     last_by_mp = last_by_mp or {}
+    wound_by_mp = wound_by_mp or {}
     by = {str(r["marketplace"]): int(r["pairs"]) for _, r in plan.iterrows()}
     total = sum(by.values())
-    head = f'{", ".join(m.upper() for m in by)} · {plural("catalog.products_n", total)}'
+    wound = sum(int(wound_by_mp.get(m, 0)) for m in by)
+    head = f'{", ".join(m.upper() for m in by)} · {t("catalog.to_collect_n", n=total)}'
+    if wound:
+        head += f' <span style="color:{MUTED};">· {plural("catalog.wound_skip", wound)}</span>'
     lasts = [last_by_mp.get(m) for m in by if last_by_mp.get(m) is not None]
     if lasts:
         head += f' · {t("catalog.last_collect", date=_when(max(lasts)))}'
@@ -440,7 +453,8 @@ def collect_plan_text(plan: pd.DataFrame, last_by_mp: dict | None = None) -> str
     return f'<div style="font-size:14px;white-space:nowrap;">{head}</div>'
 
 
-def render_collect(all_markets: list[str], last_by_mp: dict | None = None) -> tuple:
+def render_collect(all_markets: list[str], last_by_mp: dict | None = None,
+                   wound_by_mp: dict | None = None) -> tuple:
     """Полоса действий. Возвращает два места под кнопки выгрузки и
     отмеченные рынки: кнопки стоят в этом же ряду, но что выгружать —
     известно только после фильтров ниже, поэтому заполняются позже
@@ -501,7 +515,7 @@ def render_collect(all_markets: list[str], last_by_mp: dict | None = None) -> tu
         elif not n_plan:
             cols[-1].caption(t("catalog.collect_nothing"))
         else:
-            cols[-1].markdown(collect_plan_text(plan, last_by_mp), unsafe_allow_html=True)
+            cols[-1].markdown(collect_plan_text(plan, last_by_mp, wound_by_mp), unsafe_allow_html=True)
         if no_client:
             st.caption(t("catalog.collect_no_client"))
 
@@ -589,7 +603,10 @@ def render_collect_outcome() -> None:
 _last_by_mp = {str(m): v for m, v in
                pd.to_datetime(df["fetched_at"], utc=True).groupby(df["marketplace"]).max().items()
                if pd.notna(v)}
-_export_slots, _collect_mps = render_collect(sorted(df["marketplace"].unique()), _last_by_mp)
+_wound_by_mp = {str(m): int(n) for m, n in
+                df[df.apply(pair_status, axis=1) == WOUND].groupby("marketplace").size().items()}
+_export_slots, _collect_mps = render_collect(sorted(df["marketplace"].unique()),
+                                             _last_by_mp, _wound_by_mp)
 
 # ---- группы фильтра: по ИСТОЧНИКУ проблемы, а не по конкретной причине.
 # Amazon — состояние пары из listing_issues; Контент и Поиск — правила
@@ -846,12 +863,24 @@ else:
         -group_risk(str(x["r"]["asin"]), str(x["r"]["marketplace"]), iss_f),
         order[x["lvl"]], -_rev(x)))
 
-healthy = sum(1 for x in rows if x["lvl"] == "ok")
+# Разбивка списка ЦЕЛИКОМ, чтобы числа складывались: было «260 товаров
+# · здоровых 1», а «только с проблемами» убирало две строки — вторая
+# была несобранной (B0GZVXLK1Y/de, ждёт первого сбора). Здоровье у
+# несобранного не посчитать, у конкурента — не наша забота; обе группы
+# не «проблемы» и не «здоровые», и теперь названы своими именами.
+_lvl = Counter(x["lvl"] for x in rows)
+healthy = _lvl["ok"]
+_n_prob = _lvl["red"] + _lvl["amber"] + _lvl["yellow"]
+_parts = [f"{len(rows)} {t('catalog.products')}",
+          f"<span style='color:{ACCENT};'>{t('catalog.with_problems_n', n=_n_prob)}</span>",
+          f"<span style='color:{OK_TEXT};'>{t('catalog.healthy')} {healthy}</span>"]
+if _lvl["gray"]:
+    _parts.append(f"<span style='color:{MUTED};'>{t('catalog.not_collected_n', n=_lvl['gray'])}</span>")
+if _lvl["comp"]:
+    _parts.append(f"<span style='color:{MUTED};'>{t('catalog.competitors_n', n=_lvl['comp'])}</span>")
 st.markdown(
     f"<div style='font-size:14px;color:{INK};margin-bottom:12px;'>"
-    f"{len(rows)} {t('catalog.products')} · <span style='color:{OK_TEXT};'>"
-    f"{t('catalog.healthy')} {healthy}</span>"
-    f"</div>", unsafe_allow_html=True)
+    + " · ".join(_parts) + "</div>", unsafe_allow_html=True)
 
 # ---- экспорт
 exp = pd.DataFrame([{

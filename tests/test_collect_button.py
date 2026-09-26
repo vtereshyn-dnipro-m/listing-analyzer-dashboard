@@ -155,7 +155,7 @@ def box(a, mp):
 # неактивна (идёт утренний прогон), а знать объём нужно всё равно.
 def plan_text(a) -> str:
     return next((str(m.value) for m in a.markdown
-                 if "товар" in str(m.value) and "white-space" in str(m.value)), "")
+                 if "к сбору" in str(m.value) and "white-space" in str(m.value)), "")
 
 
 at = page()
@@ -166,11 +166,16 @@ check("над галочками сказано, что по ним идёт: с
 check("без отмеченных рынков кнопка неактивна", btn(at) is not None and btn(at).disabled)
 check("и сказано, что рынки не выбраны", any("не выбраны" in str(c.value) for c in at.caption))
 box(at, "es").set_value(True).run()
-check(f"ES: 3 активных, свёрнутая не в счёт ({plan_text(at)})",
-      "ES · 3 товара" in plan_text(at) and not btn(at).disabled)
+check(f"ES: 3 активных к сбору, свёрнутая не в счёт ({plan_text(at)})",
+      "ES · 3 к сбору" in plan_text(at) and not btn(at).disabled)
+# список и выгрузка показывают и свёрнутую (4 у ES) — поэтому она
+# названа рядом: «3 к сбору · 1 свёрнутый не собирается». Иначе «3»
+# рядом с «CSV · 4» читалось как ошибка счёта (веб-агент, 26.09)
+check("и рядом названы свёрнутые, которые в сбор не идут",
+      "1 свёрнутый не собирается" in plan_text(at))
 box(at, "de").set_value(True).run()
 check(f"ES + DE: 5 товаров и разбивка по рынкам ({plan_text(at)})",
-      "DE, ES · 5 товаров" in plan_text(at) and "DE 2" in plan_text(at) and "ES 3" in plan_text(at))
+      "DE, ES · 5 к сбору" in plan_text(at) and "DE 2" in plan_text(at) and "ES 3" in plan_text(at))
 
 # --- 2. запуск: рынки и force уходят в job, второй раз — нет
 CALLS.clear()

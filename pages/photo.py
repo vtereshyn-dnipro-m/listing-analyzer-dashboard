@@ -142,6 +142,20 @@ def load_candidates() -> tuple[pd.DataFrame, str | None]:
             """)
 
 
+@st.cache_data(ttl=300)
+def load_matrix_pairs() -> pd.DataFrame:
+    """Все пары Матрицы — чтобы назвать те, которых здесь нет.
+
+    Фото аудирует СНАПШОТЫ: у пары, которую ни разу не собрали, фото
+    нет вовсе, и в списке её быть не может. Но молча выпадать она
+    не должна — Фото показывало 1067 при 1069 на Диагнозе и Матрице,
+    и расхождение выглядело потерей (веб-агент, 26.09: две новые
+    недельные пары, добавлены 23.09, их день сбора ещё не наступил)."""
+    df, _ = safe_read(
+        "SELECT asin, marketplace, sku_group, is_competitor FROM product_matrix")
+    return df
+
+
 @st.cache_data(ttl=120)
 def load_skill(scope: str) -> tuple[str, int]:
     """common + указанная область, склеенные."""
@@ -448,7 +462,7 @@ who = f1.segmented_control(
     selection_mode="single", label_visibility="collapsed", key="ph-who") or "all"
 mps = sorted(cands["marketplace"].unique())
 mp_sel = f2.multiselect("MP", mps, default=[], label_visibility="collapsed",
-                        placeholder=t("list.all_mp"))
+                        placeholder=t("list.all_mp"), key="ph-mp")
 try:
     mode = f3.segmented_control(
         "вид", ["cards", "table"], default="cards",
@@ -500,7 +514,27 @@ if not rows:
 
 order = {"D": 0, "C": 1, "B": 2, "A": 3, None: 4}
 rows.sort(key=lambda x: (order.get(x["g_grade"], 4), -len(x["imgs"])))
+# пары Матрицы под ТЕМИ ЖЕ фильтрами, у которых нет ни одного снапшота
+_mx = load_matrix_pairs()
+_missing = []
+if not _mx.empty:
+    _mv = _mx
+    if who == "ours":
+        _mv = _mv[~_mv["is_competitor"].fillna(False)]
+    elif who == "comp":
+        _mv = _mv[_mv["is_competitor"].fillna(False)]
+    if mp_sel:
+        _mv = _mv[_mv["marketplace"].isin(mp_sel)]
+    if query.strip():
+        _mv = _mv[_mv["asin"].str.lower().str.contains(ql, na=False)
+                  | _mv["sku_group"].astype(str).str.lower().str.contains(ql, na=False)]
+    _have = set(zip(cands["asin"], cands["marketplace"]))
+    _missing = [f"{a} · {str(m).upper()}" for a, m in zip(_mv["asin"], _mv["marketplace"])
+                if (a, m) not in _have]
 st.markdown(f"{len(rows)} {t('catalog.products')}")
+if _missing:
+    st.caption(t("photo.not_collected", n=len(_missing),
+                 pairs=", ".join(_missing[:6]) + (" …" if len(_missing) > 6 else "")))
 
 # ---- таблица
 if mode == "table":

@@ -39,7 +39,7 @@ from services.localization import (
     preview_png, save_model_translation, save_parsed, save_prompt,
     save_translation, summarize, sync_age_hours,
 )
-from components.ui import inject_fonts, eyebrow
+from components.ui import css_key, inject_fonts, eyebrow
 
 inject_fonts()
 st.title(t("nav.content"))
@@ -110,6 +110,21 @@ def cov_hint(lg: str, c: dict) -> str:
     return f'{lg.upper()}: ' + " · ".join(parts)
 
 
+def flex_row_css(key: str) -> str:
+    """Ряд кнопок по правилу 0: колонка и кнопка — по ширине подписи,
+    ряд переносится, а не обрезает подпись многоточием. На долях
+    колонок при окне ~1100 px «Перевести всё, чего нет · 33 строки на
+    3 языка» теряла число — ровно то, ради чего подпись и написана."""
+    return (f'<style>.st-key-{key} div[data-testid="stHorizontalBlock"]'
+            '{gap:8px !important;align-items:center;flex-wrap:wrap;}'
+            f'.st-key-{key} div[data-testid="stColumn"]'
+            '{flex:0 0 auto !important;width:auto !important;min-width:0 !important;}'
+            f'.st-key-{key} div[data-testid="stColumn"]:last-child'
+            '{flex:1 1 auto !important;}'
+            f'.st-key-{key} .stButton button,.st-key-{key} .stDownloadButton button'
+            '{white-space:nowrap !important;width:auto !important;}</style>')
+
+
 def lang_chips(done: set, cov: dict | None = None) -> str:
     """Метки языков с покрытием: «ES 97/107».
 
@@ -147,14 +162,19 @@ def product_row_html(r: pd.Series) -> str:
         f'<div class="ls-card" style="background:#fff;border:1px solid {BORDER};'
         f'border-left:3px solid {edge};border-radius:0 10px 10px 0;'
         f'padding:9px 12px;display:flex;gap:12px;align-items:center;">'
-        f'<div style="flex:1;min-width:0;">'
+        f'<div style="flex:1;min-width:140px;">'
         f'<div style="font-size:13px;font-weight:600;color:{INK};'
         f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
         f'{r.get("name") or "—"}</div>'
-        f'<div class="ls-mono" style="font-size:11px;color:{MUTED};">'
+        # одной строкой с многоточием: при узком окне и длинных чипах
+        # покрытия («ES 97/107») колонка сжималась, и ASIN ложился
+        # в столбик по две буквы — нечитаемо и не копируется
+        f'<div class="ls-mono" style="font-size:11px;color:{MUTED};'
+        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
         f'{r.get("asin")}{" · " + sku if sku else ""}'
         f' · {cell_text(r, "section_type")}</div></div>'
-        f'<div style="flex:0 0 auto;">{lang_chips(done, cov)}</div>'
+        f'<div style="flex:0 1 auto;display:flex;flex-wrap:wrap;'
+        f'justify-content:flex-end;row-gap:4px;">{lang_chips(done, cov)}</div>'
         f'<div class="ls-mono" style="flex:0 0 auto;font-size:12px;'
         f'color:{MUTED};white-space:nowrap;">'
         f'{t("loc.layers_n", n=int(r.get("layers_count") or 0))}</div></div>')
@@ -185,7 +205,9 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
     """
     miss = figma.missing_secrets()
     age = sync_age_hours(products) if not demo else None
-    c1, c2 = st.columns([2.2, 7], gap="small", vertical_alignment="center")
+    st.markdown(flex_row_css("loc-syncbar"), unsafe_allow_html=True)
+    c1, c2 = st.container(key="loc-syncbar").columns(
+        [2.2, 7], gap="small", vertical_alignment="center")
 
     # Пробный заход по умолчанию: четыре товара вместо двадцати одного.
     # Галочка, а не константа в коде, потому что решение «идём на весь
@@ -946,19 +968,40 @@ def render_rows(layers: pd.DataFrame, pid: int, lang: str,
 
         # строка целиком подсвечивается, когда текст не влезает: цветной
         # счётчик на краю экрана теряется, а строка — нет
-        box = f"locrow-{pid}-{lang}-{lr['layer_id']}"
+        # В ключе контейнера только [A-Za-z0-9_-]: Streamlit делает из
+        # ключа класс `st-key-…`, заменяя прочее на «-», и id слоя
+        # «1021:737» давал класс «…1021-737» при селекторе «…1021:737».
+        # CSS по такому ключу молча не срабатывал никогда — ни подсветка
+        # строки, которая не влезает в макет, ни ширина колонок.
+        box = css_key(f"locrow-{pid}-{lang}-{lr['layer_id']}")
         if state == "over":
             st.markdown(f'<style>.st-key-{box}{{background:{WARN_BG};'
                         f'border-radius:8px;padding:2px 6px;}}</style>',
                         unsafe_allow_html=True)
         with st.container(key=box):
+            # счётчик и ↻ — фиксированной ширины: на долях колонок при окне
+            # ~1100 px «15 / 17» ложилось в столбик по знаку, а кнопка ↻
+            # сжималась до пустой рамки без значка
+            st.markdown(
+                f'<style>.st-key-{box} div[data-testid="stHorizontalBlock"]'
+                '{flex-wrap:nowrap !important;}'
+                f'.st-key-{box} div[data-testid="stColumn"]'
+                '{min-width:0 !important;}'
+                f'.st-key-{box} div[data-testid="stColumn"]:nth-child(3)'
+                '{flex:0 0 72px !important;min-width:72px !important;}'
+                f'.st-key-{box} div[data-testid="stColumn"]:nth-child(4)'
+                '{flex:0 0 44px !important;min-width:44px !important;}</style>',
+                unsafe_allow_html=True)
             c1, c2, c3, c4 = st.columns([1, 1, 0.34, 0.22], gap="small",
                                         vertical_alignment="center")
             c1.markdown(
                 f'<div style="font-size:13px;color:{INK};padding-top:6px;">'
                 f'{lr["source_text"]}{human_mark(lr)}</div>',
                 unsafe_allow_html=True)
-            c2.text_input(lr["layer_id"], value=current, key=key,
+            # подпись скрыта, но осмысленна: диктор читает исходную
+            # строку, а не id слоя «1021:737»
+            c2.text_input(t("loc.col_dst") + ": " + cell_text(lr, "source_text")[:60],
+                          value=current, key=key,
                           label_visibility="collapsed",
                           on_change=_store_edit, args=(pid, slot, lang, key))
             c3.markdown(counter_html(n, lim, state), unsafe_allow_html=True)
@@ -1076,7 +1119,9 @@ def render_actions(layers: pd.DataFrame, row, lang: str, demo: bool) -> None:
         st.error("⚠ " + t("loc.load_failed", e=err))
     n_missing = sum(len(v) for v in plan.values())
 
-    a1, a2, a3 = st.columns([3.6, 3.0, 2.4], gap="small")
+    st.markdown(flex_row_css("loc-actions"), unsafe_allow_html=True)
+    a1, a2, a3, _rest = st.container(key="loc-actions").columns(
+        [3.6, 3.0, 2.4, 0.1], gap="small", vertical_alignment="center")
     if n_missing:
         a1.button(f'{t("loc.translate_missing")} · '
                   f'{rows_into(n_missing, plan)}',

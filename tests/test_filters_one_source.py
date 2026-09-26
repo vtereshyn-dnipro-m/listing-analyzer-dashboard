@@ -108,7 +108,7 @@ check("на Каталоге рынок выбирается только гал
 
 # ================================================================ фикстура
 NOW = pd.Timestamp.now("UTC")
-RAW = json.dumps({"images": ["a"], "number_of_videos": 1, "aplus": True,
+RAW = json.dumps({"images": ["https://m.media-amazon.com/images/I/a.jpg"], "number_of_videos": 1, "aplus": True,
                   "average_rating": "4,5", "price": "10", "sold_by": "Dnipro-M"})
 
 # Боли: ES — две красные и одна жёлтая на двух товарах, IT — три красные
@@ -154,6 +154,10 @@ def fake_sql(sql, conn=None, **kw):
     # обязан сработать раньше счётчиков ниже
     if "AS last_fetch" in s:
         return CAT.copy()
+    # пары Матрицы для Фото: одна новая, ещё без снапшота
+    if s.startswith("SELECT asin, marketplace, sku_group, is_competitor FROM product_matrix"):
+        return pd.concat([CAT, pd.DataFrame([cat_row("B0NEW00001", "de")])],
+                         ignore_index=True)[["asin", "marketplace", "sku_group", "is_competitor"]]
     if "FROM diagnosis" in s:
         df = PAINS.copy()
         if "resolved_at IS NULL" in s:
@@ -194,6 +198,14 @@ def seg(at, key: str) -> list:
 
 
 # ================================================================ Диагноз
+# Сборка болей Amazon Issues — три четверти времени скрипта Диагноза
+# (0,64 с из 0,86 с на объёмах 26.09), и шла она на КАЖДОМ клике по
+# фильтру. Теперь она в кеше: смена рынка её не повторяет, смена языка
+# интерфейса — повторяет (тексты болей переводятся).
+import services.issues as _iss                             # noqa: E402
+_BUILDS: list = []
+_real_build = _iss.build_pains
+_iss.build_pains = lambda *a, **k: (_BUILDS.append(1), _real_build(*a, **k))[1]
 at = page("pages/dashboard.py")
 check("Диагноз отрисован", not at.exception)
 _dl = next((b for b in at.get("download_button") if b.key == "diag-export"), None)
@@ -216,6 +228,12 @@ check(f"и группы считаются под ES ({seg(at, 'grp_seg')})",
       not any(o.startswith("медиа") and o.endswith(" 3") for o in seg(at, "grp_seg")))
 check("под фильтром нет итогов по всей базе («здоровых»)",
       "здоровых" not in _head)
+_n_builds = len(_BUILDS)
+next(w for w in at.multiselect if w.key == "diag_mp").set_value(["it"]).run()
+next(w for w in at.multiselect if w.key == "diag_mp").set_value([]).run()
+check(f"смена рынка не пересобирает боли Issues (сборок: {_n_builds} → {len(_BUILDS)})",
+      len(_BUILDS) == _n_builds == 1)
+_iss.build_pains = _real_build
 
 # ================================================================ Каталог
 at = page("pages/catalog.py")
@@ -257,6 +275,28 @@ check(f"счётчик под списком — те же 3 ({_found[:40]})", _
 check("кнопки сбора в карточках — под префиксом Матрицы",
       any(str(b.key or "").startswith("matrix-collect-") for b in at.button)
       and not any(str(b.key or "").startswith("collect-") for b in at.button))
+
+# ================================================================ Фото
+# Фото аудирует снапшоты, и пары без снапшота там быть не может. Но
+# молча выпадать она не должна: 1067 против 1069 на Диагнозе выглядело
+# потерей. Она названа — под теми же фильтрами, что список.
+at = page("pages/photo.py")
+check("Фото отрисовано", not at.exception)
+_cap = " ".join(str(c.value) for c in at.caption)
+check(f"несобранная пара названа ({_cap[:90]})",
+      "Ещё не собраны" in _cap and "B0NEW00001 · DE" in _cap)
+next(w for w in at.multiselect if w.key == "ph-mp").set_value(["es"]).run()
+_cap = " ".join(str(c.value) for c in at.caption)
+check("под фильтром ES немецкая несобранная не упоминается", "B0NEW00001" not in _cap)
+
+# ================================================================ меню
+# «pages/dashboard.py есть, в меню его нет» — он есть, под именем
+# «Диагноз». Страница-сирота (файл без пункта меню) — это код, который
+# никто не открывает и не проверяет; запирается здесь.
+_app = (ROOT / "app.py").read_text(encoding="utf-8")
+_orphans = [p.name for p in PAGES if p.name != "__init__.py"
+            and f'"pages/{p.name}"' not in _app]
+check(f"каждая страница из pages/ есть в меню ({_orphans or 'все'})", not _orphans)
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS

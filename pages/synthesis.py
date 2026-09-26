@@ -56,7 +56,7 @@ from services.history import (
 )
 from services.marketplaces import (product_url, asin_link,
                                    img_or_stub, ASIN_IN_URL)
-from components.ui import inject_fonts, eyebrow, limit_ruler_html
+from components.ui import css_key, inject_fonts, eyebrow, limit_ruler_html
 
 inject_fonts()
 st.title(t("nav.synthesis"))
@@ -1521,11 +1521,13 @@ def render_card_actions(asin: str, mp: str, is_accepted: bool,
         f'text-transform:uppercase;margin-bottom:4px;">'
         f'{t("card.group_export")}</div>', unsafe_allow_html=True)
 
+    # co.uk: точка в ключе ломала селектор (см. css_key)
+    exp_key = css_key(f"exp-{asin}-{mp}")
     st.markdown(
-        f'<style>.st-key-exp-{asin}-{mp}'
+        f'<style>.st-key-{exp_key}'
         '{padding-left:14px;border-left:2px solid #F1EFE9;}</style>',
         unsafe_allow_html=True)
-    box = st.container(key=f"exp-{asin}-{mp}")
+    box = st.container(key=exp_key)
     with box:
         b1, b2, b3 = st.columns([1.75, 1.75, 4.2], gap="small")
         plan = single_plan(asin, mp) if is_accepted else []
@@ -1681,7 +1683,7 @@ def render_result(asin: str, mp: str, before: str, draft) -> tuple[str, str]:
     # Рамку рисуем контейнеру с ключом: кнопки и раскрывашка — обычные
     # виджеты Streamlit, внутрь HTML их не вставить, а внутрь контейнера —
     # можно, и тогда они оказываются в той же карточке.
-    card_key = f"rescard-{asin}-{mp}"
+    card_key = css_key(f"rescard-{asin}-{mp}")
     st.markdown(
         f'<style>.st-key-{card_key}{{background:#FFFFFF;'
         'border:1px solid #E7E4DD;border-left:3px solid #E8590C;'
@@ -1889,13 +1891,14 @@ def render_push_confirm(pushable: list[dict],
     3. Повтор не запрещаем, но показываем дату и требуем отдельной
        галочки: «уже отправляли» — частая и дорогая ошибка.
     """
+    box_key = css_key(f"push_box-{state_key}")
     st.markdown(
-        f'<style>.st-key-push_box-{state_key}'
+        f'<style>.st-key-{box_key}'
         '{background:#FFF9F4;border:1px solid #E7E4DD;'
         'border-left:3px solid #E8590C;border-radius:0 12px 12px 0;'
         'padding:14px 16px;margin:6px 0 12px;}</style>',
         unsafe_allow_html=True)
-    with st.container(key=f"push_box-{state_key}"):
+    with st.container(key=box_key):
         st.markdown(eyebrow(t("push.confirm_title")), unsafe_allow_html=True)
         labels = {f'{r["sku"]} · {r["marketplace"]} · {r["asin"]}': r
                   for r in pushable}

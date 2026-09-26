@@ -155,18 +155,40 @@ check(f"без фильтра — все 8 строк ({_dl.get('cat-export-csv'
 check("второго переключателя рынка на Каталоге нет",
       not any(str(w.key or "") == "cat_mp" for w in at.multiselect)
       and not any(b.key == "collect-show" for b in at.button))
+def _counter(a) -> str:
+    return next((str(m.value) for m in a.markdown if "здоровых" in str(m.value)), "")
+
+
+# Счётчик над списком складывается: было «260 товаров · здоровых 1»,
+# а «только с проблемами» убирало ДВЕ строки — вторая была несобранной.
+# Теперь названы все группы, и их сумма равна числу строк.
+import re as _re                                          # noqa: E402
+_c = _re.sub(r"<[^>]+>", "", _counter(at))
+_total = int(_re.match(r"\s*(\d+)", _c).group(1)) if _re.match(r"\s*(\d+)", _c) else -1
+_parts = sum(int(n) for n in _re.findall(
+    r"(?:с проблемами|здоровых|ещё не собраны|конкурентов) (\d+)", _c))
+check(f"группы над списком складываются в число строк ({_c.strip()})",
+      _total > 0 and _parts == _total)
+check("несобранная названа отдельно, а не спрятана между «здоровых» и «проблемами»",
+      "ещё не собраны" in _c)
+at.checkbox[[c.key for c in at.checkbox].index("cat_problems")].set_value(True).run()
+_c2 = _re.sub(r"<[^>]+>", "", _counter(at))
+_n_prob = int(_re.search(r"с проблемами (\d+)", _c).group(1))
+check(f"«только с проблемами» оставляет ровно «с проблемами» ({_c2.strip()[:40]})",
+      _c2.strip().startswith(f"{_n_prob} "))
+at.checkbox[[c.key for c in at.checkbox].index("cat_problems")].set_value(False).run()
+
 next(c for c in at.checkbox if c.key == "collect-mp-it").set_value(True).run()
 # Нажимая «собрать», надо видеть, когда собирали в прошлый раз: рядом
 # с числом — дата самого свежего снапшота рынка (у IT — вчера).
 _plan = next((str(m.value) for m in at.markdown
-              if "white-space" in str(m.value) and "товар" in str(m.value)), "")
+              if "white-space" in str(m.value) and "к сбору" in str(m.value)), "")
 _it_last = (NOW - pd.Timedelta(days=1, hours=1)).strftime("%d.%m")
 check(f"рядом с числом — дата последнего сбора рынка ({_plan[-60:]})",
       "последний сбор" in _plan and _it_last in _plan)
 _dl = {b.key: str(b.label) for b in at.get("download_button")}
-check(f"галочка IT режет СПИСОК: на экране 2 товара, а не 8",
-      any("2 товара" in str(m.value) for m in at.markdown)
-      and not any("8 товаров" in str(m.value) for m in at.markdown))
+check(f"галочка IT режет СПИСОК: на экране 2, а не 8 ({_counter(at)[-80:]})",
+      ">2 товаров ·" in _counter(at) or _counter(at).split("товаров")[0].endswith("2 "))
 check("и в карточках нет чужих рынков",
       not any("· ES ·" in str(m.value) for m in at.markdown))
 check(f"выгрузка — те же 2 строки и рынок назван ({_dl.get('cat-export-csv')})",
@@ -174,7 +196,7 @@ check(f"выгрузка — те же 2 строки и рынок назван
 next(c for c in at.checkbox if c.key == "collect-mp-it").set_value(False).run()
 _dl = {b.key: str(b.label) for b in at.get("download_button")}
 check(f"сняли галочку — снова весь список и весь файл ({_dl.get('cat-export-csv')})",
-      _dl["cat-export-csv"].endswith("· 8") and any("8 товаров" in str(m.value) for m in at.markdown))
+      _dl["cat-export-csv"].endswith("· 8") and "8 товаров" in _counter(at))
 # кнопки стоят в ряду со сбором, пояснение — в подсказке кнопки
 # в табличном виде дата сбора — колонкой, как на карточке
 at.session_state["cat_mode"] = "table"
