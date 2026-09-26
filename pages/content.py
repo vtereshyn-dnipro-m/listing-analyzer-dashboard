@@ -566,6 +566,9 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
 
     sel = render_bulk_bar(view, demo)
     gen = int(st.session_state.get("loc-sel-gen", 0))
+    # причина, по которой миниатюр нет, — одной строкой над списком
+    thumb_box = st.container()
+    st.session_state.pop("loc-thumb-err", None)
 
     # Строка товара: кнопка — по ширине подписи, карточка — остаток.
     # На долях колонок (0.5 / 1.1 / 8 / 2.6) при окне ~1000–1100 px
@@ -643,6 +646,9 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
                   type="primary" if missing else "secondary",
                   help=t("loc.open_help", lang=target.upper()),
                   on_click=_open_product, args=(pid, target))
+    _terr = st.session_state.pop("loc-thumb-err", None)
+    if _terr and not demo:
+        thumb_box.caption("⚠ " + t("loc.thumbs_failed", e=_terr))
 
 
 def render_editor(products: pd.DataFrame, demo: bool) -> None:
@@ -772,8 +778,10 @@ def render_thumb(col, row, demo: bool) -> None:
         return
     png, err = preview_png(node, figma.THUMB_SCALE)
     if err or not png:
-        # молчим: миниатюра — удобство, и её отказ не должен
-        # заслонять список, ради которого человек сюда пришёл
+        # у строки молчим — миниатюра удобство, — но причину запоминаем:
+        # над списком она будет названа ОДНОЙ строкой (render_list),
+        # иначе пустая колонка выглядит как «картинок не бывает»
+        st.session_state.setdefault("loc-thumb-err", err or "—")
         return
     try:
         col.image(png, width="stretch")
@@ -798,8 +806,11 @@ def render_preview(row, demo: bool, lang: str,
         return
     png, err = preview_png(node)
     if err or not png:
-        # отказ рендера не должен выглядеть как «превью не бывает»
-        st.caption("⚠ " + t("loc.preview_failed", e=err or "—"))
+        # отказ рендера не должен выглядеть как «превью не бывает»;
+        # полная причина — одной плашкой над слайдами (render_slides),
+        # у слайда — коротко, чтобы 27 одинаковых строк не шумели
+        st.session_state.setdefault("loc-preview-err", err or "—")
+        st.caption("⚠ " + t("loc.preview_missing"))
         return
     try:
         st.image(png, width="stretch")
@@ -994,6 +1005,10 @@ def render_slides(layers: pd.DataFrame, row, pid: int, lang: str,
             render_rows(layers, pid, lang)
         return
 
+    # причина отказа рендера — одной плашкой над слайдами: место держит
+    # контейнер, заполняется после того, как слайды попросили картинки
+    warn_box = st.container()
+    st.session_state.pop("loc-preview-err", None)
     for name in order:
         part = slides[slides["_slide"] == name]
         # в заголовке — переводимые строки: служебные лежат внутри
@@ -1006,6 +1021,9 @@ def render_slides(layers: pd.DataFrame, row, pid: int, lang: str,
             render_preview(row, demo, lang, part=name)
         with pane_txt:
             render_rows(part, pid, lang, header=False)
+    _perr = st.session_state.pop("loc-preview-err", None)
+    if _perr and not demo:
+        warn_box.warning("⚠ " + t("loc.preview_failed", e=_perr))
 
 
 def render_rows(layers: pd.DataFrame, pid: int, lang: str,

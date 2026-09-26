@@ -491,9 +491,24 @@ fg.node_png = lambda node_id, key=None, scale=fg.IMAGE_SCALE: (
     None, "429, ждать 306 с")
 loc._png_cached.clear()
 at.run()
-check("отказ превью назван отказом",
-      any("Не удалось получить рендер" in str(c.value) for c in at.caption))
+# причина — одной плашкой над слайдами, у слайда — коротко: 27 одинаковых
+# строк «не удалось…» шумели, а пустое место выглядело «картинок не бывает»
+check("отказ превью назван отказом — плашкой с причиной",
+      any("Не удалось получить рендер" in str(w.value) and "429" in str(w.value)
+          for w in at.warning))
+check("и у слайда коротко сказано, что картинки нет",
+      any("картинки макета нет" in str(c.value) for c in at.caption))
 check("а строки перевода остались на месте", len(at.text_input) > 0)
+# в списке у строки миниатюра молчит (удобство), но причина названа
+# ОДНОЙ строкой над списком — иначе пустая колонка выглядела как
+# «картинок не бывает» (27.09, после перехода на токен design@)
+next(b for b in at.button if b.key == "loc-back").click().run()
+_tf = [str(c.value) for c in at.caption if "Миниатюры не показаны" in str(c.value)]
+check(f"в списке причина отказа миниатюр названа одной строкой ({_tf[:1]})",
+      len(_tf) == 1 and "429" in _tf[0])
+at.session_state["loc-product"] = 7
+at.session_state["loc-lang"] = "es"
+at.run()
 fg.node_png = fake_png
 loc._png_cached.clear()
 

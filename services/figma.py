@@ -253,6 +253,22 @@ class FigmaError(Exception):
         self.retry_after = retry_after
 
 
+# Пауза рендеров после 429 — на ПРОЦЕСС, то есть на все сессии: квота
+# у токена одна. Без неё один показ списка просил ссылку на каждую
+# миниатюру (21 товар), редактор — на каждый слайд (до 27), и каждый
+# запрос получал тот же 429, продлевая ожидание (27.09: картинки
+# пропали целиком, Retry-After 266304). Пока пауза идёт, в Figma не
+# ходим вовсе и отдаём ту же причину.
+_IMG_PAUSE = {"until": 0.0, "reason": ""}
+
+
+def images_paused() -> str | None:
+    """Причина паузы рендеров или None, если можно спрашивать."""
+    if time.time() < _IMG_PAUSE["until"]:
+        return _IMG_PAUSE["reason"]
+    return None
+
+
 def node_image(node_id: str, key: str | None = None,
                scale: float = IMAGE_SCALE) -> tuple[str | None, str | None]:
     """Ссылка на PNG-рендер узла: (url, причина отказа).
@@ -269,6 +285,9 @@ def node_image(node_id: str, key: str | None = None,
     tok = token()
     if not tok or not key or not node_id:
         return None, "нет секретов: " + ", ".join(missing_secrets() or ["node_id"])
+    paused = images_paused()
+    if paused:
+        return None, paused
     try:
         r = requests.get(f"{API}/images/{key}",
                          params={"ids": node_id, "format": "png",
@@ -278,7 +297,17 @@ def node_image(node_id: str, key: str | None = None,
         return None, f"{type(e).__name__}: {e}"
     if r.status_code == 429:
         secs = retry_seconds(r.headers.get("Retry-After"))
-        return None, f"429, ждать {secs} с" if secs else "429"
+        kind = r.headers.get("X-Figma-Rate-Limit-Type")
+        reason = (f"Figma: лимит рендеров исчерпан (429), ждать ~{wait_text(secs)}"
+                  if secs else "Figma: лимит рендеров исчерпан (429)")
+        if kind:
+            reason += f", тип лимита {kind}"
+        # пауза минимум на минуту, даже если срок не пришёл: иначе
+        # следующая миниатюра того же показа спросит снова
+        _IMG_PAUSE.update(until=time.time() + max(60, secs or 60), reason=reason)
+        return None, reason
+    if r.status_code in (401, 403):
+        return None, f"HTTP {r.status_code}: токен не имеет доступа к рендеру файла"
     if r.status_code != 200:
         return None, f"HTTP {r.status_code}"
     try:
@@ -315,6 +344,19 @@ def node_png(node_id: str, key: str | None = None,
     if not r.content.startswith(b"\x89PNG\r\n\x1a\n"):
         return None, f"ответ не похож на PNG ({len(r.content)} байт)"
     return r.content, None
+
+
+def wait_text(secs: int | None) -> str:
+    """«4 мин», «3 ч», «2 дн» — срок ожидания словами для экрана."""
+    if not secs:
+        return "—"
+    if secs < 90:
+        return f"{secs} с"
+    if secs < 90 * 60:
+        return f"{round(secs / 60)} мин"
+    if secs < 36 * 3600:
+        return f"{round(secs / 3600)} ч"
+    return f"{round(secs / 86400)} дн"
 
 
 def retry_seconds(raw) -> int | None:

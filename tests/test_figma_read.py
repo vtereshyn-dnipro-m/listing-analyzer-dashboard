@@ -342,10 +342,29 @@ _url, _err = fg.node_image("1:1")
 check("200 с err — это отказ, а не пустая картинка",
       _url is None and "Nothing to render" in (_err or ""))
 
-fg.requests.get = lambda *a, **k: _ImgResp({}, 429, {"Retry-After": "306325"})
+_hits_429: list = []
+
+
+def _img_429(*a, **k):
+    _hits_429.append(1)
+    return _ImgResp({}, 429, {"Retry-After": "306325"})
+
+
+fg.requests.get = _img_429
 _url, _err = fg.node_image("1:1")
-check("лимит на превью назван лимитом и в секундах",
-      _url is None and "306" in (_err or ""))
+check(f"лимит на превью назван лимитом и сроком словами ({_err})",
+      _url is None and "429" in (_err or "") and "5 мин" in (_err or ""))
+# После 429 в Figma не ходим до конца срока: 27.09 список просил ссылку
+# на каждую из 21 миниатюры, редактор — на каждый из 27 слайдов, и
+# каждый запрос получал тот же 429. Пауза — на процесс: квота одна.
+for _ in range(20):
+    _u2, _e2 = fg.node_image("1:2")
+check(f"после 429 ещё 20 рендеров — ни одного запроса в Figma ({len(_hits_429)})",
+      len(_hits_429) == 1 and _e2 == _err)
+check("пауза видна снаружи — страница может назвать причину",
+      fg.images_paused() == _err)
+fg._IMG_PAUSE.update(until=0.0, reason="")                # дальше — без паузы
+check("пауза кончилась — снова можно спрашивать", fg.images_paused() is None)
 
 # --- картинка байтами: битый ответ не должен ронять страницу
 # Streamlit отдаёт байты в PIL, и на обрезанном ответе падает ВСЯ
