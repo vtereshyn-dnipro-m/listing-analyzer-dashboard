@@ -135,19 +135,20 @@ _ns: dict = {"t": lambda k, **kw: {"loc.cov_main": "Карточка",
                                    "loc.cov_none": "Строк пока нет"}.get(k, k),
              "ALL_LANGS": loc.ALL_LANGS, "OK_GREEN": "#2F6B3A", "MUTED": "#57534A"}
 _start = _src.index("def cov_hint(")
-_end = _src.index("def product_meta_html(")
+_end = _src.index("CHIP_CSS = ")
 exec(compile(_src[_start:_end], "chips", "exec"), _ns)
-chips = _ns["lang_chips"]
+spec = _ns["chip_spec"]
 
-_html = chips({"de"}, _c)
-check("чип показывает покрытие числом: «ES 2/3»", "ES 2/3" in _html)
-check("готовый язык — без числа, как раньше",
-      ">EN<" in _html and "EN " not in _html.replace("&nbsp;", " ").split("<span")[1])
-check("подсказка разносит карточку и A+",
-      'title="ES: Карточка 1/1 · A+ 1/2"' in _html)
+_es, _fr, _de_done = spec("es", _c["es"]), spec("fr", _c["fr"]), \
+    spec("de", {"done": 3, "total": 3, "main": [1, 1], "aplus": [2, 2]})
+check(f"чип показывает покрытие числом: «ES 2/3» ({_es[2]})", _es[2] == "ES 2/3")
+check("частичный — янтарный, готовый — зелёный, без числа",
+      _es[0] == "#FBEFD9" and _de_done[2] == "DE" and _de_done[1] == "#2F6B3A")
+check(f"подсказка разносит карточку и A+ ({_es[3]})",
+      _es[3] == "ES: Карточка 1/1 · A+ 1/2")
 check("язык без единой строки перевода — серый чип без числа",
-      'title="FR: Карточка 0/1 · A+ 0/2"' in _html and "FR 0/" not in _html)
-check("одной строкой, без переносов (правило 1)", "\n" not in _html)
+      _fr[2] == "FR" and _fr[0] == "#F1EFE9" and _fr[3] == "FR: Карточка 0/1 · A+ 0/2")
+check("EN — язык-источник", spec("en", {})[2] == "EN" and spec("en", {})[3] == "Язык-источник")
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
