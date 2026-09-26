@@ -161,8 +161,8 @@ def product_row_html(r: pd.Series) -> str:
     return (
         f'<div class="ls-card" style="background:#fff;border:1px solid {BORDER};'
         f'border-left:3px solid {edge};border-radius:0 10px 10px 0;'
-        f'padding:9px 12px;display:flex;gap:12px;align-items:center;">'
-        f'<div style="flex:1;min-width:140px;">'
+        f'padding:9px 12px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;">'
+        f'<div style="flex:1 1 180px;min-width:140px;">'
         f'<div style="font-size:13px;font-weight:600;color:{INK};'
         f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
         f'{r.get("name") or "—"}</div>'
@@ -173,8 +173,10 @@ def product_row_html(r: pd.Series) -> str:
         f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
         f'{r.get("asin")}{" · " + sku if sku else ""}'
         f' · {cell_text(r, "section_type")}</div></div>'
-        f'<div style="flex:0 1 auto;display:flex;flex-wrap:wrap;'
-        f'justify-content:flex-end;row-gap:4px;">{lang_chips(done, cov)}</div>'
+        # на узком окне чипы уходят второй строкой целиком, а не
+        # сжимаются в столбик по одному
+        f'<div style="flex:0 0 auto;display:flex;flex-wrap:wrap;'
+        f'row-gap:4px;">{lang_chips(done, cov)}</div>'
         f'<div class="ls-mono" style="flex:0 0 auto;font-size:12px;'
         f'color:{MUTED};white-space:nowrap;">'
         f'{t("loc.layers_n", n=int(r.get("layers_count") or 0))}</div></div>')
@@ -534,10 +536,29 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
     sel = render_bulk_bar(view, demo)
     gen = int(st.session_state.get("loc-sel-gen", 0))
 
+    # Строка товара: кнопка — по ширине подписи, карточка — остаток.
+    # На долях колонок (0.5 / 1.1 / 8 / 2.6) при окне ~1000–1100 px
+    # кнопке доставалось ~100 px, и «Перевести · ES» обрезалась до
+    # «Перевест…» — перенос ряда тут не спасал, ряд один. Один блок
+    # стилей на все строки: класс у каждой свой, префикс общий.
+    st.markdown(
+        '<style>[class*="st-key-loc-row-"] div[data-testid="stHorizontalBlock"]'
+        '{flex-wrap:nowrap !important;align-items:center;}'
+        '[class*="st-key-loc-row-"] div[data-testid="stColumn"]:nth-child(1)'
+        '{flex:0 0 28px !important;min-width:28px !important;}'
+        '[class*="st-key-loc-row-"] div[data-testid="stColumn"]:nth-child(2)'
+        '{flex:0 0 64px !important;min-width:64px !important;}'
+        '[class*="st-key-loc-row-"] div[data-testid="stColumn"]:nth-child(3)'
+        '{flex:1 1 auto !important;min-width:0 !important;}'
+        '[class*="st-key-loc-row-"] div[data-testid="stColumn"]:nth-child(4)'
+        '{flex:0 0 auto !important;width:auto !important;min-width:0 !important;}'
+        '[class*="st-key-loc-row-"] .stButton button'
+        '{white-space:nowrap !important;width:auto !important;}</style>',
+        unsafe_allow_html=True)
     for _, r in view.iterrows():
         pid = int(r["id"])
-        ck, c0, c1, c2 = st.columns([0.5, 1.1, 8, 2.6], gap="small",
-                                    vertical_alignment="center")
+        ck, c0, c1, c2 = st.container(key=css_key(f"loc-row-{pid}")).columns(
+            [0.5, 1.1, 8, 2.6], gap="small", vertical_alignment="center")
         # Отметка живёт в НАБОРЕ `loc-sel`, а не в ключе галочки:
         # «Выбрать все» стоит выше галочек и переставить их напрямую
         # не может (правило 7б) — кнопка меняет набор и растит

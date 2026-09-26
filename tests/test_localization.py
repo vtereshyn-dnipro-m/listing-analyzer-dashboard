@@ -929,6 +929,28 @@ check("и это ровно текст по умолчанию, пока сво�
 check("сказано, что текст не сохранён",
       any("не сохранён" in str(c.value) for c in at.caption))
 
+# --- подпись кнопки в строке списка не обрезается
+# На долях колонок (0.5 / 1.1 / 8 / 2.6) при окне ~1000–1100 px кнопке
+# доставалось ~100 px, и «Перевести · ES» становилась «Перевест…»
+# (веб-агент, 27.09). Вёрстку AppTest не видит — она в браузере, где
+# проверена на 1000 / 1100 / 1440 px; здесь заперто само правило:
+# строка в своём контейнере, кнопка по ширине подписи и без переноса,
+# карточка забирает остаток, ряд не переносится.
+_csrc = (ROOT / "pages/content.py").read_text(encoding="utf-8")
+_mark = '[class*="st-key-loc-row-"]'
+_row_css = _csrc[_csrc.index(_mark):] if _mark in _csrc else ""
+_row_css = _row_css[:_row_css.index("</style>")] if "</style>" in _row_css else ""
+check("у строк списка есть свой блок стилей", bool(_row_css))
+check("строка списка — в своём контейнере с безопасным ключом",
+      'st.container(key=css_key(f"loc-row-{pid}"))' in _csrc)
+check("кнопка строки — по ширине подписи и без переноса",
+      "nth-child(4)'\n        '{flex:0 0 auto" in _row_css.replace('"', "'")
+      or re.search(r"nth-child\(4\)'\s*'\{flex:0 0 auto", _row_css.replace('"', "'")) is not None)
+check("подпись кнопки не переносится и не режется",
+      "white-space:nowrap" in _row_css and "width:auto" in _row_css)
+check("карточка забирает остаток, ряд не переносится",
+      "flex:1 1 auto" in _row_css and "flex-wrap:nowrap" in _row_css)
+
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
       else f"{len(FAILS)} провалов: {FAILS}")
