@@ -2325,6 +2325,16 @@ with feed:
     # теряла бы строки.
     _day = pd.Timestamp.now().strftime("%Y-%m-%d")
     _acc = load_accepted_titles(tuple(mp_sel) if mp_sel else None)
+    # Поиск режет выгрузку и отправку так же, как список. До 26.09 их
+    # резал только рынок: нашёл один товар — «Отправить в Amazon · 38»,
+    # то есть массовая запись в живые листинги по строкам, которых на
+    # экране нет. Без поиска — по-прежнему всё принятое по рынку, в том
+    # числе принятое у товара, скрытого фильтром состояния.
+    if query.strip() and not _acc.empty:
+        _q_pairs = {(str(x["r"]["asin"]), str(x["r"]["marketplace"]).lower())
+                    for x in base}
+        _acc = _acc[[(str(a), str(m).lower()) in _q_pairs
+                     for a, m in zip(_acc["asin"], _acc["marketplace"])]]
     # Та же природа, что в карточке: без флекса кнопки растягиваются
     # на всю долю колонки, и длинная подпись со счётчиком переносится
     # внутри кнопки на две строки.
@@ -2360,6 +2370,8 @@ with feed:
     _n_acc = 0 if _acc.empty else len(_acc)
     _where_txt = (", ".join(mp_label(m) for m in sorted(mp_sel)) if mp_sel
                   else t("list.all_mp"))
+    if query.strip():
+        _where_txt += f" · «{query.strip()}»"
     _plan, _bad, _in, _pushable = [], [], 0, []
     if not _acc.empty:
         # раскладываем по шаблонам Amazon: один шаблон покрывает часть типов

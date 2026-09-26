@@ -234,6 +234,27 @@ check("активных кнопок у непринятого товара не
 check("а «Принять» у него есть — карточка живая",
       len(by_key(f"q-acc-{PENDING[0]}")) == 1)
 
+# --- поиск режет выгрузку и отправку так же, как список.
+# До 26.09 их резал только рынок: нашёл один товар — а наверху
+# «Отправить в Amazon · 3», массовая запись по строкам, которых на
+# экране нет. Проверяется размер выборки кнопок после поиска.
+_q = next((w for w in at.text_input if str(w.label) == "q"), None)
+check("поле поиска на Синтезе есть", _q is not None)
+if _q is not None:
+    _q.set_value("B0AAA").run()
+    _top = " | ".join(str(b.label) for b in by_key("exp-flat") + by_key("exp-flat-off")
+                      + by_key("push-open") + by_key("push-open-off"))
+    check(f"после поиска одного товара выгрузка и отправка — по нему одному ({_top})",
+          "· 1" in _top and "· 3" not in _top)
+    check("и строка состояния называет поиск",
+          any("«B0AAA»" in str(c.value) and "принято 1" in str(c.value)
+              for c in at.caption))
+    # поле берём из СВЕЖЕГО дерева: у старого в памяти остались галочки
+    # строк, которых после поиска на экране нет, и AppTest спотыкается
+    next(w for w in at.text_input if str(w.label) == "q").set_value("").run()
+    _top = " | ".join(str(b.label) for b in by_key("exp-flat") + by_key("push-open"))
+    check("сняли поиск — снова все три принятых", "· 3" in _top)
+
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
       else f"{len(FAILS)} провалов: {FAILS}")

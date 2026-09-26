@@ -615,12 +615,12 @@ for x in rows:
                     score = m / len(MAIN_CHECKS) * 0.6 + g / len(GALLERY_CHECKS) * 0.4
                     grade = grade_from(score)
                     save(asin, mp, res, grade, m, g, len(imgs), ver_g, "gallery")
-                    st.session_state[f"res-g-{asin}-{mp}"] = (
+                    st.session_state[f"ph-res-g-{asin}-{mp}"] = (
                         res, grade, m, g, run_meta("photo_audit", time.time() - _t0))
                     cache.after_photo_audit()
                     load_audits.clear()
 
-            saved = st.session_state.get(f"res-g-{asin}-{mp}")
+            saved = st.session_state.get(f"ph-res-g-{asin}-{mp}")
             if not saved and has_saved_g:
                 _main = saved_g.get("main", {}) or {}
                 _m = sum(1 for k, _ in MAIN_CHECKS if _main.get(k) is True)
@@ -697,12 +697,12 @@ for x in rows:
                     a = sum(1 for k, _ in APLUS_CHECKS if block.get(k) is True)
                     grade_a = grade_from(a / len(APLUS_CHECKS))
                     save(asin, mp, res_a, grade_a, a, 0, len(apl), ver_a, "aplus")
-                    st.session_state[f"res-a-{asin}-{mp}"] = (
+                    st.session_state[f"ph-res-a-{asin}-{mp}"] = (
                         res_a, grade_a, a, run_meta("photo_audit", time.time() - _ta))
                     cache.after_photo_audit()
                     load_audits.clear()
 
-            saved_a = st.session_state.get(f"res-a-{asin}-{mp}")
+            saved_a = st.session_state.get(f"ph-res-a-{asin}-{mp}")
             if not saved_a and has_saved_a:
                 _blk = saved_a_db.get("aplus", {}) or {}
                 _n = sum(1 for k, _ in APLUS_CHECKS if _blk.get(k) is True)
