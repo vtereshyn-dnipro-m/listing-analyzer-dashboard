@@ -2660,7 +2660,8 @@ with feed:
         c1, c2 = st.columns([0.6, 13], gap="small",
                             vertical_alignment="center")
         _wkey = pick_key(x)
-        c1.checkbox("pick", key=_wkey, value=pick_pair(x) in PICKED,
+        c1.checkbox(t("common.pick_row", x=f"{asin} · {mp}"),
+                    key=_wkey, value=pick_pair(x) in PICKED,
                     label_visibility="collapsed",
                     on_change=on_pick, args=(pick_pair(x), _wkey))
         c2.markdown(row_html(x), unsafe_allow_html=True)

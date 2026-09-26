@@ -595,7 +595,10 @@ else:
             tv[["pick", "main_image", "sku_group", "asin", "marketplace",
                 "status", "got", "pains", "title"]],
             column_config={
-                "pick": st.column_config.CheckboxColumn("", width="small"),
+                # заголовок колонки — тоже подпись: пустой не читается
+                # диктором и выглядит как недоделанная колонка
+                "pick": st.column_config.CheckboxColumn("✓", width="small",
+                                                        help=t("common.pick_col")),
                 "main_image": st.column_config.ImageColumn(
                     t("metric.photos"), width="small"),
                 "sku_group": st.column_config.TextColumn("SKU", width="small",
@@ -700,7 +703,8 @@ else:
             f"margin-right:12px;vertical-align:middle;'>"
         )
         c_check, c_card, c_badge, c_btn = st.columns([0.4, 7, 1, 1.3])
-        if c_check.checkbox("", key=f"sel-{row_key}", label_visibility="collapsed"):
+        if c_check.checkbox(t("common.pick_row", x=f"{asin} · {mp}"),
+                            key=f"sel-{row_key}", label_visibility="collapsed"):
             selected_keys.append((asin, mp))
         pains_part = f" · {pains}" if pains else ""
         badges_html = (f'<div style="margin-top:3px;">{badges}</div>'

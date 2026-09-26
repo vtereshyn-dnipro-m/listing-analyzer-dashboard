@@ -6,7 +6,7 @@ tests/test_no_deprecations.py — лог не должен зарастать п
 таблицу, и в этом шуме не видно настоящих ошибок — а настоящие ошибки
 в этом проекте стоили часов диагностики.
 
-Две штуки:
+Что сторожится:
 
 1. `use_container_width` объявлен устаревшим, дедлайн был 31.12.2025 —
    параметр могут выключить в любом обновлении Streamlit, и тогда
@@ -106,6 +106,53 @@ utc_now_uses = sum(p.read_text(encoding="utf-8").count('Timestamp.now("UTC")')
 # в UTC вырежут целиком, и не даёт вернуть utcnow под видом правки.
 check(f"на замену пришло Timestamp.now(\"UTC\") ({utc_now_uses} мест)",
       utc_now_uses >= 3)
+
+# --- 2в. у виджета есть подпись, даже скрытая
+# Streamlit пишет в лог «`label` got an empty value» на каждую пустую
+# подпись и обещает сделать это ошибкой (лог Cloud, 26.09: галочка
+# товара на «Контенте», content.py:523). Скрыть подпись можно —
+# `label_visibility="collapsed"`, — а оставить пустой нельзя: её
+# читает экранный диктор, и в будущем Streamlit на ней упадёт.
+#
+# Проверка — разбором кода, а не грепом: подпись часто стоит на
+# следующей строке после скобки, и греп её не видит. Ловится пустая
+# или пробельная СТРОКА в первом аргументе или в `label=` у виджетов
+# и у заголовков колонок `st.column_config.*Column`.
+import ast                                               # noqa: E402
+
+WIDGETS = {"checkbox", "toggle", "radio", "selectbox", "multiselect",
+           "text_input", "text_area", "number_input", "slider",
+           "select_slider", "date_input", "time_input", "file_uploader",
+           "color_picker", "segmented_control", "pills", "button",
+           "download_button", "link_button", "feedback", "camera_input",
+           "chat_input", "audio_input"}
+
+
+def _empty_label(call: ast.Call) -> bool:
+    arg = call.args[0] if call.args else next(
+        (k.value for k in call.keywords if k.arg == "label"), None)
+    return isinstance(arg, ast.Constant) and isinstance(arg.value, str) \
+        and not arg.value.strip()
+
+
+empty_labels = []
+for p in CODE + [ROOT / "app.py"]:
+    for node in ast.walk(ast.parse(p.read_text(encoding="utf-8"))):
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        name = node.func.attr
+        if (name in WIDGETS or name.endswith("Column")) and _empty_label(node):
+            empty_labels.append(f"{p.relative_to(ROOT)}:{node.lineno} {name}")
+check(f"пустых подписей у виджетов нет ({empty_labels or '—'})", not empty_labels)
+
+# и сама проверка не слепа: на образце с подписью на следующей строке
+_probe = ast.parse('ck.checkbox(\n    "",\n    key="k", label_visibility="collapsed")\n'
+                   'st.column_config.CheckboxColumn(label=" ")')
+check("проверка ловит пустую подпись и на следующей строке, и через label=",
+      sum(1 for n in ast.walk(_probe) if isinstance(n, ast.Call)
+          and isinstance(n.func, ast.Attribute)
+          and (n.func.attr in WIDGETS or n.func.attr.endswith("Column"))
+          and _empty_label(n)) == 2)
 
 # --- 3. сам движок
 import services.db as db                                # noqa: E402
