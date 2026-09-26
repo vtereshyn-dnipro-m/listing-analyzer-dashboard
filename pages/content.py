@@ -153,19 +153,16 @@ def lang_chips(done: set, cov: dict | None = None) -> str:
     return "".join(out)
 
 
-def product_row_html(r: pd.Series) -> str:
+def product_meta_html(r: pd.Series) -> str:
+    """Карточка товара в списке БЕЗ названия: ASIN · SKU · секция, чипы
+    языков, число слоёв. Название рисуется кнопкой над ней — оно
+    открывает редактор (см. render_list)."""
     done = set(r.get("langs_done") or ())
     cov = r.get("lang_cov") or {}
-    edge = STATE_COLOR[row_state(r)]
     sku = cell_text(r, "sku")
     return (
-        f'<div class="ls-card" style="background:#fff;border:1px solid {BORDER};'
-        f'border-left:3px solid {edge};border-radius:0 10px 10px 0;'
-        f'padding:9px 12px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;">'
+        f'<div style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center;">'
         f'<div style="flex:1 1 180px;min-width:140px;">'
-        f'<div style="font-size:13px;font-weight:600;color:{INK};'
-        f'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">'
-        f'{r.get("name") or "—"}</div>'
         # одной строкой с многоточием: при узком окне и длинных чипах
         # покрытия («ES 97/107») колонка сжималась, и ASIN ложился
         # в столбик по две буквы — нечитаемо и не копируется
@@ -317,6 +314,12 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
             st.caption(t("loc.skipped_hint"))
             for line in rep["skipped_sections"][:20]:
                 st.code(line, language=None)
+
+
+def _open_product(pid: int, lang: str) -> None:
+    """Открыть товар в редакторе на языке. Колбэк: и название, и кнопка."""
+    st.session_state["loc-product"] = int(pid)
+    st.session_state["loc-lang"] = lang
 
 
 def _toggle_sel(pid: int, key: str) -> None:
@@ -553,7 +556,18 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
         '[class*="st-key-loc-row-"] div[data-testid="stColumn"]:nth-child(4)'
         '{flex:0 0 auto !important;width:auto !important;min-width:0 !important;}'
         '[class*="st-key-loc-row-"] .stButton button'
-        '{white-space:nowrap !important;width:auto !important;}</style>',
+        '{white-space:nowrap !important;width:auto !important;}'
+        # карточка — контейнер, а не HTML: в ней живая кнопка-название
+        f'[class*="st-key-loc-card-"]{{background:#fff;border:1px solid {BORDER};'
+        'border-radius:0 10px 10px 0;padding:6px 12px 9px;gap:2px !important;}'
+        # название — ссылкой: жирное, слева, без рамки и полей кнопки
+        '[class*="st-key-loc-card-"] .stButton button'
+        '{padding:0 !important;min-height:0 !important;justify-content:flex-start;'
+        f'font-weight:600;font-size:13px;color:{INK};max-width:100%;}}'
+        '[class*="st-key-loc-card-"] .stButton button p'
+        '{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}'
+        '[class*="st-key-loc-card-"] .stButton button:hover p'
+        '{text-decoration:underline;}</style>',
         unsafe_allow_html=True)
     for _, r in view.iterrows():
         pid = int(r["id"])
@@ -570,25 +584,38 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
                     label_visibility="collapsed",
                     on_change=_toggle_sel, args=(pid, f"loc-ck-{gen}-{pid}"))
         render_thumb(c0, r, demo)
-        c1.markdown(product_row_html(r), unsafe_allow_html=True)
         # Кнопка ведёт на первый язык, где ОСТАЛИСЬ непереведённые
         # строки, — он и есть работа. «Готов» здесь считается по
         # строкам, а не по факту «хоть одна переведена» (см.
         # load_products): раньше единственная строка, переведённая
-        # кнопкой ↻, делала язык готовым, и кнопка звала «Перевести DE»
-        # у товара, где DE значился законченным.
-        # Когда переводить нечего, кнопка не обещает перевод —
-        # она открывает товар, и зовётся так.
+        # кнопкой ↻, делала язык готовым.
         gaps = r.get("lang_gaps") or {}
         missing = [lg for lg in TARGET_LANGS if gaps.get(lg, 0)]
         target = missing[0] if missing else TARGET_LANGS[0]
-        label = (f'{t("loc.translate")} · {target.upper()}' if missing
+        # Название — вход в редактор: жмут на название, а не ищут
+        # кнопку (веб-агент 27.09 в редактор не попал вовсе — вход был
+        # один, кнопка с глаголом «перевести»). Цвет края — состояние.
+        card_key = css_key(f"loc-card-{pid}")
+        st.markdown(f'<style>.st-key-{card_key}{{border-left:3px solid '
+                    f'{STATE_COLOR[row_state(r)]} !important;}}</style>',
+                    unsafe_allow_html=True)
+        with c1.container(key=card_key):
+            st.button(cell_text(r, "name") or cell_text(r, "asin") or "—",
+                      key=f"loc-name-{pid}", type="tertiary",
+                      help=t("loc.open_help", lang=target.upper()),
+                      on_click=_open_product, args=(pid, target))
+            st.markdown(product_meta_html(r), unsafe_allow_html=True)
+        # Кнопка ОТКРЫВАЕТ редактор, модель она не зовёт — перевод
+        # запускается внутри. Подпись была «Перевести · ES», и её
+        # принимали за запуск модели. Язык в подписи — тот, на котором
+        # редактор откроется; основная, пока на каком-то языке есть
+        # работа, вторичная у готового товара.
+        label = (f'{t("loc.open")} · {target.upper()}' if missing
                  else t("loc.open"))
-        if c2.button(label, key=f"loc-open-{r['id']}",
-                     type="primary" if missing else "secondary"):
-            st.session_state["loc-product"] = int(r["id"])
-            st.session_state["loc-lang"] = target
-            st.rerun()
+        c2.button(label, key=f"loc-open-{r['id']}",
+                  type="primary" if missing else "secondary",
+                  help=t("loc.open_help", lang=target.upper()),
+                  on_click=_open_product, args=(pid, target))
 
 
 def render_editor(products: pd.DataFrame, demo: bool) -> None:
