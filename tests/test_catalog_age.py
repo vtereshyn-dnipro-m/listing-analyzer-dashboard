@@ -147,15 +147,14 @@ check("две кнопки выгрузки: CSV и Excel",
       "cat-export-csv" in _dl and "cat-export-xlsx" in _dl)
 check(f"без фильтра — все 8 строк ({_dl.get('cat-export-csv')})",
       _dl["cat-export-csv"].endswith("· 8") and _dl["cat-export-xlsx"].endswith("· 8"))
-at.multiselect[0].set_value(["it"]).run()
-_dl = {b.key: str(b.label) for b in at.get("download_button")}
-check(f"с фильтром IT — две строки в обоих ({_dl.get('cat-export-xlsx')})",
-      _dl["cat-export-csv"].endswith("· 2") and _dl["cat-export-xlsx"].endswith("· 2"))
-# Отметил рынок для сбора — выгрузка идёт ПО НЕМУ, без промежуточного
-# нажатия: «выбрал PL, собрал, скачал по нему же». Список при этом
-# не режется (собирать три рынка и смотреть весь каталог — нормально),
-# а подпись кнопки говорит, что в файле: «CSV · 2 (IT)».
-at.multiselect[0].set_value([]).run()
+# Рынок выбирается ОДИН раз — галочками, и по ним режутся и список,
+# и выгрузка. 26.09: отметили ES, а на экране осталась Италия — список
+# слушал отдельную выпадашку «Все рынки», галочки резали только сбор
+# и файл. Выпадашки больше нет: проверяется, что её нет, и что после
+# галочки ЭКРАН и ФАЙЛ говорят об одном и том же.
+check("второго переключателя рынка на Каталоге нет",
+      not any(str(w.key or "") == "cat_mp" for w in at.multiselect)
+      and not any(b.key == "collect-show" for b in at.button))
 next(c for c in at.checkbox if c.key == "collect-mp-it").set_value(True).run()
 # Нажимая «собрать», надо видеть, когда собирали в прошлый раз: рядом
 # с числом — дата самого свежего снапшота рынка (у IT — вчера).
@@ -164,23 +163,18 @@ _plan = next((str(m.value) for m in at.markdown
 _it_last = (NOW - pd.Timedelta(days=1, hours=1)).strftime("%d.%m")
 check(f"рядом с числом — дата последнего сбора рынка ({_plan[-60:]})",
       "последний сбор" in _plan and _it_last in _plan)
-
 _dl = {b.key: str(b.label) for b in at.get("download_button")}
-check(f"галочка IT сужает выгрузку до IT и говорит об этом ({_dl.get('cat-export-csv')})",
+check(f"галочка IT режет СПИСОК: на экране 2 товара, а не 8",
+      any("2 товара" in str(m.value) for m in at.markdown)
+      and not any("8 товаров" in str(m.value) for m in at.markdown))
+check("и в карточках нет чужих рынков",
+      not any("· ES ·" in str(m.value) for m in at.markdown))
+check(f"выгрузка — те же 2 строки и рынок назван ({_dl.get('cat-export-csv')})",
       _dl["cat-export-csv"].endswith("· 2 (IT)") and _dl["cat-export-xlsx"].endswith("· 2 (IT)"))
-check("список при этом не режется — 8 строк на экране",
-      any("8 товаров" in str(m.value) for m in at.markdown))
-check("и подсказка называет рынки, а не «то, что на экране»",
-      all("IT" in str(b.help) and "то, что на экране" not in str(b.help)
-          for b in at.get("download_button")))
-# ссылка «показать в списке» остаётся для просмотра — и режет уже список
-next(b for b in at.button if b.key == "collect-show").click().run()
-check("«показать эти рынки в списке» ставит фильтр списка на IT",
-      at.multiselect[0].value == ["it"])
 next(c for c in at.checkbox if c.key == "collect-mp-it").set_value(False).run()
 _dl = {b.key: str(b.label) for b in at.get("download_button")}
-check(f"сняли галочку — выгрузка снова по фильтрам списка ({_dl.get('cat-export-csv')})",
-      _dl["cat-export-csv"].endswith("· 2") and "(IT)" not in _dl["cat-export-csv"])
+check(f"сняли галочку — снова весь список и весь файл ({_dl.get('cat-export-csv')})",
+      _dl["cat-export-csv"].endswith("· 8") and any("8 товаров" in str(m.value) for m in at.markdown))
 # кнопки стоят в ряду со сбором, пояснение — в подсказке кнопки
 # в табличном виде дата сбора — колонкой, как на карточке
 at.session_state["cat_mode"] = "table"

@@ -418,10 +418,6 @@ def _active_run():
     return collector.active_run()
 
 
-def _filter_markets(markets: list) -> None:
-    st.session_state["cat_mp"] = list(markets)
-
-
 def _when(ts) -> str:
     return "" if ts is None or pd.isna(ts) else pd.to_datetime(ts).strftime("%d.%m %H:%M")
 
@@ -478,15 +474,14 @@ def render_collect(all_markets: list[str], last_by_mp: dict | None = None) -> tu
         # ряд: галочки · «Собрать» · что уйдёт · CSV · Excel — выгрузка
         # рядом со сбором, а не под фильтрами: это два действия над
         # каталогом, и искать их в разных местах не нужно
-        cols = st.columns([1] * len(all_markets) + [4, 4, 3, 1, 1], gap="small",
+        cols = st.columns([1] * len(all_markets) + [4, 4, 1, 1], gap="small",
                           vertical_alignment="center")
         picked = [mp for i, mp in enumerate(all_markets)
                   if cols[i].checkbox(mp.upper(), key=f"collect-mp-{mp}")]
         plan, perr = collector.planned(picked)
         n_plan = int(plan["pairs"].sum()) if not plan.empty else 0
         export_slots = (cols[-2].empty(), cols[-1].empty())
-        show_col = cols[-3]
-        cols = cols[:-3]
+        cols = cols[:-2]
         if cols[-2].button(t("catalog.collect_btn"), key="collect-go", type="primary",
                            disabled=not picked or not n_plan or run is not None or no_client,
                            help=t("catalog.collect_help")):
@@ -507,13 +502,6 @@ def render_collect(all_markets: list[str], last_by_mp: dict | None = None) -> tu
             cols[-1].caption(t("catalog.collect_nothing"))
         else:
             cols[-1].markdown(collect_plan_text(plan, last_by_mp), unsafe_allow_html=True)
-            # Галочки — про сбор, список они не режут, и это путали:
-            # собрал PL, скачал CSV — а там весь каталог. Ссылка ставит
-            # те же рынки в фильтр списка, и выгрузка становится «только
-            # PL». Через колбэк: фильтр рисуется ниже, а писать в ключ
-            # виджета можно только до его создания (правило 7б).
-            show_col.button(t("catalog.collect_show_in_list"), key="collect-show",
-                            type="tertiary", on_click=_filter_markets, args=(picked,))
         if no_client:
             st.caption(t("catalog.collect_no_client"))
 
@@ -746,16 +734,20 @@ N_GRP = {g: sum(1 for a, m in _pairs_all if in_group(a, m, g))
          for g in ("amazon", "content", "search")}
 
 # ---- фильтры
-f1, f2, f3, f4 = st.columns([1.8, 1.6, 1.4, 2.4])
+f1, f3, f4 = st.columns([1.8, 1.4, 2.4])
 _who_opts = ["all", "ours", "comp"]
 _who_lbl = {"all": t("catalog.all"), "ours": t("catalog.ours"),
             "comp": t("catalog.competitors")}
 who = f1.segmented_control(
     "кто", _who_opts, default="all", format_func=lambda k: _who_lbl[k],
     selection_mode="single", label_visibility="collapsed", key="cat_who") or "all"
-mps = sorted(df["marketplace"].unique())
-mp_sel = f2.multiselect("MP", mps, label_visibility="collapsed",
-                        placeholder=t("list.all_mp"), key="cat_mp")
+# Рынок выбирается ОДИН раз — галочками над списком, и по ним режутся
+# и список, и выгрузка, и сбор. Раньше рядом жила ещё выпадашка «Все
+# рынки»: галочки резали выгрузку и сбор, выпадашка — список, и после
+# «ES» в галочках на экране оставалась Италия («показывает Италию,
+# когда я отсортировал по Испании», 26.09). Два переключателя одного
+# смысла, из которых каждый работает наполовину, — это и была ошибка.
+mp_sel = list(_collect_mps)
 only_problems = f3.checkbox(t("catalog.only_problems"))
 
 # фильтр по источнику проблемы, счётчики — по парам (asin, marketplace).
@@ -928,12 +920,10 @@ _stamp = pd.Timestamp.now(tz="Europe/Kyiv").strftime("%Y-%m-%d")
 # сбора, выгрузка идёт ПО НИМ: «выбрал PL, собрал, скачал по нему же» —
 # без промежуточного нажатия; и подпись говорит об этом: «CSV · 1 (PL)».
 # Без отметок — весь список по фильтрам, как раньше.
-if _collect_mps:
-    exp = exp[exp["mp"].isin(_collect_mps)]
-    _exp_tag = f' ({", ".join(m.upper() for m in _collect_mps)})'
-    _exp_help = t("catalog.export_note_mps", mps=", ".join(m.upper() for m in _collect_mps))
-else:
-    _exp_tag, _exp_help = "", t("catalog.export_note")
+# список уже отрезан по отмеченным рынкам — в подписи они названы,
+# чтобы «CSV · 310» не читалось как весь каталог
+_exp_tag = f' ({", ".join(m.upper() for m in _collect_mps)})' if _collect_mps else ""
+_exp_help = t("catalog.export_note")
 _export_slots[0].download_button(
     f'{t("catalog.export_csv")} · {len(exp)}{_exp_tag}',
     exp.to_csv(index=False).encode("utf-8-sig"),

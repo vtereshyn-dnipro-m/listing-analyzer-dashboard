@@ -160,8 +160,8 @@ def plan_text(a) -> str:
 
 at = page()
 check("страница отрисована", not at.exception)
-check("над галочками сказано, что это и что выбирать",
-      any("Собрать данные сейчас" in str(m.value) and "выберите рынки" in str(m.value)
+check("над галочками сказано, что по ним идёт: список, выгрузка и сбор",
+      any("Рынки" in str(m.value) and "список" in str(m.value) and "сбор" in str(m.value)
           for m in at.markdown))
 check("без отмеченных рынков кнопка неактивна", btn(at) is not None and btn(at).disabled)
 check("и сказано, что рынки не выбраны", any("не выбраны" in str(c.value) for c in at.caption))
