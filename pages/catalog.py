@@ -729,10 +729,6 @@ def group_risk(asin: str, mp: str, group: str) -> float:
         return 0.0
 
 
-_pairs_all = set(zip(df["asin"].astype(str), df["marketplace"].astype(str)))
-N_GRP = {g: sum(1 for a, m in _pairs_all if in_group(a, m, g))
-         for g in ("amazon", "content", "search")}
-
 # ---- фильтры
 f1, f3, f4 = st.columns([1.8, 1.4, 2.4])
 _who_opts = ["all", "ours", "comp"]
@@ -748,7 +744,46 @@ who = f1.segmented_control(
 # когда я отсортировал по Испании», 26.09). Два переключателя одного
 # смысла, из которых каждый работает наполовину, — это и была ошибка.
 mp_sel = list(_collect_mps)
-only_problems = f3.checkbox(t("catalog.only_problems"))
+only_problems = f3.checkbox(t("catalog.only_problems"), key="cat_problems")
+
+
+def base_rows(frame, who: str, mps: list, q: str, problems: bool) -> list:
+    """Строки под всеми фильтрами, КРОМЕ группы проблем.
+
+    Одна дорога для списка и для счётчиков групп: раньше «Amazon 490»
+    считалось по всему каталогу, а список — по отмеченному рынку, и
+    под ES кнопка обещала 490, а открывала 112."""
+    v = frame
+    if who == "ours":
+        v = v[~v["is_competitor"]]
+    elif who == "comp":
+        v = v[v["is_competitor"]]
+    if mps:
+        v = v[v["marketplace"].isin(mps)]
+    if q.strip():
+        ql = q.strip().lower()
+        v = v[
+            v["asin"].str.lower().str.contains(ql, na=False)
+            | v["sku_group"].astype(str).str.lower().str.contains(ql, na=False)
+            | v["title"].astype(str).str.lower().str.contains(ql, na=False)
+        ]
+    out = []
+    for _, r in v.iterrows():
+        mx = metrics(r)
+        lvl, color, label = health(mx, bool(r["is_competitor"]))
+        out.append({"r": r, "mx": mx, "lvl": lvl, "color": color, "label": label})
+    if problems:
+        out = [x for x in out if x["lvl"] in ("red", "amber", "yellow")]
+    return out
+
+
+# поиск нарисован ниже, но нужен счётчикам групп уже здесь — берём
+# его значение из session_state по ключу того же поля
+_base = base_rows(df, who, mp_sel, str(st.session_state.get("cat_q") or ""),
+                  only_problems)
+N_GRP = {g: sum(1 for x in _base
+                if in_group(str(x["r"]["asin"]), str(x["r"]["marketplace"]), g))
+         for g in ("amazon", "content", "search")}
 
 # фильтр по источнику проблемы, счётчики — по парам (asin, marketplace).
 # «С проблемами» отдавал 850 из 922 — не фильтр, а почти весь каталог;
@@ -771,7 +806,7 @@ iss_f = iss_f or "all"
 
 qc, vc = st.columns([4, 1.6])
 q = qc.text_input("Поиск", label_visibility="collapsed",
-                  placeholder=t("catalog.search"))
+                  placeholder=t("catalog.search"), key="cat_q")
 try:
     mode = vc.segmented_control(
         "Вид", ["cards", "table"], default="cards",
@@ -783,32 +818,10 @@ except AttributeError:
                     label_visibility="collapsed", key="cat_mode")
 mode = mode or "cards"
 
-view = df
-if who == "ours":
-    view = view[~view["is_competitor"]]
-elif who == "comp":
-    view = view[view["is_competitor"]]
-if mp_sel:
-    view = view[view["marketplace"].isin(mp_sel)]
-if q.strip():
-    ql = q.strip().lower()
-    view = view[
-        view["asin"].str.lower().str.contains(ql, na=False)
-        | view["sku_group"].astype(str).str.lower().str.contains(ql, na=False)
-        | view["title"].astype(str).str.lower().str.contains(ql, na=False)
-    ]
+rows = _base
 if iss_f != "all":
-    view = view[[in_group(str(a), str(m), iss_f)
-                 for a, m in zip(view["asin"], view["marketplace"])]]
-
-rows = []
-for _, r in view.iterrows():
-    mx = metrics(r)
-    lvl, color, label = health(mx, bool(r["is_competitor"]))
-    rows.append({"r": r, "mx": mx, "lvl": lvl, "color": color, "label": label})
-
-if only_problems:
-    rows = [x for x in rows if x["lvl"] in ("red", "amber", "yellow")]
+    rows = [x for x in rows
+            if in_group(str(x["r"]["asin"]), str(x["r"]["marketplace"]), iss_f)]
 
 if not rows:
     st.caption(t("catalog.nothing"))

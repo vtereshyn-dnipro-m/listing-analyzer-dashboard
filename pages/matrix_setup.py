@@ -425,19 +425,19 @@ def collect_rows(rows: pd.DataFrame) -> None:
         # список пропущенных переживает st.rerun(): без этого он исчезал бы
         # ровно в тот момент, когда нужен
         if skipped:
-            st.session_state["collect-skipped"] = skipped
+            st.session_state["matrix-collect-skipped"] = skipped
         st.success(t("matrix.collected"))
         st.rerun()
     except Exception as e:
         st.error(f"Ошибка сбора: {e}")
         if skipped:
-            st.session_state["collect-skipped"] = skipped
+            st.session_state["matrix-collect-skipped"] = skipped
 
 
 def render_collect_skipped() -> None:
     """Что не собралось и почему. Молча потерянная строка выглядит как
     собранная — до следующего взгляда на дату снапшота."""
-    rows = st.session_state.pop("collect-skipped", None)
+    rows = st.session_state.pop("matrix-collect-skipped", None)
     if not rows:
         return
     st.warning("⚠ " + t("matrix.skipped_n", n=len(rows)))
@@ -464,8 +464,47 @@ if matrix_error:
 elif df.empty:
     st.caption(t("common.no_data"))
 else:
-    ours_n = int((~df.is_competitor).sum())
-    comp_n = int(df.is_competitor.sum())
+    def apply_filters(data, query: str, mp_sel: list, only_stale: bool,
+                      work_scope: str):
+        """Один фильтр на список и на счётчики сегмента. Раньше
+        «Наши · 1019» считалось по всей матрице, а список — по рынку
+        и поиску: под ES кнопка обещала тысячу, открывала триста."""
+        view = data
+        if query.strip():
+            q = query.strip().upper()
+            view = view[
+                view["asin"].str.upper().str.contains(q, na=False)
+                | view["sku_group"].str.upper().str.contains(q, na=False)
+            ]
+        if mp_sel:
+            view = view[view["marketplace"].isin(mp_sel)]
+        if only_stale:
+            cutoff = pd.Timestamp.now("UTC") - pd.Timedelta(hours=48)
+            lf = pd.to_datetime(view["last_fetch"], utc=True, errors="coerce")
+            view = view[lf.isna() | (lf < cutoff) | (view["last_ok"] == False)]  # noqa: E712
+        if view.empty:
+            return view
+        if work_scope == "done":
+            view = view[view.apply(
+                lambda r: has_work(WORK.get((r["asin"], r["marketplace"]))), axis=1)]
+        elif work_scope == "todo":
+            view = view[~view.apply(
+                lambda r: has_work(WORK.get((r["asin"], r["marketplace"]))), axis=1)]
+        elif work_scope == "pains":
+            def _has_pain(r) -> bool:
+                return any(
+                    (r.get(k) is not None and not pd.isna(r.get(k)) and r.get(k))
+                    for k in ("red", "amber", "yellow"))
+            view = view[view.apply(_has_pain, axis=1)]
+        return view
+
+    # фильтры нарисованы ниже сегмента, их значения — из session_state
+    _f_now = (str(st.session_state.get("matrix-q") or ""),
+              list(st.session_state.get("matrix-mp") or []),
+              bool(st.session_state.get("matrix-stale")),
+              st.session_state.get("matrix-work") or "all")
+    ours_n = len(apply_filters(df[~df.is_competitor], *_f_now))
+    comp_n = len(apply_filters(df[df.is_competitor], *_f_now))
 
     seg_key = "matrix-seg"
     seg = st.segmented_control(
@@ -482,7 +521,9 @@ else:
     f1, f2, f3, f4, f5 = st.columns([2.6, 1.8, 1.8, 2.2, 1.4])
     query = f1.text_input("Поиск", key="matrix-q", label_visibility="collapsed",
                           placeholder=t("matrix.search_placeholder"))
-    mps = sorted(data["marketplace"].unique()) if not data.empty else []
+    # опции — по всей матрице, а не по сегменту: выбранный рынок, которого
+    # нет у конкурентов, не должен выпадать из виджета при переключении
+    mps = sorted(df["marketplace"].unique())
     mp_sel = f2.multiselect("MP", mps, default=[], key="matrix-mp",
                             placeholder=t("matrix.all_mp"),
                             label_visibility="collapsed")
@@ -517,32 +558,7 @@ else:
             label_visibility="collapsed", key="matrix-mode")
     view_mode = view_mode or "cards"
 
-    view = data
-    if query.strip():
-        q = query.strip().upper()
-        view = view[
-            view["asin"].str.upper().str.contains(q, na=False)
-            | view["sku_group"].str.upper().str.contains(q, na=False)
-        ]
-    if mp_sel:
-        view = view[view["marketplace"].isin(mp_sel)]
-    if only_stale:
-        cutoff = pd.Timestamp.now("UTC") - pd.Timedelta(hours=48)
-        lf = pd.to_datetime(view["last_fetch"], utc=True, errors="coerce")
-        view = view[lf.isna() | (lf < cutoff) | (view["last_ok"] == False)]  # noqa: E712
-
-    if work_scope == "done":
-        view = view[view.apply(
-            lambda r: has_work(WORK.get((r["asin"], r["marketplace"]))), axis=1)]
-    elif work_scope == "todo":
-        view = view[~view.apply(
-            lambda r: has_work(WORK.get((r["asin"], r["marketplace"]))), axis=1)]
-    elif work_scope == "pains":
-        def _has_pain(r) -> bool:
-            return any(
-                (r.get(k) is not None and not pd.isna(r.get(k)) and r.get(k))
-                for k in ("red", "amber", "yellow"))
-        view = view[view.apply(_has_pain, axis=1)]
+    view = apply_filters(data, query, mp_sel, only_stale, work_scope)
 
     _in_work = sum(1 for _, r in view.iterrows()
                    if has_work(WORK.get((r["asin"], r["marketplace"]))))
@@ -707,7 +723,7 @@ else:
             f"{badge_txt}</span></div>",
             unsafe_allow_html=True,
         )
-        if c_btn.button(t("matrix.collect"), key=f"collect-{row_key}"):
+        if c_btn.button(t("matrix.collect"), key=f"matrix-collect-{row_key}"):
             collect_rows(chunk[(chunk["asin"] == asin) & (chunk["marketplace"] == mp)])
 
     # ---- пагинация

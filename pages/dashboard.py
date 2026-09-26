@@ -371,42 +371,54 @@ def pain_money(row) -> float:
 
 diag = diag.copy()
 diag["_money"] = diag.apply(pain_money, axis=1)
-# по товару берём максимальный риск, а не сумму: проблемы пересекаются
-total_risk = (diag.groupby(["asin", "marketplace"])["_money"].max().sum()
-              if not diag.empty else 0.0)
-
-risk_html = (
-    f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>"
-    f"€{total_risk:,.0f}</span>"
-    if total_risk else
-    f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>—</span> "
-    f"<span style='color:#57534A;'>({t('common.no_revenue_data')})</span>"
-).replace(",", " ")
-delta_html = ""
-if added or closed:
-    delta_html = (
-        f" · {t('dash.since_last')} <span style='color:#E8590C;font-weight:600;'>"
-        f"+{added} {t('dash.new_pains')}</span> · {closed} {t('dash.closed_pains')}"
-    )
-
-headline = (f"{affected} {t('dash.need_attention')}"
-            + (f" {t('dash.of')} {total_products}" if total_products else ""))
-verdict(headline, risk_html + delta_html, meta_right=f"{t('dash.run')} {run_label}")
-
-st.download_button(t("dash.fix_all_csv"),
-                   diag.to_csv(index=False).encode("utf-8-sig"),
-                   file_name="diagnosis.csv", mime="text/csv")
-
-# ---- фильтры: severity и тип боли (компактные сегменты)
-diag = diag.copy()
 diag["_group"] = diag["rule_id"].map(RULE_GROUP).fillna("other")
 
-s_counts = {s: int((diag["severity"] == s).sum()) for s in SEV_ORDER}
-sev_opts = [s for s in ("red", "amber", "yellow") if s_counts[s]]
+# Шапка (вердикт, деньги под риском) и выгрузка стоят НАД фильтрами,
+# а считаются ПО НИМ. До 26.09 они считались по всей базе: отметил ES —
+# список испанский, а сверху «312 товаров требуют внимания» и файл на
+# все рынки. Место держит контейнер, заполняется после фильтров.
+head = st.container()
+
+
+def apply_filters(frame, sev=None, grp=None, mps=None, q=""):
+    """Один фильтр на всё: список, шапку, счётчики и выгрузку.
+    Каждая часть экрана берёт выборку ОТСЮДА, а не фильтрует сама."""
+    out = frame
+    if sev:
+        out = out[out["severity"] == sev]
+    if grp:
+        out = out[out["_group"] == grp]
+    if mps:
+        out = out[out["marketplace"].isin(mps)]
+    if q and q.strip():
+        ql = q.strip().lower()
+        out = out[
+            out["asin"].str.lower().str.contains(ql, na=False)
+            | out["sku_group"].astype(str).str.lower().str.contains(ql, na=False)
+            | out["pain"].astype(str).str.lower().str.contains(ql, na=False)
+        ]
+    return out
+
+
+# ---- фильтры: severity и тип боли (компактные сегменты)
+# Рынок и поиск нарисованы НИЖЕ, но их значения нужны счётчикам сегментов
+# уже здесь — берём из session_state по ключам тех же виджетов.
+_mp_now = list(st.session_state.get("diag_mp") or [])
+_q_now = str(st.session_state.get("diag_q") or "")
+_sev_now = st.session_state.get("sev_seg")
+_grp_now = st.session_state.get("grp_seg")
+
+# Опции — по всей базе (исчезающая опция сбросила бы выбор), счётчики —
+# по остальным фильтрам: «Красные 12» обязано открыть двенадцать.
+_sev_all = {s: int((diag["severity"] == s).sum()) for s in SEV_ORDER}
+sev_opts = [s for s in ("red", "amber", "yellow") if _sev_all[s]]
+_for_sev = apply_filters(diag, grp=_grp_now, mps=_mp_now, q=_q_now)
+s_counts = {s: int((_for_sev["severity"] == s).sum()) for s in SEV_ORDER}
 sev_labels = {"red": t("sev.red"), "amber": t("sev.amber"),
               "yellow": t("sev.yellow")}
 grp_opts = sorted(diag["_group"].unique())
-grp_counts = {g: int((diag["_group"] == g).sum()) for g in grp_opts}
+_for_grp = apply_filters(diag, sev=_sev_now, mps=_mp_now, q=_q_now)
+grp_counts = {g: int((_for_grp["_group"] == g).sum()) for g in grp_opts}
 
 
 def _seg(col, options, fmt, key):
@@ -430,10 +442,10 @@ grp_f = _seg(fc2, grp_opts,
 # ---- поиск, маркетплейсы, вид
 q_col, mp_col, mode_col = st.columns([3, 2, 1.6])
 query = q_col.text_input("Поиск", label_visibility="collapsed",
-                         placeholder=t("list.search_pains"))
+                         placeholder=t("list.search_pains"), key="diag_q")
 mps = sorted(diag["marketplace"].unique())
-mp_sel = mp_col.multiselect("MP", mps, default=[], label_visibility="collapsed",
-                            placeholder=t("list.all_mp"))
+mp_sel = mp_col.multiselect("MP", mps, label_visibility="collapsed",
+                            placeholder=t("list.all_mp"), key="diag_mp")
 try:
     mode = mode_col.segmented_control(
         "Вид", ["cards", "table"], default="cards",
@@ -445,20 +457,48 @@ except AttributeError:
                           label_visibility="collapsed", key="diag_mode")
 mode = mode or "cards"
 
-view = diag
-if sev_f:
-    view = view[view["severity"] == sev_f]
-if grp_f:
-    view = view[view["_group"] == grp_f]
-if mp_sel:
-    view = view[view["marketplace"].isin(mp_sel)]
-if query.strip():
-    q = query.strip().lower()
-    view = view[
-        view["asin"].str.lower().str.contains(q, na=False)
-        | view["sku_group"].astype(str).str.lower().str.contains(q, na=False)
-        | view["pain"].astype(str).str.lower().str.contains(q, na=False)
-    ]
+view = apply_filters(diag, sev=sev_f, grp=grp_f, mps=mp_sel, q=query)
+_filtered = bool(sev_f or grp_f or mp_sel or query.strip())
+
+with head:
+    affected_view = view.groupby(["asin", "marketplace"]).ngroups if not view.empty else 0
+    # по товару берём максимальный риск, а не сумму: проблемы пересекаются
+    total_risk = (view.groupby(["asin", "marketplace"])["_money"].max().sum()
+                  if not view.empty else 0.0)
+    risk_html = (
+        f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>"
+        f"€{total_risk:,.0f}</span>"
+        if total_risk else
+        f"{t('dash.at_risk')} <span style='color:#E8590C;font-weight:700;'>—</span> "
+        f"<span style='color:#57534A;'>({t('common.no_revenue_data')})</span>"
+    ).replace(",", " ")
+    # дельта с прошлого прогона считается по всей базе — под фильтром
+    # она говорила бы о чужих рынках, поэтому показывается только без него
+    delta_html = ""
+    if (added or closed) and not _filtered:
+        delta_html = (
+            f" · {t('dash.since_last')} <span style='color:#E8590C;font-weight:600;'>"
+            f"+{added} {t('dash.new_pains')}</span> · {closed} {t('dash.closed_pains')}"
+        )
+    _parts = ([sev_labels[sev_f]] if sev_f else []) + \
+             ([t("group." + grp_f)] if grp_f else []) + \
+             [m.upper() for m in mp_sel] + \
+             ([f"«{query.strip()}»"] if query.strip() else [])
+    if _filtered:
+        headline = (f"{affected_view} {t('dash.need_attention')} · "
+                    + t("dash.by_filter", f=", ".join(_parts)))
+    else:
+        headline = (f"{affected_view} {t('dash.need_attention')}"
+                    + (f" {t('dash.of')} {total_products}" if total_products else ""))
+    verdict(headline, risk_html + delta_html, meta_right=f"{t('dash.run')} {run_label}")
+    # выгрузка — ровно то, что в списке: те же строки болей
+    st.download_button(
+        f"{t('dash.fix_all_csv')} · {len(view)}",
+        view.drop(columns=["_money", "_group"], errors="ignore")
+            .to_csv(index=False).encode("utf-8-sig"),
+        file_name="diagnosis.csv", mime="text/csv", key="diag-export",
+        disabled=view.empty,
+        help=t("dash.export_note"))
 
 if view.empty:
     st.caption(t("dash.no_by_filter"))
@@ -594,8 +634,11 @@ else:
             st.session_state["diag_page"] = page + 1
             st.rerun()
 
-# ---- остальной каталог: здоровые отдельно от несобранных
-if total_products:
+# ---- остальной каталог: здоровые отдельно от несобранных.
+# Считается по всей базе (собранные пары — без рынка), поэтому под
+# фильтром не показывается: «✓ 700 здоровых» под испанским списком
+# говорило бы о чужих рынках.
+if total_products and not _filtered:
     try:
         collected = pd.read_sql(
             "SELECT count(DISTINCT (asin, marketplace)) AS n "
