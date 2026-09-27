@@ -195,6 +195,11 @@ def unique_keys() -> set[tuple[str, tuple[str, ...]]]:
                     key = tuple(c.strip() for c in cols.split(","))
                     generated = f"{tbl}_{'_'.join(key)}_key"
                     by_name[(tbl, generated)] = key
+                # составной PRIMARY KEY (…) — тоже ключ для ON CONFLICT;
+                # Postgres называет его `таблица_pkey` (figma_renders)
+                for cols in re.findall(r"PRIMARY\s+KEY\s*\(([^)]+)\)", chunk, re.I):
+                    by_name[(tbl, f"{tbl}_pkey")] = tuple(
+                        c.strip() for c in cols.split(","))
     return {(tbl, cols) for (tbl, _name), cols in by_name.items()}
 
 

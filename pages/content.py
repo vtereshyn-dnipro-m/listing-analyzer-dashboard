@@ -31,6 +31,7 @@ from i18n import t, plural
 from services import ai, figma, translate
 from services.cells import cell_text
 from services.localization import (
+    ensure_renders, node_hashes_of, renders_ready, RENDERS_MIGRATION,
     aplus_part, slide_of, slide_order,
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
     demo_layers, demo_products, export_payload, export_rows, fits, glossary,
@@ -271,12 +272,21 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
             except figma.FigmaError as e:
                 status.update(label=t("loc.sync_failed"), state="error")
                 wait = getattr(e, "retry_after", None)
-                if wait:
+                if (getattr(e, "limit_type", None) or "").lower() == figma.RATE_LOW:
+                    # лимит места View — месячная квота: «подождите N
+                    # секунд» тут неправда по сути, нужна причина
+                    st.error("⚠ " + t("loc.rate_low",
+                                      when=figma.wait_text(wait) if wait else "—"))
+                elif wait:
                     st.error("⚠ " + t("loc.rate_limited", s=int(wait),
-                                      m=max(1, int(wait) // 60)))
+                                      w=figma.wait_text(int(wait))))
                 else:
                     st.error("⚠ " + t("loc.sync_error", e=str(e)))
 
+    # хранилище рендеров ещё не создано: картинки живут сутки в памяти
+    # и тратят квоту заново после каждого ребута — назвать миграцию
+    if not demo and not renders_ready():
+        st.caption("ℹ " + t("loc.renders_missing", f=RENDERS_MIGRATION))
     if miss:
         c2.caption("⚠ " + t("loc.no_secrets", keys=", ".join(miss)))
     elif age is None:
@@ -569,6 +579,16 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
     # причина, по которой миниатюр нет, — одной строкой над списком
     thumb_box = st.container()
     st.session_state.pop("loc-thumb-err", None)
+    # Все миниатюры — ОДНИМ заходом: из хранилища, а недостающие одним
+    # пакетным запросом к Figma, а не по запросу на строку
+    thumbs: dict = {}
+    if not demo:
+        for fk, grp in view.groupby(view["figma_file_key"].fillna("").astype(str)):
+            thumbs.update(ensure_renders(fk, [
+                (cell_text(r, "figma_node_id"),
+                 node_hashes_of(r).get(cell_text(r, "figma_node_id"), ""))
+                for _, r in grp.iterrows() if cell_text(r, "figma_node_id")],
+                figma.THUMB_SCALE))
 
     # Строка товара: кнопка — по ширине подписи, карточка — остаток.
     # На долях колонок (0.5 / 1.1 / 8 / 2.6) при окне ~1000–1100 px
@@ -614,7 +634,7 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
                     key=f"loc-ck-{gen}-{pid}", value=pid in sel,
                     label_visibility="collapsed",
                     on_change=_toggle_sel, args=(pid, f"loc-ck-{gen}-{pid}"))
-        render_thumb(c0, r, demo)
+        render_thumb(c0, r, demo, thumbs)
         # Кнопка ведёт на первый язык, где ОСТАЛИСЬ непереведённые
         # строки, — он и есть работа. «Готов» здесь считается по
         # строкам, а не по факту «хоть одна переведена» (см.
@@ -764,7 +784,7 @@ def pick_langs(box, current: str, done: set) -> list:
     return st.session_state["loc-langs"]
 
 
-def render_thumb(col, row, demo: bool) -> None:
+def render_thumb(col, row, demo: bool, renders: dict | None = None) -> None:
     """Миниатюра главного изображения — чтобы различать товары.
 
     По названию они не различаются: «Blower DCB-201BC» и «Blower
@@ -776,8 +796,10 @@ def render_thumb(col, row, demo: bool) -> None:
     node = cell_text(row, "figma_node_id")
     if demo or not node:
         return
-    png, err = preview_png(node, figma.THUMB_SCALE)
-    if err or not png:
+    png, err = (renders or {}).get(node) or preview_png(node, figma.THUMB_SCALE)
+    if err:
+        st.session_state.setdefault("loc-thumb-err", err)
+    if not png:
         # у строки молчим — миниатюра удобство, — но причину запоминаем:
         # над списком она будет названа ОДНОЙ строкой (render_list),
         # иначе пустая колонка выглядит как «картинок не бывает»
@@ -792,7 +814,7 @@ def render_thumb(col, row, demo: bool) -> None:
 
 
 def render_preview(row, demo: bool, lang: str,
-                   part: str = "MAIN") -> None:
+                   part: str = "MAIN", renders: dict | None = None) -> None:
     """Картинка макета — только для ОТКРЫТОГО товара.
 
     Миниатюры в списке стоили бы по запросу Figma на строку при сотнях
@@ -804,8 +826,16 @@ def render_preview(row, demo: bool, lang: str,
     if demo or not node:
         st.caption(t("loc.preview_none"))
         return
-    png, err = preview_png(node)
-    if err or not png:
+    if renders is not None and node in renders:
+        png, err = renders[node]
+    else:
+        png, err = ensure_renders(cell_text(row, "figma_file_key"),
+                                  [(node, node_hashes_of(row).get(node, ""))],
+                                  figma.IMAGE_SCALE).get(node, (None, "рендер не пришёл"))
+    if err and png:
+        # картинка есть, но в хранилище не легла — показать, причину назвать
+        st.session_state.setdefault("loc-preview-err", err)
+    if not png:
         # отказ рендера не должен выглядеть как «превью не бывает»;
         # полная причина — одной плашкой над слайдами (render_slides),
         # у слайда — коротко, чтобы 27 одинаковых строк не шумели
@@ -1009,6 +1039,15 @@ def render_slides(layers: pd.DataFrame, row, pid: int, lang: str,
     # контейнер, заполняется после того, как слайды попросили картинки
     warn_box = st.container()
     st.session_state.pop("loc-preview-err", None)
+    # все слайды товара — ОДНИМ заходом: из хранилища, недостающие одним
+    # пакетным запросом к Figma, а не по запросу на слайд (их до 27)
+    renders: dict = {}
+    if not demo:
+        _nodes = {preview_node(row, lang, nm)[0] for nm in order}
+        _hashes = node_hashes_of(row)
+        renders = ensure_renders(cell_text(row, "figma_file_key"),
+                                 [(n, _hashes.get(n, "")) for n in _nodes if n],
+                                 figma.IMAGE_SCALE)
     for name in order:
         part = slides[slides["_slide"] == name]
         # в заголовке — переводимые строки: служебные лежат внутри
@@ -1018,7 +1057,7 @@ def render_slides(layers: pd.DataFrame, row, pid: int, lang: str,
                     unsafe_allow_html=True)
         pane_img, pane_txt = st.columns([1, 1.9], gap="medium")
         with pane_img:
-            render_preview(row, demo, lang, part=name)
+            render_preview(row, demo, lang, part=name, renders=renders)
         with pane_txt:
             render_rows(part, pid, lang, header=False)
     _perr = st.session_state.pop("loc-preview-err", None)

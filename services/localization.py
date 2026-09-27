@@ -30,7 +30,7 @@ import pandas as pd
 import streamlit as st
 
 from services import figma, translate
-from services.db import get_conn, get_engine, safe_read
+from services.db import get_conn, get_engine, missing_columns, safe_read, table_exists
 
 # Порядок языков на экране: источник первым, дальше рынки.
 SOURCE_LANG = "en"
@@ -165,6 +165,7 @@ def save_parsed(parsed: dict) -> tuple[int, int, str | None]:
     if not products:
         return 0, 0, None
     n_p = n_l = 0
+    with_hashes = renders_ready()
     try:
         conn = get_conn()
         with conn, conn.cursor() as cur:
@@ -193,6 +194,12 @@ def save_parsed(parsed: dict) -> tuple[int, int, str | None]:
                      len(p.get("layers") or [])))
                 pid = cur.fetchone()[0]
                 n_p += 1
+                if with_hashes:
+                    # отпечатки узлов: по ним сохранённый рендер
+                    # перерисовывается, только если узел изменился
+                    cur.execute("UPDATE figma_products SET node_hashes = %s::jsonb "
+                                "WHERE id = %s",
+                                (json.dumps(p.get("node_hashes") or {}), pid))
                 for lr in p.get("layers") or []:
                     # текст со страницы-языка — это перевод, с английской —
                     # исходник; предел символов берётся у обоих, потому
@@ -237,11 +244,14 @@ def load_products() -> tuple[pd.DataFrame, str | None]:
     базы значит утверждать то, чего мы не знаем.
     """
     try:
+        # отпечатки узлов — колонка из миграции 2026-09-27_figma_renders.sql;
+        # код едет раньше миграции и без неё работает по старой схеме
+        hashes = "p.node_hashes" if renders_ready() else "'{}'::jsonb AS node_hashes"
         df = pd.read_sql(
-            """
+            f"""
             SELECT p.id, p.asin, p.sku, p.name, p.section_type,
                    p.page_name, p.figma_file_key, p.figma_node_id,
-                   p.lang_nodes, p.layers_count, p.synced_at
+                   p.lang_nodes, p.layers_count, p.synced_at, {hashes}
             FROM figma_products p
             ORDER BY p.name
             """, get_engine())
@@ -649,6 +659,18 @@ def aplus_part(name: str) -> tuple[str, int | None] | None:
     return ("x", None)
 
 
+def node_hashes_of(row) -> dict:
+    """{узел: отпечаток} товара, в каком бы виде ни пришёл jsonb.
+    Пусто — товар читали до миграции хранилища рендеров."""
+    val = row.get("node_hashes")
+    if isinstance(val, str):
+        try:
+            val = json.loads(val or "{}")
+        except ValueError:
+            return {}
+    return {str(k): str(v) for k, v in val.items()} if isinstance(val, dict) else {}
+
+
 def lang_nodes_of(row) -> dict:
     """Узлы слайдов по языкам, в каком бы виде ни пришли из jsonb.
 
@@ -697,6 +719,134 @@ def preview_node(row, lang: str, part: str = "MAIN") -> tuple[str, str]:
     fallback = ("" if pd.isna(row.get("figma_node_id"))
                 else str(row.get("figma_node_id") or ""))
     return (fallback, SOURCE_LANG) if part == "MAIN" else ("", SOURCE_LANG)
+
+
+# ---------------------------------------------------------------- рендеры
+# Рендеры хранятся НАВСЕГДА в figma_renders (миграция 2026-09-27): у места
+# View шесть запросов в месяц на чтение и рендер вместе, и суточный кэш
+# в памяти — теряемый при каждом ребуте — тратил их на то, что не менялось.
+# Отрендерили раз — легло в базу; перерисовывается узел, только когда
+# его отпечаток (figma.node_hash, из последнего чтения файла) разошёлся
+# с сохранённым. Недостающие узлы рендерятся ПАЧКОЙ — один запрос на
+# все миниатюры списка или все слайды товара.
+
+RENDERS_MIGRATION = "migrations/2026-09-27_figma_renders.sql"
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def renders_ready() -> bool:
+    """Применена ли миграция хранилища рендеров (таблица и колонка).
+
+    Не падает никогда: сбой проверки — это «хранилища нет», и страница
+    работает по старой схеме, а не лежит из-за вспомогательной проверки."""
+    try:
+        return bool(table_exists("figma_renders")) and \
+            missing_columns("figma_products", ["node_hashes"]) == []
+    except Exception:
+        return False
+
+
+@st.cache_data(ttl=300, show_spinner=False)
+def _render_index(file_key: str) -> dict:
+    """{(узел, масштаб): отпечаток} сохранённых рендеров — без самих байтов."""
+    df, err = safe_read(
+        "SELECT node_id, scale, node_hash FROM figma_renders "
+        "WHERE figma_file_key = %(k)s", params={"k": file_key})
+    if err:
+        raise RuntimeError(err)
+    return {(str(r["node_id"]), round(float(r["scale"]), 3)): str(r["node_hash"])
+            for _, r in df.iterrows()}
+
+
+# Байты — в памяти процесса, но с потолком: при потере из кэша платится
+# чтение из базы, а не запрос к Figma, так что вытеснять не страшно.
+@st.cache_data(show_spinner=False, max_entries=400)
+def _stored_png(file_key: str, node_id: str, scale: float, node_hash: str) -> bytes:
+    """Сохранённая картинка. Отпечаток — в ключе: новая версия узла —
+    новый ключ, старые байты не выдаются вместо новых."""
+    df, err = safe_read(
+        "SELECT png FROM figma_renders WHERE figma_file_key = %(k)s "
+        "AND node_id = %(n)s AND scale = %(s)s",
+        params={"k": file_key, "n": node_id, "s": scale})
+    if err or df.empty:
+        raise RuntimeError(err or "рендера нет в хранилище")
+    return bytes(df.iloc[0]["png"])
+
+
+def _store_render(file_key: str, node_id: str, scale: float, node_hash: str,
+                  png: bytes) -> str | None:
+    try:
+        conn = get_conn()
+        with conn, conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO figma_renders
+                    (figma_file_key, node_id, scale, node_hash, png, bytes, rendered_at)
+                VALUES (%s, %s, %s, %s, %s, %s, now())
+                ON CONFLICT (figma_file_key, node_id, scale) DO UPDATE
+                    SET node_hash = EXCLUDED.node_hash, png = EXCLUDED.png,
+                        bytes = EXCLUDED.bytes, rendered_at = now()
+                """, (file_key, node_id, scale, node_hash, png, len(png)))
+        conn.close()
+        return None
+    except Exception as e:
+        return f"{type(e).__name__}: {e}"
+
+
+def ensure_renders(file_key: str, items: list, scale: float) -> dict:
+    """{узел: (png | None, отказ | None)} для пар (узел, отпечаток).
+
+    Свежие — из хранилища, без Figma. Недостающие и устаревшие (отпечаток
+    разошёлся) — ОДНИМ пакетным запросом рендера, потом в хранилище.
+    Отпечаток неизвестен (товар читали до миграции) — годится любой
+    сохранённый рендер: перерисовать можно, когда станет с чем сравнить.
+    Миграции нет — прежний путь, суточный кэш в памяти по одному узлу.
+    """
+    scale = round(float(scale), 3)
+    items = [(str(n), str(h or "")) for n, h in dict(items).items() if n]
+    out: dict = {}
+    if not items:
+        return out
+    if not renders_ready():
+        for n, _ in items:
+            out[n] = preview_png(n, scale)
+        return out
+    try:
+        idx = _render_index(file_key)
+    except Exception as e:
+        # хранилище не прочиталось — не рендерить же всё заново за квоту
+        return {n: (None, f"хранилище рендеров не прочиталось: {e}") for n, _ in items}
+    need = []
+    for n, h in items:
+        have = idx.get((n, scale))
+        if have is not None and (not h or have == h):
+            try:
+                out[n] = (_stored_png(file_key, n, scale, have), None)
+                continue
+            except Exception as e:
+                out[n] = (None, str(e))
+        need.append((n, h))
+    if not need:
+        return out
+    urls, err = figma.node_images([n for n, _ in need], key=file_key or None, scale=scale)
+    wrote = False
+    for n, h in need:
+        url = urls.get(n)
+        if not url:
+            out[n] = (None, err or "рендер не пришёл")
+            continue
+        png, derr = figma.download_png(url)
+        if derr or not png:
+            out[n] = (None, derr or "рендер не пришёл")
+            continue
+        serr = _store_render(file_key, n, scale, h, png)
+        wrote = wrote or serr is None
+        # не легло в базу — картинку всё равно показываем, но причину
+        # назовём: иначе в следующий раз она молча уйдёт в Figma снова
+        out[n] = (png, None if serr is None else f"не сохранилось в хранилище: {serr}")
+    if wrote:
+        _render_index.clear()
+    return out
 
 
 @st.cache_data(ttl=figma.IMAGE_TTL, show_spinner=False)

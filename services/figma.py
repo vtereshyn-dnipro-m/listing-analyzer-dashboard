@@ -21,6 +21,8 @@ Figma REST API умеет ТОЛЬКО читать. Запись текста �
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import re
 import time
@@ -217,15 +219,28 @@ AVG_CHAR_RATIO = 0.52
 # Межстрочный интервал по умолчанию, если Figma его не отдала.
 DEFAULT_LINE_RATIO = 1.2
 
-# Retry-After Figma отдаёт то в секундах, то в МИЛЛИСЕКУНДАХ — заголовок
-# один, единицы разные, и различить их можно только по величине. 306325
-# это не 85 часов, а пять минут. Ошибка тут не косметическая: «ждать
-# 85 часов» человек читает как «сегодня уже никак» и уходит, хотя
-# перечитать макеты можно после чашки кофе.
+# Retry-After у Figma — ВСЕГДА секунды. Здесь было правило «больше суток —
+# миллисекунды» (306325 читалось как пять минут), и оно было неверным:
+# 27.09 сверка показала, что значение убывает ровно на секунды (за 32
+# минуты — на 1924), а 266304 — это ~74 часа до сброса МЕСЯЧНОЙ квоты
+# места View, а не «~4 мин». Правило делило честный срок на тысячу
+# и звало повторять через пять минут то, что откроется через три дня.
 #
-# Порог — сутки: столько Figma ждать не просит никогда, а вот 86400
-# миллисекунд (полторы минуты) просит регулярно.
-RETRY_MS_OVER = 86_400
+# Тип лимита Figma присылает заголовком X-Figma-Rate-Limit-Type: «low» —
+# лимит места View/Collab у владельца токена: 6 запросов в месяц на
+# эндпоинты Tier 1 (чтение файла и рендер). Ждать тут бессмысленно,
+# нужна причина: место Dev или Full.
+RATE_LOW = "low"
+
+
+def rate_limit_reason(kind: str | None, secs: int | None, what: str) -> str:
+    """Причина 429 словами. При типе low — не «ждать», а чьё это место."""
+    if (kind or "").lower() == RATE_LOW:
+        reason = ("Figma: место View у владельца токена — 6 запросов в месяц "
+                  "на чтение и рендер, нужно место Dev или Full")
+        return reason + (f" (квота обновится через ~{wait_text(secs)})" if secs else "")
+    base = f"Figma: лимит {what} исчерпан (429)"
+    return base + (f", ждать ~{wait_text(secs)}" if secs else "")
 
 # Рендер узла под превью. Половинный масштаб: картинка стоит рядом
 # с таблицей и нужна для понимания РОЛИ строки — крупный ли это
@@ -248,9 +263,11 @@ THUMB_SCALE = 0.25
 class FigmaError(Exception):
     """Отказ Figma, о котором нужно сказать человеку дословно."""
 
-    def __init__(self, message: str, retry_after: int | None = None):
+    def __init__(self, message: str, retry_after: int | None = None,
+                 limit_type: str | None = None):
         super().__init__(message)
         self.retry_after = retry_after
+        self.limit_type = limit_type
 
 
 # Пауза рендеров после 429 — на ПРОЦЕСС, то есть на все сессии: квота
@@ -269,81 +286,136 @@ def images_paused() -> str | None:
     return None
 
 
-def node_image(node_id: str, key: str | None = None,
-               scale: float = IMAGE_SCALE) -> tuple[str | None, str | None]:
-    """Ссылка на PNG-рендер узла: (url, причина отказа).
+RENDER_BATCH = 50      # узлов в одном запросе рендера: длина URL и время ответа
 
-    Рендер запрашивается ТОЛЬКО для открытого товара. Миниатюры в списке
-    стоили бы по запросу на строку, а список — это сотни строк: тот же
-    лимит, который закрывается от одного чтения документа.
 
-    Ссылку Figma держит около часа и отдаёт на файловом хранилище,
-    поэтому кэшируется она сама, а не картинка: перекачивать байты
-    незачем, а вот повторно просить ссылку — значит тратить квоту.
+def node_images(node_ids: list, key: str | None = None,
+                scale: float = IMAGE_SCALE) -> tuple[dict, str | None]:
+    """Ссылки на PNG-рендер НЕСКОЛЬКИХ узлов одним запросом: ({id: url}, отказ).
+
+    `/v1/images` принимает список узлов, и запрос считается ОДИН — а квота
+    у места View шесть запросов в месяц на чтение и рендер вместе. Раньше
+    список просил ссылку на каждую миниатюру, редактор — на каждый слайд:
+    21 и 27 запросов там, где хватает одного. Узлы, которые Figma не
+    отрендерила, в ответе с пустой ссылкой — они не попадают в словарь.
+
+    Ссылку Figma держит около часа и отдаёт на файловом хранилище;
+    скачивание самой картинки квоту не тратит (`download_png`).
     """
+    ids = [str(n) for n in dict.fromkeys(node_ids) if n]
     key = key or file_key()
     tok = token()
-    if not tok or not key or not node_id:
+    if not tok or not key or not ids:
+        return {}, "нет секретов: " + ", ".join(missing_secrets() or ["node_id"])
+    urls: dict = {}
+    for i in range(0, len(ids), RENDER_BATCH):
+        paused = images_paused()
+        if paused:
+            return urls, paused
+        chunk = ids[i:i + RENDER_BATCH]
+        try:
+            r = requests.get(f"{API}/images/{key}",
+                             params={"ids": ",".join(chunk), "format": "png",
+                                     "scale": scale},
+                             headers={"X-Figma-Token": tok}, timeout=TIMEOUT)
+        except requests.RequestException as e:
+            return urls, f"{type(e).__name__}: {e}"
+        if r.status_code == 429:
+            secs = retry_seconds(r.headers.get("Retry-After"))
+            reason = rate_limit_reason(r.headers.get("X-Figma-Rate-Limit-Type"),
+                                       secs, "рендеров")
+            # пауза минимум на минуту, даже если срок не пришёл: иначе
+            # следующая миниатюра того же показа спросит снова
+            _IMG_PAUSE.update(until=time.time() + max(60, secs or 60), reason=reason)
+            return urls, reason
+        if r.status_code in (401, 403):
+            return urls, f"HTTP {r.status_code}: токен не имеет доступа к рендеру файла"
+        if r.status_code != 200:
+            return urls, f"HTTP {r.status_code}"
+        try:
+            data = r.json()
+        except ValueError as e:
+            return urls, f"ответ не разобрался как JSON: {e}"
+        # Figma кладёт причину отказа в поле err, а не в код ответа
+        if data.get("err"):
+            return urls, str(data["err"])
+        urls.update({k: v for k, v in (data.get("images") or {}).items() if v})
+    return urls, None
+
+
+def node_image(node_id: str, key: str | None = None,
+               scale: float = IMAGE_SCALE) -> tuple[str | None, str | None]:
+    """Ссылка на рендер одного узла: (url, отказ) — node_images на одном id."""
+    if not node_id:
         return None, "нет секретов: " + ", ".join(missing_secrets() or ["node_id"])
-    paused = images_paused()
-    if paused:
-        return None, paused
-    try:
-        r = requests.get(f"{API}/images/{key}",
-                         params={"ids": node_id, "format": "png",
-                                 "scale": scale},
-                         headers={"X-Figma-Token": tok}, timeout=TIMEOUT)
-    except requests.RequestException as e:
-        return None, f"{type(e).__name__}: {e}"
-    if r.status_code == 429:
-        secs = retry_seconds(r.headers.get("Retry-After"))
-        kind = r.headers.get("X-Figma-Rate-Limit-Type")
-        reason = (f"Figma: лимит рендеров исчерпан (429), ждать ~{wait_text(secs)}"
-                  if secs else "Figma: лимит рендеров исчерпан (429)")
-        if kind:
-            reason += f", тип лимита {kind}"
-        # пауза минимум на минуту, даже если срок не пришёл: иначе
-        # следующая миниатюра того же показа спросит снова
-        _IMG_PAUSE.update(until=time.time() + max(60, secs or 60), reason=reason)
-        return None, reason
-    if r.status_code in (401, 403):
-        return None, f"HTTP {r.status_code}: токен не имеет доступа к рендеру файла"
-    if r.status_code != 200:
-        return None, f"HTTP {r.status_code}"
-    try:
-        data = r.json()
-    except ValueError as e:
-        return None, f"ответ не разобрался как JSON: {e}"
-    # Figma кладёт причину отказа в поле err, а не в код ответа
-    if data.get("err"):
-        return None, str(data["err"])
-    url = (data.get("images") or {}).get(node_id)
-    return (url, None) if url else (None, "рендер не пришёл")
+    urls, err = node_images([node_id], key=key, scale=scale)
+    url = urls.get(str(node_id))
+    if url:
+        return url, None
+    return None, err or "рендер не пришёл"
 
 
-def node_png(node_id: str, key: str | None = None,
-             scale: float = IMAGE_SCALE) -> tuple[bytes | None, str | None]:
-    """Картинка узла байтами: (png, причина отказа).
+def download_png(url: str) -> tuple[bytes | None, str | None]:
+    """Картинка по ссылке рендера: (байты, отказ). Квоту не тратит.
 
-    Двухшаговая: сначала ссылка у API (это квота), потом сама картинка
-    с файлового хранилища (это не квота). Кэшировать имеет смысл именно
-    результат: ссылка живёт около часа, а макет меняется раз в недели.
-    """
-    url, err = node_image(node_id, key=key, scale=scale)
-    if err or not url:
-        return None, err or "рендер не пришёл"
+    Подпись PNG проверяется здесь, а не на экране: Streamlit отдаёт
+    байты в PIL, и на обрезанном ответе страница падает целиком —
+    список товаров уносит миниатюра, которая была лишь удобством."""
     try:
         r = requests.get(url, timeout=TIMEOUT)
     except requests.RequestException as e:
         return None, f"{type(e).__name__}: {e}"
     if r.status_code != 200:
         return None, f"картинка не скачалась: HTTP {r.status_code}"
-    # Подпись PNG проверяется здесь, а не на экране: Streamlit отдаёт
-    # байты в PIL, и на обрезанном ответе страница падает целиком —
-    # список товаров уносит миниатюра, которая была лишь удобством.
     if not r.content.startswith(b"\x89PNG\r\n\x1a\n"):
         return None, f"ответ не похож на PNG ({len(r.content)} байт)"
     return r.content, None
+
+
+# Что в узле влияет на картинку. Имя и id — нет: переименовал фрейм —
+# рисовать заново незачем. Координаты — только ОТНОСИТЕЛЬНО самого узла:
+# REST отдаёт абсолютные, и сдвиг фрейма по холсту иначе менял бы
+# отпечаток всего поддерева, хотя картинка та же.
+_HASH_SKIP = {"id", "name", "absoluteBoundingBox", "absoluteRenderBounds",
+              "transitionNodeID", "prototypeStartNodeID", "flowStartingPoints"}
+
+
+def _canon(node, ox: float, oy: float):
+    if isinstance(node, dict):
+        out = {k: _canon(v, ox, oy) for k, v in node.items() if k not in _HASH_SKIP}
+        b = node.get("absoluteBoundingBox")
+        if isinstance(b, dict):
+            out["_rel"] = [round((b.get("x") or 0) - ox, 1), round((b.get("y") or 0) - oy, 1),
+                           round(b.get("width") or 0, 1), round(b.get("height") or 0, 1)]
+        return out
+    if isinstance(node, list):
+        return [_canon(v, ox, oy) for v in node]
+    return node
+
+
+def node_hash(node: dict) -> str:
+    """Отпечаток узла — меняется, только когда меняется его картинка.
+
+    По нему решается, перерисовывать ли сохранённый рендер. Не по
+    `lastModified` файла: он меняется от ЛЮБОЙ правки в файле, и одна
+    правленная карточка перерисовывала бы все две с половиной тысячи
+    картинок — при квоте места View это шесть запросов в месяц на всё.
+    Считается из документа, который и так читается при «Перечитать»,
+    то есть без единого лишнего запроса."""
+    b = node.get("absoluteBoundingBox") or {}
+    canon = _canon(node, b.get("x") or 0, b.get("y") or 0)
+    raw = json.dumps(canon, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha1(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def node_png(node_id: str, key: str | None = None,
+             scale: float = IMAGE_SCALE) -> tuple[bytes | None, str | None]:
+    """Картинка узла байтами: (png, причина отказа). Одиночный путь —
+    пакетный живёт в localization.ensure_renders."""
+    url, err = node_image(node_id, key=key, scale=scale)
+    if err or not url:
+        return None, err or "рендер не пришёл"
+    return download_png(url)
 
 
 def wait_text(secs: int | None) -> str:
@@ -360,11 +432,12 @@ def wait_text(secs: int | None) -> str:
 
 
 def retry_seconds(raw) -> int | None:
-    """Сколько ждать по Retry-After — в секундах, каким бы ни пришёл ответ.
+    """Сколько ждать по Retry-After — секунды, как их и шлёт Figma.
 
-    См. RETRY_MS_OVER: единицы заголовка непостоянны. Нечисловое значение
-    (HTTP-дата, пустая строка) даёт None — «сколько ждать, неизвестно»
-    честнее выдуманного числа.
+    Никакого деления на тысячу (см. RATE_LOW выше: правило «больше
+    суток — миллисекунды» показывало «~4 мин» вместо ~74 ч). Нечисловое
+    значение (HTTP-дата, пустая строка) даёт None — «сколько ждать,
+    неизвестно» честнее выдуманного числа.
     """
     try:
         val = float(raw)
@@ -372,8 +445,6 @@ def retry_seconds(raw) -> int | None:
         return None
     if val < 0:
         return None
-    if val > RETRY_MS_OVER:
-        val /= 1000.0
     return int(val)
 
 
@@ -410,7 +481,9 @@ def fetch_document(key: str | None = None) -> dict:
 
     if r.status_code == 429:
         secs = retry_seconds(r.headers.get("Retry-After"))
-        raise FigmaError("лимит запросов Figma исчерпан", retry_after=secs)
+        kind = r.headers.get("X-Figma-Rate-Limit-Type")
+        raise FigmaError(rate_limit_reason(kind, secs, "запросов"),
+                         retry_after=secs, limit_type=kind)
     if r.status_code == 403:
         raise FigmaError("токен не даёт доступа к файлу (403)")
     if r.status_code == 404:
@@ -588,6 +661,7 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
                     }
                 # узел модуля — по синтетическому ключу без ASIN: «A+d05»
                 prod["lang_nodes"].setdefault(lang, {})[synth.split(".", 1)[1]] = str(node.get("id"))
+                prod.setdefault("node_hashes", {})[str(node.get("id"))] = node_hash(node)
                 if lang not in prod["langs"]:
                     prod["langs"].append(lang)
                 found = []
@@ -631,6 +705,9 @@ def parse_document(doc: dict, only_asins: set | None = None) -> dict:
             # ТЕКСТОВОГО слоя, не фрейма. Поэтому запоминаются здесь.
             part = m.group("part").upper()
             prod["lang_nodes"].setdefault(lang, {})[part] = str(node.get("id"))
+            # отпечаток — чтобы сохранённый рендер перерисовывался, только
+            # когда картинка узла правда изменилась (localization.ensure_renders)
+            prod.setdefault("node_hashes", {})[str(node.get("id"))] = node_hash(node)
             if part.startswith("MAIN") and lang == SOURCE_LANG:
                 prod["page_name"] = page_name
                 prod["figma_node_id"] = str(node.get("id"))
