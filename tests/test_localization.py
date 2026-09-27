@@ -350,6 +350,34 @@ next(b for b in at.button if b.key == "loc-sync").click().run()
 check("без галочки читается весь файл", PARSED_WITH[-1] is None)
 fg_mod.parse_document = _real_parse
 
+# Лимит места View (тип «low») — месячная квота: «подождите N секунд»
+# тут неправда по сути. Кнопка чтения называет причину и что нужно.
+_real_fetch = fg_mod.fetch_document
+
+
+def _fetch_low(key=None):
+    raise fg_mod.FigmaError("Figma: место View", retry_after=266304, limit_type="low")
+
+
+fg_mod.fetch_document = _fetch_low
+next(b for b in at.button if b.key == "loc-sync").click().run()
+_errs = " ".join(str(e.value) for e in at.error)
+check(f"при лимите места View названа причина, а не секунды ({_errs[:90]})",
+      "место View" in _errs and "Dev или Full" in _errs and "секунд" not in _errs
+      and "3 дн" in _errs)
+
+
+def _fetch_high(key=None):
+    raise fg_mod.FigmaError("лимит", retry_after=399, limit_type="high")
+
+
+fg_mod.fetch_document = _fetch_high
+next(b for b in at.button if b.key == "loc-sync").click().run()
+_errs = " ".join(str(e.value) for e in at.error)
+check(f"обычный лимит — срок в секундах и словами ({_errs[:80]})",
+      "399 секунд" in _errs and "7 мин" in _errs)
+fg_mod.fetch_document = _real_fetch
+
 # --- 6. картинки: миниатюра в списке и превью в редакторе
 # По названию товары не различаются — «Blower DCB-201BC» и «Blower
 # DVB-200» читаются одинаково. Поэтому в списке миниатюра, но ОДНА
