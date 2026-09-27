@@ -31,7 +31,7 @@ from i18n import t, plural
 from services import ai, figma, translate
 from services.cells import cell_text
 from services.localization import (
-    ensure_renders, node_hashes_of, renders_ready, RENDERS_MIGRATION,
+    amazon_photos, ensure_renders, node_hashes_of, renders_ready, RENDERS_MIGRATION,
     aplus_part, slide_of, slide_order,
     ALL_LANGS, TARGET_LANGS, SYNC_EVERY_HOURS,
     demo_layers, demo_products, export_payload, export_rows, fits, glossary,
@@ -579,16 +579,22 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
     # причина, по которой миниатюр нет, — одной строкой над списком
     thumb_box = st.container()
     st.session_state.pop("loc-thumb-err", None)
-    # Все миниатюры — ОДНИМ заходом: из хранилища, а недостающие одним
-    # пакетным запросом к Figma, а не по запросу на строку
+    # Миниатюра — главное фото товара из снапшота Amazon: это тот же
+    # слайд `.MAIN`, и он уже есть без единого запроса к Figma. Рендер
+    # Figma — только если он УЖЕ лежит в хранилище и фото Amazon нет;
+    # новый рендер ради миниатюры не просим: у места View шесть
+    # запросов в месяц, и они нужны превью слайдов в редакторе.
     thumbs: dict = {}
+    photos: dict = {}
     if not demo:
-        for fk, grp in view.groupby(view["figma_file_key"].fillna("").astype(str)):
+        photos = amazon_photos(tuple(sorted(view["asin"].dropna().astype(str).unique())))
+        no_photo = view[~view["asin"].astype(str).isin(photos)]
+        for fk, grp in no_photo.groupby(no_photo["figma_file_key"].fillna("").astype(str)):
             thumbs.update(ensure_renders(fk, [
                 (cell_text(r, "figma_node_id"),
                  node_hashes_of(r).get(cell_text(r, "figma_node_id"), ""))
                 for _, r in grp.iterrows() if cell_text(r, "figma_node_id")],
-                figma.THUMB_SCALE))
+                figma.THUMB_SCALE, fetch=False))
 
     # Строка товара: кнопка — по ширине подписи, карточка — остаток.
     # На долях колонок (0.5 / 1.1 / 8 / 2.6) при окне ~1000–1100 px
@@ -634,7 +640,7 @@ def render_list(products: pd.DataFrame, demo: bool) -> None:
                     key=f"loc-ck-{gen}-{pid}", value=pid in sel,
                     label_visibility="collapsed",
                     on_change=_toggle_sel, args=(pid, f"loc-ck-{gen}-{pid}"))
-        render_thumb(c0, r, demo, thumbs)
+        render_thumb(c0, r, demo, thumbs, photos)
         # Кнопка ведёт на первый язык, где ОСТАЛИСЬ непереведённые
         # строки, — он и есть работа. «Готов» здесь считается по
         # строкам, а не по факту «хоть одна переведена» (см.
@@ -784,26 +790,33 @@ def pick_langs(box, current: str, done: set) -> list:
     return st.session_state["loc-langs"]
 
 
-def render_thumb(col, row, demo: bool, renders: dict | None = None) -> None:
-    """Миниатюра главного изображения — чтобы различать товары.
+def render_thumb(col, row, demo: bool, renders: dict | None = None,
+                 photos: dict | None = None) -> None:
+    """Миниатюра главного изображения — ОДНА на товар, чтобы различать.
 
-    По названию они не различаются: «Blower DCB-201BC» и «Blower
-    DVB-200» читаются одинаково, а на картинке видно сразу. Берётся
-    ОДНО изображение на товар (узел `.MAIN`), а не все слои: каждая
-    миниатюра стоит запроса ссылки, и при двадцати одном товаре это
-    двадцать один запрос — по одному в сутки на товар, дальше из кэша.
+    По названию товары не различаются: «Blower DCB-201BC» и «Blower
+    DVB-200» читаются одинаково, а на картинке видно сразу. Источник —
+    главное фото из снапшота Amazon (без запроса к Figma), иначе
+    сохранённый рендер `.MAIN`; нового рендера ради миниатюры нет.
     """
-    node = cell_text(row, "figma_node_id")
-    if demo or not node:
+    if demo:
         return
-    png, err = (renders or {}).get(node) or preview_png(node, figma.THUMB_SCALE)
-    if err:
-        st.session_state.setdefault("loc-thumb-err", err)
+    photo = (photos or {}).get(cell_text(row, "asin"))
+    if photo:
+        try:
+            col.image(photo, width="stretch")
+        except Exception:
+            pass
+        return
+    node = cell_text(row, "figma_node_id")
+    if not node:
+        return
+    png, err = (renders or {}).get(node) or (None, None)
     if not png:
-        # у строки молчим — миниатюра удобство, — но причину запоминаем:
-        # над списком она будет названа ОДНОЙ строкой (render_list),
-        # иначе пустая колонка выглядит как «картинок не бывает»
-        st.session_state.setdefault("loc-thumb-err", err or "—")
+        # у строки молчим — миниатюра удобство. Сбой (не «нет данных»)
+        # запоминаем: над списком он будет назван ОДНОЙ строкой
+        if err:
+            st.session_state.setdefault("loc-thumb-err", err)
         return
     try:
         col.image(png, width="stretch")

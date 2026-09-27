@@ -659,6 +659,34 @@ def aplus_part(name: str) -> tuple[str, int | None] | None:
     return ("x", None)
 
 
+@st.cache_data(ttl=3600, show_spinner=False)
+def amazon_photos(asins: tuple) -> dict:
+    """{ASIN: ссылка на главное фото} из последнего удачного снапшота.
+
+    Миниатюра в списке — это слайд `.MAIN`, то есть главное фото товара
+    на белом фоне, и оно уже лежит в снапшотах Amazon. Брать его у Figma
+    значило тратить на картинку запрос рендера — а у места View их шесть
+    в МЕСЯЦ на всё (27.09 колонка миниатюр стояла пустой). Ссылка
+    Amazon отдаётся браузеру напрямую, приложение её не качает.
+    Рынок любой: главное фото у ASIN одно на все витрины.
+    """
+    if not asins:
+        return {}
+    df, err = safe_read(
+        """
+        SELECT DISTINCT ON (asin) asin,
+               COALESCE(raw->>'main_image', raw->'images'->>0) AS photo
+        FROM listing_snapshots
+        WHERE ok = TRUE AND asin = ANY(%(a)s)
+          AND COALESCE(raw->>'main_image', raw->'images'->>0) IS NOT NULL
+        ORDER BY asin, fetched_at DESC
+        """, params={"a": list(asins)})
+    if err or df.empty or not {"asin", "photo"} <= set(df.columns):
+        return {}
+    return {str(r["asin"]): str(r["photo"]) for _, r in df.iterrows()
+            if str(r["photo"]).startswith("http")}
+
+
 def node_hashes_of(row) -> dict:
     """{узел: отпечаток} товара, в каком бы виде ни пришёл jsonb.
     Пусто — товар читали до миграции хранилища рендеров."""
@@ -793,7 +821,8 @@ def _store_render(file_key: str, node_id: str, scale: float, node_hash: str,
         return f"{type(e).__name__}: {e}"
 
 
-def ensure_renders(file_key: str, items: list, scale: float) -> dict:
+def ensure_renders(file_key: str, items: list, scale: float,
+                   fetch: bool = True) -> dict:
     """{узел: (png | None, отказ | None)} для пар (узел, отпечаток).
 
     Свежие — из хранилища, без Figma. Недостающие и устаревшие (отпечаток
@@ -808,6 +837,8 @@ def ensure_renders(file_key: str, items: list, scale: float) -> dict:
     if not items:
         return out
     if not renders_ready():
+        if not fetch:
+            return {n: (None, None) for n, _ in items}
         for n, _ in items:
             out[n] = preview_png(n, scale)
         return out
@@ -827,6 +858,11 @@ def ensure_renders(file_key: str, items: list, scale: float) -> dict:
                 out[n] = (None, str(e))
         need.append((n, h))
     if not need:
+        return out
+    if not fetch:
+        # только из хранилища: нет — значит нет, в Figma за этим не идём
+        for n, _ in need:
+            out.setdefault(n, (None, None))
         return out
     urls, err = figma.node_images([n for n, _ in need], key=file_key or None, scale=scale)
     wrote = False

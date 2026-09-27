@@ -116,6 +116,10 @@ def fake_sql(sql, con=None, **kw):
         # по умолчанию и сказать, что он не сохранён
         return pd.DataFrame()
     if MODE["real"]:
+        # главное фото товара из снапшота Amazon — источник миниатюры
+        if "AS photo" in q:
+            return pd.DataFrame([{"asin": "B0G4S9SJ3M",
+                                  "photo": "https://m.media-amazon.com/images/I/main.jpg"}])
         if "JOIN figma_layers src" in q:
             return GLOSSARY.copy()
         if "product_id = ANY" in q:
@@ -429,13 +433,14 @@ st.cache_data.clear()
 CALLS.clear()
 at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 at.switch_page("pages/content.py").run()
-check(f"в списке ровно одна картинка на товар ({CALLS})",
-      CALLS == [("1:1", fg.THUMB_SCALE)])
-check("и она на экране", len(at.get("image")) == 1)
+# Миниатюра — главное фото из снапшота Amazon: это тот же слайд .MAIN,
+# и за ним не нужно ходить в Figma. 27.09 колонка стояла пустой — квота
+# места View (6 запросов в месяц) кончилась на рендерах миниатюр.
+check(f"в списке миниатюра без единого запроса к Figma ({CALLS})", CALLS == [])
+check("и она на экране — одна на товар", len(at.get("image")) == 1)
 
-at.run()          # ещё одна отрисовка — кэш обязан удержать байты
-check(f"повторная отрисовка списка запроса не делает ({len(CALLS)})",
-      len(CALLS) == 1)
+at.run()
+check(f"повторная отрисовка тоже без запросов ({len(CALLS)})", len(CALLS) == 0)
 
 # --- 4б. массовая работа в списке
 # Раньше всё по одному: открыл, перевёл, вернулся — четыре товара на
@@ -508,7 +513,7 @@ at.session_state["loc-product"] = 7
 at.session_state["loc-lang"] = "es"
 at.run()
 check(f"превью в редакторе просит полный масштаб ({CALLS})",
-      [c[1] for c in CALLS] == [fg.THUMB_SCALE, fg.IMAGE_SCALE])
+      [c[1] for c in CALLS] == [fg.IMAGE_SCALE])
 check("картинка действительно на экране", len(at.get("image")) == 1)
 check("и подпись называет, ЧЕЙ это макет",
       any(("уже переведён в Figma" in str(c.value))
@@ -532,8 +537,8 @@ check("а строки перевода остались на месте", len(a
 # «картинок не бывает» (27.09, после перехода на токен design@)
 next(b for b in at.button if b.key == "loc-back").click().run()
 _tf = [str(c.value) for c in at.caption if "Миниатюры не показаны" in str(c.value)]
-check(f"в списке причина отказа миниатюр названа одной строкой ({_tf[:1]})",
-      len(_tf) == 1 and "429" in _tf[0])
+check(f"отказ рендера Figma миниатюру в списке не трогает ({_tf[:1]})",
+      not _tf and len(at.get("image")) == 1)
 at.session_state["loc-product"] = 7
 at.session_state["loc-lang"] = "es"
 at.run()
@@ -629,7 +634,7 @@ for lg in ("de", "es", "it", "fr"):
     at.session_state[f"loc-lang-0-{lg}"] = (lg == "es")
 at.run()
 check("для испанского показан английский макет",
-      any(c[0] == "1:1" for c in CALLS))
+      any(c[0] in ("1:1", "1:5") for c in CALLS))
 check("и сказано, что своего макета ещё нет",
       any("ещё нет" in str(c.value) for c in at.caption))
 MODE["layers"] = None
