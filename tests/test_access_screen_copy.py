@@ -20,6 +20,7 @@ Cloud нет. Но можно поймать ПРАВКУ КОПИИ НА МЕС
 from __future__ import annotations
 
 import hashlib
+import os
 import pathlib
 import re
 import sys
@@ -59,6 +60,19 @@ if ФАЙЛ.exists():
           'require("admin"' not in текст and 'can("admin"' not in текст)
     check("и держит запертые пары на оба продукта",
           '"ls.admin"' in текст and "ЗАПЕРТО" in текст)
+
+# --- сверка с ИСТОЧНИКОМ, если репозиторий Кабинета под рукой
+# Расхождение — провал, а не предупреждение (решение владельца 02.10.2026).
+# Источника нет рядом — это не расхождение, и провалом не считается: правку копии на
+# месте уже поймал отпечаток выше, а полная сверка живёт там, где лежит источник, и
+# стоит в его обязательном прогоне (`scratchpad/smoke_full.py` Кабинета).
+ИСТОЧНИК = pathlib.Path(os.environ.get(
+    "KABINET_ROOT", "/Users/vitter/Documents/Code/kabinet-dashboard")) / "access_screen.py"
+if ИСТОЧНИК.exists():
+    check("копия совпадает с источником побайтно",
+          ИСТОЧНИК.read_bytes() == ФАЙЛ.read_bytes())
+else:
+    print(f"  —    источника рядом нет ({ИСТОЧНИК}); полная сверка — в прогоне Кабинета")
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
