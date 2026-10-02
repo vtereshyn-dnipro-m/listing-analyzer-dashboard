@@ -14,6 +14,7 @@ from config import APP_NAME, days_to_deadline
 import i18n as i18n_mod
 from i18n import t, lang_selector
 from services import memprobe   # ВРЕМЕННО: замер памяти, снять после ответа
+import auth
 
 st.set_page_config(
     page_title=APP_NAME,
@@ -28,49 +29,63 @@ try:
 except Exception:
     pass  # лого нет в репо — работаем без него, не падаем
 
+# ---------------------------------------------------------------- ворота
+# Ворота стоят ЗДЕСЬ — раньше, чем читается хоть одна таблица, и раньше навигации.
+# Страницы собраны через st.navigation, поэтому любой URL проходит через app.py, и
+# прямая ссылка на /synthesis закрывается этой же проверкой. Если навигацию когда-нибудь
+# заменят на автоматическую (папка pages/ без роутера), страницы станут
+# самостоятельными точками входа, и guard() придётся звать в начале каждой.
+auth.guard()
+
 # ---------------------------------------------------------------- страницы
-guide = st.Page(
-    "pages/guide.py", title=t("nav.guide"),
-    icon=":material/help:",
-)
-dashboard = st.Page(
-    "pages/dashboard.py", title=t("nav.dashboard"),
-    icon=":material/stethoscope:", default=True,
-)
-catalog = st.Page(
-    "pages/catalog.py", title=t("nav.catalog"),
-    icon=":material/table_rows:",
-)
-synthesis = st.Page(
-    "pages/synthesis.py", title=t("nav.synthesis"),
-    icon=":material/content_cut:",
-)
-photo = st.Page(
-    "pages/photo.py", title=t("nav.photo"),
-    icon=":material/photo_camera:",
-)
-content = st.Page(
-    "pages/content.py", title=t("nav.content"),
-    icon=":material/translate:",
-)
-matrix_setup = st.Page(
-    "pages/matrix_setup.py", title=t("nav.matrix"),
-    icon=":material/account_tree:",
-)
-methodology = st.Page(
-    "pages/methodology.py", title=t("nav.methodology"),
-    icon=":material/menu_book:",
-)
-settings = st.Page(
-    "pages/settings.py", title=t("nav.settings"),
-    icon=":material/settings:",
-)
+# Список страниц объявлен в auth.PAGES: видимость страницы — такое же право, как любое
+# другое, и держать два списка (страниц и прав) значило бы однажды их разойтись.
+#
+# Страница, которую роли видеть нельзя, НЕ исчезает из навигации — она становится
+# скрытой заглушкой с тем же адресом. Разница существенная: просто убрать её из списка
+# значило бы, что по прямой ссылке Streamlit покажет своё «Page not found» и молча
+# перебросит на главную, а человек должен получить ОТКАЗ и понять, что страница есть,
+# но ему закрыта.
+def _адрес(файл: str) -> str:
+    """Адрес страницы в ссылке — тот же, что Streamlit выводит из имени файла:
+    отбрасывает путь, числовой префикс и расширение. `pages/matrix_setup.py` →
+    `matrix_setup`. Нужен затем, чтобы заглушка отвечала по ТОМУ ЖЕ адресу."""
+    имя = файл.rsplit("/", 1)[-1]
+    if имя.endswith(".py"):
+        имя = имя[:-3]
+    return re.sub(r"^\d+_", "", имя)
+
+
+def _отказ():
+    st.title(t("auth.page_closed_title"))
+    st.error(t("auth.page_closed"))
+    st.caption(t("auth.page_closed_hint"))
+
+
+_видимые = [p for p in auth.PAGES if auth.can("ls.page." + p[0])]
+_закрытые = [p for p in auth.PAGES if not auth.can("ls.page." + p[0])]
+
+if not _видимые:
+    # Ни одной открытой страницы — показываем отказ целиком, а не пустое меню
+    st.navigation([st.Page(_отказ, title=t("auth.page_closed_title"))],
+                  position="hidden").run()
+    st.stop()
+
+# «Диагноз» по умолчанию, если он открыт; иначе первая из открытых — пустого экрана
+# при живых страницах быть не должно
+_по_умолчанию = next((k for k, *_ in _видимые if k == "dashboard"), _видимые[0][0])
+_разделы: dict[str, list] = {}
+for _ключ, _файл, _подпись, _значок, _раздел in _видимые:
+    _разделы.setdefault(_раздел, []).append(
+        st.Page(_файл, title=t(_подпись), icon=_значок,
+                default=(_ключ == _по_умолчанию)))
+_скрытые = [st.Page(_отказ, title=t(_подпись), icon=_значок,
+                    url_path=_адрес(_файл), visibility="hidden")
+            for _ключ, _файл, _подпись, _значок, _раздел in _закрытые]
 
 nav = st.navigation(
-    {
-        t("nav.section.work"): [guide, dashboard, catalog, synthesis, photo, content],
-        t("nav.section.settings"): [matrix_setup, methodology, settings],
-    }
+    {t("nav.section.work"): _разделы.get("work", []),
+     t("nav.section.settings"): _разделы.get("settings", []) + _скрытые}
 )
 
 # ---------------------------------------------------------------- сайдбар
@@ -122,6 +137,7 @@ with st.sidebar:
     # тумблер мобильного вида: флаг читает inject_fonts() в components/ui.py
     st.toggle(t("sidebar.mobile"), key="mobile_preview",
               help=t("sidebar.mobile_help"))
+    auth.header()
     st.divider()
     d = days_to_deadline()
     if d > 0:

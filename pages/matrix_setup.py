@@ -12,6 +12,7 @@ import json
 import pandas as pd
 import streamlit as st
 
+import auth
 from i18n import t
 from services import cache
 from services.db import (add_matrix_rows, cfg, get_conn, get_engine,
@@ -23,6 +24,13 @@ from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
 st.title(t("nav.matrix"))
+
+# Правка контента на этой странице: кнопки отключены и подписаны, если роли нельзя.
+# Подпись обязательна — иначе отказ при нажатии выглядит поломкой.
+МОЖНО_ПРАВИТЬ = auth.can("ls.content.edit")
+if not МОЖНО_ПРАВИТЬ:
+    st.caption(t("auth.read_only"))
+
 
 INK = "#1A1815"
 MUTED = "#8A8578"
@@ -115,7 +123,10 @@ text = st.text_area(
     label_visibility="collapsed",
 )
 
-if st.button(t("matrix.add"), type="primary", disabled=not text.strip()):
+if st.button(t("matrix.add"), type="primary",
+             disabled=not text.strip() or not МОЖНО_ПРАВИТЬ):
+    if not auth.require("ls.content.edit", object_type="page", object_id="matrix"):
+        st.stop()
     rows = parse_asin_lines(text)
     if not rows:
         st.warning(t("matrix.no_asin"))
@@ -202,7 +213,11 @@ with st.expander(f"{t('matrix.import_header')} ({len(src)})",
             f"{t('matrix.import_existing')}: {len(pick) - len(new_rows)}")
 
         if st.button(f"{t('matrix.import_button')} ({len(new_rows)})",
-                     type="primary", disabled=new_rows.empty):
+                     type="primary",
+                     disabled=new_rows.empty or not МОЖНО_ПРАВИТЬ):
+            if not auth.require("ls.content.edit", object_type="page",
+                                object_id="matrix"):
+                st.stop()
             try:
                 conn = get_conn()
                 added = 0
@@ -233,6 +248,10 @@ with st.expander(f"{t('matrix.import_header')} ({len(src)})",
 
 # ================================================================ пайплайн
 def collect_rows(rows: pd.DataFrame) -> None:
+    # Сбор тратит деньги (Scrapingdog и модель), поэтому право проверяется ЗДЕСЬ, в
+    # одной функции на все три кнопки: пропущенная кнопка тогда не становится дырой.
+    if not auth.require("ls.content.edit", object_type="page", object_id="matrix"):
+        return
     import requests
 
     key = cfg("SCRAPINGDOG_API_KEY")
@@ -634,7 +653,11 @@ else:
                       type="primary", disabled=not sel_keys, key="tbl-collect"):
             collect_rows(sel_rows)
         if ta2.button(f"{t('matrix.delete_selected')} ({len(sel_keys)})",
-                      disabled=not sel_keys, key="tbl-delete"):
+                      disabled=not sel_keys or not МОЖНО_ПРАВИТЬ,
+                      key="tbl-delete"):
+            if not auth.require("ls.content.edit", object_type="page",
+                                object_id="matrix"):
+                st.stop()
             try:
                 conn = get_conn()
                 with conn, conn.cursor() as cur:
@@ -752,7 +775,10 @@ else:
             lambda r: (r["asin"], r["marketplace"]) in selected_keys, axis=1)
         collect_rows(chunk[mask])
     if a2.button(f"{t('matrix.delete_selected')} ({len(selected_keys)})",
-                 disabled=not selected_keys):
+                 disabled=not selected_keys or not МОЖНО_ПРАВИТЬ):
+        if not auth.require("ls.content.edit", object_type="page",
+                            object_id="matrix"):
+            st.stop()
         try:
             conn = get_conn()
             with conn, conn.cursor() as cur:
@@ -823,6 +849,10 @@ with st.expander(t("matrix.schedule_edit")):
         format_func=lambda d: DAY_LABELS[d],
     )
     if st.button(t("matrix.schedule_save"), type="primary"):
+        # расписание запускает сбор само, без человека, — поэтому право строже
+        if not auth.require("ls.settings.edit", object_type="page",
+                            object_id="schedule"):
+            st.stop()
         try:
             conn = get_conn()
             with conn, conn.cursor() as cur:

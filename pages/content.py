@@ -27,6 +27,7 @@ import json
 import pandas as pd
 import streamlit as st
 
+import auth
 from i18n import t, plural
 from services import ai, figma, translate
 from services.cells import cell_text
@@ -44,6 +45,13 @@ from components.ui import css_key, inject_fonts, eyebrow
 
 inject_fonts()
 st.title(t("nav.content"))
+
+# Правка контента на этой странице: кнопки отключены и подписаны, если роли нельзя.
+# Подпись обязательна — иначе отказ при нажатии выглядит поломкой.
+МОЖНО_ПРАВИТЬ = auth.can("ls.content.edit")
+if not МОЖНО_ПРАВИТЬ:
+    st.caption(t("auth.read_only"))
+
 
 ACCENT = "#E8590C"
 INK = "#1A1815"
@@ -237,8 +245,11 @@ def render_sync_bar(products: pd.DataFrame, demo: bool) -> None:
                asins=", ".join(figma.FIRST_PASS_ASINS)))
 
     if c1.button(t("loc.resync"), key="loc-sync", type="primary",
-                 disabled=bool(miss),
+                 disabled=bool(miss) or not МОЖНО_ПРАВИТЬ,
                  help=t("loc.no_secrets", keys=", ".join(miss)) if miss else None):
+        if not auth.require("ls.content.edit", object_type="page",
+                            object_id="content"):
+            st.stop()
         with st.status(t("loc.sync_run"), expanded=True) as status:
             try:
                 doc = figma.fetch_document()
@@ -881,6 +892,21 @@ def human_mark(row) -> str:
             f'font-size:11px;margin-left:6px;">✎</span>')
 
 
+def _may_edit_cb(вид: str, ид) -> bool:
+    """Право на правку контента для КОЛБЭКА.
+
+    Из колбэка `st.error` на экран не попадает — Streamlit рисует элементы позже,
+    поэтому отказ кладётся туда же, куда страница кладёт ошибки сохранения, и
+    показывается при отрисовке. Молчаливый отказ здесь был бы худшим видом: кнопка
+    нажалась, ничего не изменилось, объяснения нет."""
+    if auth.can("ls.content.edit"):
+        return True
+    auth.log_action("ls.content.edit", False, вид, ид,
+                    details=f"режим {auth.mode()}, роль {auth.current().role}")
+    st.session_state["loc-save-error"] = t("auth.denied")
+    return False
+
+
 def _store_edit(pid: int, slot: str, lang: str, key: str) -> None:
     """Правка уезжает в базу сразу, без кнопки «Сохранить».
 
@@ -888,6 +914,8 @@ def _store_edit(pid: int, slot: str, lang: str, key: str) -> None:
     вкладку закрыли — правки нет. Здесь же строка мелкая, правок много,
     и подтверждать каждую бессмысленно.
     """
+    if not _may_edit_cb("translation", pid):
+        return
     err = save_translation(pid, slot, lang, st.session_state.get(key, ""))
     st.session_state["loc-save-error"] = err
     _invalidate()
@@ -911,6 +939,8 @@ def _translate_plan(pid: int, plan: dict) -> None:
     """
     st.session_state.pop("loc-save-error", None)
     st.session_state.pop("loc-model-note", None)
+    if not _may_edit_cb("translation", pid):
+        return
     r = _run_plan(pid, plan)
     if r["error"]:
         st.session_state["loc-save-error"] = r["error"]
@@ -1201,6 +1231,11 @@ def render_prompt_box() -> None:
         st.text_area(t("loc.prompt_open"), value=base, height=260,
                      key="loc-prompt-draft", label_visibility="collapsed")
         if st.button(t("loc.prompt_save"), key="loc-prompt-save"):
+            # Промпт перевода — методика, а не одна строка контента: он меняет всё,
+            # что будет переведено потом, поэтому право то же, что у версии навыка.
+            if not auth.require("ls.method.edit", object_type="prompt",
+                                object_id="localization"):
+                st.stop()
             fail = save_prompt(st.session_state.get("loc-prompt-draft") or "")
             if fail:
                 st.error("⚠ " + t("loc.prompt_save_failed", e=fail))

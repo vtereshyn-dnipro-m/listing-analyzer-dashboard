@@ -16,6 +16,7 @@ import time
 import pandas as pd
 import streamlit as st
 
+import auth
 from i18n import t, current_lang
 from services.cells import cell_text
 from services import cache
@@ -28,6 +29,13 @@ from components.ui import inject_fonts, eyebrow
 
 inject_fonts()
 st.title(t("photo.title"))
+
+# Правка контента на этой странице: кнопки отключены и подписаны, если роли нельзя.
+# Подпись обязательна — иначе отказ при нажатии выглядит поломкой.
+МОЖНО_ПРАВИТЬ = auth.can("ls.content.edit")
+if not МОЖНО_ПРАВИТЬ:
+    st.caption(t("auth.read_only"))
+
 # баланс провайдера исчерпан — предупреждаем до кнопок генерации
 no_credit_banner("photo_audit")
 
@@ -634,6 +642,9 @@ for x in rows:
             if st.button(btn_label_g, type="primary" if not has_saved_g else "secondary",
                          disabled=not imgs or not gallery_ready,
                          key=f"g-{asin}-{mp}"):
+                if not auth.require("ls.content.edit", object_type="asin",
+                                    object_id=asin):
+                    st.stop()
                 _t0 = time.time()
                 with st.spinner(f"{t('photo.looking')} {len(imgs)}..."):
                     res = analyze(
@@ -720,6 +731,9 @@ for x in rows:
                          type="primary" if not has_saved_a else "secondary",
                          disabled=not apl or not aplus_ready,
                          key=f"a-{asin}-{mp}"):
+                if not auth.require("ls.content.edit", object_type="asin",
+                                    object_id=asin):
+                    st.stop()
                 _ta = time.time()
                 with st.spinner(f"{t('photo.looking')} {len(apl)} A+..."):
                     res_a = analyze(apl, r["title"], mp, skill_a, APLUS_CHECKS,

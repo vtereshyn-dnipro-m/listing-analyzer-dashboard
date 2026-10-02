@@ -12,6 +12,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+import auth
 from i18n import t
 from services.cells import cell_text
 from services.db import get_conn, get_engine, safe_read, table_exists
@@ -21,6 +22,13 @@ from components.ui import inject_fonts, eyebrow
 inject_fonts()
 st.title(t("meth.title"))
 st.caption(t("meth.caption"))
+
+# Правка контента на этой странице: кнопки отключены и подписаны, если роли нельзя.
+# Подпись обязательна — иначе отказ при нажатии выглядит поломкой.
+МОЖНО_ПРАВИТЬ = auth.can("ls.method.edit")
+if not МОЖНО_ПРАВИТЬ:
+    st.caption(t("auth.read_only"))
+
 
 # Подписи областей — в i18n (meth.scope.<id>), здесь только id
 SCOPE_IDS = [
@@ -106,11 +114,15 @@ save = st.button(
     f"{t('meth.save_as')} v{current_version + 1}",
     type="primary",
     disabled=(bool(load_err) or edited.strip() == current_text.strip()
-              or not edited.strip()),
+              or not edited.strip() or not МОЖНО_ПРАВИТЬ),
     help=t("meth.load_blocked") if load_err else None,
 )
 
 if save:
+    # Версия навыка меняет ВСЁ, что сгенерится потом, поэтому право проверяется в
+    # обработчике, а не тем, что кнопка нарисовалась.
+    if not auth.require("ls.method.edit", object_type="skill", object_id=scope):
+        st.stop()
     try:
         conn = get_conn()
         with conn, conn.cursor() as cur:
@@ -153,7 +165,11 @@ if not versions.empty:
             st.text(v["skill_text"][:2000])
             if not v["is_active"]:
                 if st.button(f"{t('meth.rollback')} v{int(v['version'])}",
-                             key=f"rollback-{v['id']}"):
+                             key=f"rollback-{v['id']}",
+                             disabled=not МОЖНО_ПРАВИТЬ):
+                    if not auth.require("ls.method.edit", object_type="skill",
+                                        object_id=f"{scope} v{int(v['version'])}"):
+                        st.stop()
                     try:
                         conn = get_conn()
                         with conn, conn.cursor() as cur:
@@ -205,7 +221,11 @@ _min_ctr = _p7.number_input(
     t("meth.min_ctr"), 0.0, 10.0, get_float("threshold.min_ctr", 0.3), 0.1,
     help=t("meth.min_ctr_hint"))
 
-if st.button(t("meth.save_thresholds"), type="primary", key="save-thresholds"):
+if st.button(t("meth.save_thresholds"), type="primary", key="save-thresholds",
+             disabled=not МОЖНО_ПРАВИТЬ):
+    if not auth.require("ls.method.edit", object_type="page",
+                        object_id="thresholds"):
+        st.stop()
     try:
         save_setting("limit.title", _title_limit)
         save_setting("limit.highlights", _hl_limit)
@@ -286,7 +306,11 @@ else:
             f'{t("meth.grounds")}: {src["grounds"]} {chips}</div></div>',
             unsafe_allow_html=True,
         )
-        if c_btn.button(t("meth.checked"), key=f"src-check-{src['id']}"):
+        if c_btn.button(t("meth.checked"), key=f"src-check-{src['id']}",
+                        disabled=not МОЖНО_ПРАВИТЬ):
+            if not auth.require("ls.method.edit", object_type="policy_source",
+                                object_id=int(src["id"])):
+                st.stop()
             try:
                 conn = get_conn()
                 with conn, conn.cursor() as cur:
@@ -383,7 +407,11 @@ else:
             with st.expander(t("meth.policy_changes")):
                 st.text(a["proposed_changes"])
         ac1, ac2, _ = st.columns([1.4, 1.4, 4])
-        if ac1.button(t("meth.applied"), key=f"alert-ok-{a['id']}"):
+        if ac1.button(t("meth.applied"), key=f"alert-ok-{a['id']}",
+                      disabled=not МОЖНО_ПРАВИТЬ):
+            if not auth.require("ls.method.edit", object_type="policy_alert",
+                                object_id=int(a["id"])):
+                st.stop()
             try:
                 conn = get_conn()
                 with conn, conn.cursor() as cur:
@@ -395,7 +423,11 @@ else:
                 st.rerun()
             except Exception as e:
                 st.error(f"{e}")
-        if ac2.button(t("meth.dismiss"), key=f"alert-no-{a['id']}"):
+        if ac2.button(t("meth.dismiss"), key=f"alert-no-{a['id']}",
+                      disabled=not МОЖНО_ПРАВИТЬ):
+            if not auth.require("ls.method.edit", object_type="policy_alert",
+                                object_id=int(a["id"])):
+                st.stop()
             try:
                 conn = get_conn()
                 with conn, conn.cursor() as cur:
