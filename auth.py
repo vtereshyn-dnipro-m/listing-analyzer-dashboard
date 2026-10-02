@@ -78,6 +78,11 @@ PAGE_ACTIONS = ["ls.page." + ключ for ключ, *_ in PAGES]
 # что сгенерится потом; `ls.settings.edit` (ключи, шаблоны, расписание сбора) —
 # только администратор, там и деньги, и доступы.
 _MATRIX = {
+    # «Доступ» — своё право, отдельное от кабинетного `admin`: администратор Кабинета и
+    # администратор Listing Suite по смыслу разные люди, и одно право на оба продукта
+    # означало бы, что роль в одном молча открывает чужую админку. Снять пару
+    # «админ × ls.admin» нельзя — держит триггер в базе.
+    "ls.admin":         {ADMIN},
     "ls.content.edit":  {CONTENT_MANAGER, APPROVER, ADMIN},
     "ls.amazon.push":   {APPROVER, ADMIN},
     "ls.method.edit":   {APPROVER, ADMIN},
