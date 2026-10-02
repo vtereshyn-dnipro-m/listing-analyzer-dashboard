@@ -82,8 +82,23 @@ check(f"плейсхолдеры совпадают ({_bad_ph or '—'})", not _
 
 # --- штатный промах не поднимает тревогу
 import streamlit as st                                  # noqa: E402
+
+
+def рассинхрон(прогон) -> str:
+    """Предупреждения ИМЕННО про рассинхрон словаря и модуля.
+
+    С 02.10.2026 в сайдбаре живёт и второе предупреждение — «состояние входа
+    неизвестно», когда не читается база Кабинета (в тестах её секретов нет вовсе,
+    и это нормально). Проверять «в сайдбаре нет ни одного warning» стало нельзя:
+    так проверка объявляла бы поломкой честное сообщение о другом. Отбираем свои
+    по признаку, который есть только у них, — они называют ключи и ребут."""
+    свои = [str(w.value) for w in прогон.sidebar.warning
+            if "ребут" in str(w.value).lower() or "модул" in str(w.value).lower()]
+    return " ".join(свои)
+
+
 at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
-check("на живом словаре предупреждения нет", not at.sidebar.warning)
+check("на живом словаре предупреждения нет", not рассинхрон(at))
 
 check("tr_opt возвращает None вместо ключа",
       i18n.tr_opt("issue.code.100232") is None
@@ -92,7 +107,7 @@ _ = [i18n.t("cause.amazon_blocked"), i18n.t("action.lost_amazon_choice"),
      i18n.t("issue.code.100232")]
 at1 = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
 check("промахи по несуществующим ключам тревогу НЕ поднимают",
-      not at1.sidebar.warning)
+      not рассинхрон(at1))
 
 # --- модуль отстал от файла: вот это и есть рассинхрон
 _saved = {lg: {k: i18n.LANGS[lg][k] for k in ("synth.cov_no_sqp",
@@ -103,7 +118,7 @@ for _lg in i18n.LANGS:
         i18n.LANGS[_lg].pop(_k, None)
 st.cache_data.clear()
 at2 = AppTest.from_file(str(ROOT / "app.py"), default_timeout=180).run()
-_w = " ".join(str(w.value) for w in at2.sidebar.warning)
+_w = рассинхрон(at2)
 for _lg, _kv in _saved.items():
     i18n.LANGS[_lg].update(_kv)
 st.cache_data.clear()

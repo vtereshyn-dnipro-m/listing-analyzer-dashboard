@@ -943,6 +943,12 @@ LANGS: dict[str, dict[str, str]] = {
         "auth.page_closed": "This page is not available to your role.",
         "auth.page_closed_hint": "The page exists but is closed — it has not disappeared or broken. An administrator opens access in Kabinet → Access.",
         "auth.read_only": "View only: your role cannot change anything here.",
+        "auth.mode_unread": "Sign-in state unknown: the Kabinet database is unreachable — see the reason below",
+        "auth.check_title": "Sign-in and roles",
+        "auth.check_ok": "Mode read from the Kabinet database: {mode}",
+        "auth.check_fail": "Mode NOT read — the app falls back to rollout (buttons for everyone). Reason:",
+        "auth.check_hint": "The [kabinet_db] section needs pg_host and endpoint_name of the Kabinet database; the host and client are taken from [databricks], and that service principal must have a role in that database.",
+        "auth.check_who": "Connected as: {user}",
     },
     "ru": {
         "app.tagline": "работа с листингами Amazon",
@@ -1872,6 +1878,12 @@ LANGS: dict[str, dict[str, str]] = {
         "auth.page_closed": "Эта страница недоступна вашей роли.",
         "auth.page_closed_hint": "Страница существует, но закрыта — не исчезла и не сломалась. Доступ открывает администратор: Кабинет → Доступ.",
         "auth.read_only": "Только просмотр: вашей роли здесь нечего менять.",
+        "auth.mode_unread": "Состояние входа неизвестно: база Кабинета недоступна — причина ниже",
+        "auth.check_title": "Вход и роли",
+        "auth.check_ok": "Режим прочитан из базы Кабинета: {mode}",
+        "auth.check_fail": "Режим НЕ прочитан — приложение откатилось на раскатку (кнопки у всех). Причина:",
+        "auth.check_hint": "В секции [kabinet_db] нужны pg_host и endpoint_name базы Кабинета; хост и клиент берутся из [databricks], и у этого сервис-принципала должна быть роль в той базе.",
+        "auth.check_who": "Подключились как: {user}",
     },
     "uk": {
         "app.tagline": "робота з лістингами Amazon",
@@ -2801,6 +2813,12 @@ LANGS: dict[str, dict[str, str]] = {
         "auth.page_closed": "Ця сторінка недоступна вашій ролі.",
         "auth.page_closed_hint": "Сторінка існує, але закрита — не зникла і не зламалася. Доступ відкриває адміністратор: Кабінет → Доступ.",
         "auth.read_only": "Лише перегляд: вашій ролі тут нічого змінювати.",
+        "auth.mode_unread": "Стан входу невідомий: база Кабінету недоступна — причина нижче",
+        "auth.check_title": "Вхід і роли",
+        "auth.check_ok": "Режим прочитано з бази Кабінету: {mode}",
+        "auth.check_fail": "Режим НЕ прочитано — застосунок відкотився на розкатку (кнопки в усіх). Причина:",
+        "auth.check_hint": "У секції [kabinet_db] потрібні pg_host і endpoint_name бази Кабінету; хост і клієнт беруться з [databricks], і в цього сервіс-принципала має бути роль у тій базі.",
+        "auth.check_who": "Підключилися як: {user}",
     },
 }
 

@@ -111,21 +111,50 @@ class User:
 def mode() -> int:
     """Режим входа из базы. Кеш короткий: аварийный переключатель обязан срабатывать
     быстро. Нет строки или база недоступна — ведём себя как на раскатке: нехватка
-    настройки не должна внезапно отбирать у людей кнопки."""
+    настройки не должна внезапно отбирать у людей кнопки.
+
+    Но «раскатка по настройке» и «раскатка потому что не прочитали» — разные вещи, и
+    вторую видно по `прочитан()`: причина лежит в `services.kdb`, уходит в лог
+    приложения и подписывается в шапке. Раньше она терялась целиком, и включённый
+    режим `1` снаружи выглядел ровно как невключённый."""
     try:
         conn = get_conn()
     except Exception:
-        return MODE_ROLLOUT
+        return MODE_ROLLOUT      # причину уже запомнил kdb
     try:
         with conn.cursor() as cur:
             cur.execute("""SELECT value FROM kabinet_data.reorder_params
                             WHERE key = 'ls_auth_enabled'""")
             row = cur.fetchone()
-        return int(row[0]) if row else MODE_ROLLOUT
-    except Exception:
+        if row is None:
+            # Строки нет — это настройка, а не поломка: так и скажем отдельным словом,
+            # иначе «нет строки» и «нет связи» снова станут одним состоянием.
+            _ЧТЕНИЕ["итог"] = "нет строки ls_auth_enabled"
+            return MODE_ROLLOUT
+        _ЧТЕНИЕ["итог"] = ""
+        return int(row[0])
+    except Exception as e:
+        _ЧТЕНИЕ["итог"] = f"{type(e).__name__}: {str(e).splitlines()[0][:200]}"
+        print(f"[kabinet_db] режим не прочитался — {_ЧТЕНИЕ['итог']}", flush=True)
         return MODE_ROLLOUT
     finally:
         conn.close()
+
+
+# Итог последнего чтения режима: пусто — прочитали, иначе причина словом.
+_ЧТЕНИЕ = {"итог": ""}
+
+
+def прочитан() -> tuple[bool, str]:
+    """(прочитался ли режим, причина если нет). Причина берётся из двух мест:
+    своей — чтение строки — и чужой — само подключение."""
+    from services import kdb
+    беда = _ЧТЕНИЕ["итог"] or kdb.последняя_беда()
+    if not беда and not kdb.configured():
+        # называем недостающее по именам: подключение собирается из двух секций, и
+        # «нет [kabinet_db]» при отсутствующем [databricks] увело бы искать не туда
+        беда = "не хватает настроек: " + ", ".join(kdb.чего_нет())
+    return (not беда), беда
 
 
 @st.cache_data(ttl=60)
@@ -659,7 +688,15 @@ def header():
         return
     m = mode()
     if m == MODE_ROLLOUT:
-        st.sidebar.caption(t("auth.mode_rollout"))
+        ок, беда = прочитан()
+        if ок:
+            st.sidebar.caption(t("auth.mode_rollout"))
+        else:
+            # Это не раскатка, а неизвестность: режим может быть и `1`. Говорим прямо
+            # и называем причину — иначе включённый вход выглядит невключённым, и
+            # искать будут не там.
+            st.sidebar.warning(t("auth.mode_unread"))
+            st.sidebar.caption(беда)
         return
     if m == MODE_OFF:
         st.sidebar.caption(t("auth.mode_off"))

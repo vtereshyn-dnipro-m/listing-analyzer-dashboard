@@ -54,6 +54,34 @@ def mask(key: str | None) -> str:
     return f"****{k[-4:]}" if len(k) > 6 else "****"
 
 
+# ================================================================ вход и роли
+# Состояние входа показывается ЗДЕСЬ, рядом с остальными подключениями, и первым
+# делом: пока режим не читается, приложение ведёт себя как до появления ролей, и
+# снаружи «вход не включили» неотличимо от «вход не прочитался». Один раз мы на этом
+# уже потеряли круг «ребут — не работает — почему».
+st.markdown(eyebrow(t("auth.check_title")), unsafe_allow_html=True)
+_прочитан, _беда = auth.прочитан()
+if _прочитан:
+    _режим = {auth.MODE_ROLLOUT: "2", auth.MODE_ON: "1", auth.MODE_OFF: "0"}.get(
+        auth.mode(), str(auth.mode()))
+    st.success(t("auth.check_ok", mode=_режим))
+    try:
+        from services.kdb import get_conn as _kconn
+        _c = _kconn()
+        try:
+            with _c.cursor() as _cur:
+                _cur.execute("SELECT current_user")
+                st.caption(t("auth.check_who", user=_cur.fetchone()[0]))
+        finally:
+            _c.close()
+    except Exception as _e:
+        st.caption(f"{type(_e).__name__}: {str(_e).splitlines()[0][:200]}")
+else:
+    st.error(t("auth.check_fail"))
+    st.code(_беда or "—", language=None, wrap_lines=True)
+    st.caption(t("auth.check_hint"))
+st.divider()
+
 # ================================================================ подключения
 st.markdown(eyebrow(t("set.connections")), unsafe_allow_html=True)
 
