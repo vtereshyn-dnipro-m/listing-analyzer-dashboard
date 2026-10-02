@@ -45,6 +45,7 @@ from services.flatfile import (
     load_accepted_titles, plan_export, plan_signature, build_flat_cached,
     build_csv_export,
 )
+import auth
 from services.spapi import (
     missing_secrets, marketplace_meta, push_title, log_push, load_pushes,
     issues_text,
@@ -542,6 +543,14 @@ def run_checks(new_title: str, new_hl: str,
         checks.append((ph.lower() not in combined, f"{t('chk.phrase_absent')}: «{ph}»"))
 
     return checks
+
+
+def _may_edit() -> bool:
+    """Право на правку контента — проверяется В ОБРАБОТЧИКЕ нажатия, а не при
+    отрисовке кнопки. Скрытая кнопка это удобство; защита — отказ в момент записи,
+    потому что между отрисовкой и нажатием доступ мог быть снят. Отказ виден на
+    экране и ложится в журнал действий."""
+    return auth.require("ls.content.edit", object_type="page", object_id="synthesis")
 
 
 def save_draft(asin: str, mp: str, original: str, result: dict, skill_version: int) -> bool:
@@ -1774,6 +1783,8 @@ def render_result(asin: str, mp: str, before: str, draft) -> tuple[str, str]:
         def _save(source: str) -> None:
             """Принять текущий текст. source различает «как сгенерировано»
             и «переписано руками»."""
+            if not _may_edit():
+                return
             if accept_change(asin, mp, before,
                              {"title": after, "highlights": hl,
                               "dropped": dropped},
@@ -1945,6 +1956,12 @@ def render_push_confirm(pushable: list[dict],
         c1, c2, c3 = st.columns([1.6, 1.2, 4])
         if c1.button(t("push.send", n=1), type="primary", disabled=not again,
                      key=f"push-send-{state_key}"):
+            # Отправка меняет ЖИВОЙ листинг на Amazon, поэтому право проверяется
+            # здесь, в обработчике, а не тем, что кнопка нарисовалась: между
+            # отрисовкой и нажатием доступ мог быть снят.
+            if not auth.require("ls.amazon.push", object_type="asin",
+                                object_id=row["asin"]):
+                return
             res = push_title(row["sku"], row["marketplace"],
                              row["product_type"], row["title"],
                              row.get("highlights", ""), mp_id, lang,
@@ -2494,9 +2511,10 @@ with feed:
                  disabled=not _top or not skill_version,
                  help=(t("synth.skill_missing") if not skill_version
                        else None if _top else t("synth.batch_none"))):
-        st.session_state["batch_outcome"] = batch_generate(
-            _top, skill_text, skill_version)
-        st.rerun()
+        if _may_edit():
+            st.session_state["batch_outcome"] = batch_generate(
+                _top, skill_text, skill_version)
+            st.rerun()
 
     # «Принять» массово — только по тем, у кого результат ещё не принят:
     # повторная приёмка принятого записала бы вторую строку в
@@ -2509,7 +2527,7 @@ with feed:
                        if _no_result else
                        t("synth.mass_nothing_to_accept") if selected
                        and not _to_accept else None),
-                 key="mass-accept"):
+                 key="mass-accept") and _may_edit():
         _n = 0
         for _x in _to_accept:
             _d = _x["pending"]
@@ -2533,9 +2551,10 @@ with feed:
                  key="mass-regen"):
         # тот же путь, что у партии: ход показывается полосой и строкой
         # с текущим товаром, ошибки собираются и переживают перерисовку
-        st.session_state["batch_outcome"] = batch_generate(
-            selected, skill_text, skill_version)
-        st.rerun()
+        if _may_edit():
+            st.session_state["batch_outcome"] = batch_generate(
+                selected, skill_text, skill_version)
+            st.rerun()
 
     st.caption(t("synth.selected_n", n=len(selected)) + " · "
                + t("synth.batch_pending", n=len(_pending_gen))
@@ -2727,6 +2746,11 @@ with feed:
             if st.button(t("synth.generate"), type="primary",
                          key=f"gen-{asin}-{mp}",
                          disabled=not skill_version) or _regen:
+                if not _may_edit():
+                    # st.stop(), а не return: этот обработчик живёт на верхнем уровне
+                    # страницы, и `return` там — синтаксическая ошибка, которую
+                    # `ast.parse` не видит, а `compile` видит
+                    st.stop()
                 with st.status(f"{t('gen.title')} · v{skill_version}",
                                expanded=True) as _status:
                     _status.write("· " + t("gen.phrases"))

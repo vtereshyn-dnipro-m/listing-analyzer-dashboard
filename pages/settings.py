@@ -18,6 +18,7 @@ import pandas as pd
 import requests
 import streamlit as st
 
+import auth
 from i18n import t
 from services import ai
 from services.ai import reset_last_error
@@ -36,6 +37,13 @@ ERR_TEXT = "#A32D2D"
 MUTED = "#57534A"
 
 st.caption(t("set.caption"))
+
+# Правка контента на этой странице: кнопки отключены и подписаны, если роли нельзя.
+# Подпись обязательна — иначе отказ при нажатии выглядит поломкой.
+МОЖНО_ПРАВИТЬ = auth.can("ls.settings.edit")
+if not МОЖНО_ПРАВИТЬ:
+    st.caption(t("auth.read_only"))
+
 
 
 def mask(key: str | None) -> str:
@@ -276,13 +284,17 @@ for task, label, prov_default in TASKS:
         format_func=lambda v: (t("set.thinking_adaptive") if v == "adaptive"
                                else t("set.thinking_off")),
         key=f"think-{task}", help=t("set.thinking_help"))
-    if int(lim_choice) != cur_lim or think_choice != cur_think:
+    if ((int(lim_choice) != cur_lim or think_choice != cur_think)
+            and auth.require("ls.settings.edit", object_type="setting",
+                             object_id=task)):
         save_setting(lim_key, int(lim_choice))
         save_setting(think_key, think_choice)
         st.rerun()
 
-    if prov_choice != cur_prov or (model_choice != cur_model
-                                   and model_choice != "—"):
+    if ((prov_choice != cur_prov or (model_choice != cur_model
+                                     and model_choice != "—"))
+            and auth.require("ls.settings.edit", object_type="setting",
+                             object_id=task)):
         save_setting(prov_key, prov_choice)
         if model_choice != "—":
             save_setting(model_key, model_choice)
@@ -292,7 +304,8 @@ for task, label, prov_default in TASKS:
 
 fb_on = str(get_setting("ai.fallback", "off")).lower() == "on"
 fb = st.toggle(t("set.fallback"), value=fb_on, help=t("set.fallback_hint"))
-if fb != fb_on:
+if fb != fb_on and auth.require("ls.settings.edit", object_type="setting",
+                                object_id="ai.fallback"):
     save_setting("ai.fallback", "on" if fb else "off")
     st.rerun()
 
@@ -332,7 +345,11 @@ tpl_mp = tc1.selectbox(t("set.tpl_marketplace"), known_marketplaces(),
 ups = tc2.file_uploader(t("set.tpl_upload"), type=["xlsm", "xlsx"],
                         accept_multiple_files=True, key="tpl-up")
 
-if ups and st.button(t("set.tpl_save"), type="primary", key="tpl-save"):
+if ups and st.button(t("set.tpl_save"), type="primary", key="tpl-save",
+                     disabled=not МОЖНО_ПРАВИТЬ):
+    if not auth.require("ls.settings.edit", object_type="template",
+                        object_id=tpl_mp):
+        st.stop()
     for up in ups:
         try:
             parsed = parse_template(up.name, up.getvalue())

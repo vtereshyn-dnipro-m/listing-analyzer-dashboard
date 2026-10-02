@@ -6,6 +6,17 @@ psycopg2-binary>=2.9
 sqlalchemy>=2.0
 requests>=2.31
 databricks-sdk>=0.30
+# --- вход через Google (st.login). ОБЕ строки обязательны, и это оплаченный урок
+# Кабинета: без Authlib st.login() падает StreamlitMissingAuthlibError, а с одним
+# Authlib — «No module named 'httpx'», потому что маршруты входа Streamlit 1.64 идут
+# через authlib.integrations.starlette_client, а тот требует httpx, которого не ставит
+# ни Streamlit, ни Authlib. Объявить только первое значило бы починить первую ошибку
+# и получить вторую на том же нажатии.
+# Верхняя граница Authlib не перестраховка: модуль authlib.jose, которым пользуется
+# Streamlit, сам Authlib обещает дожить до 2.0.0 и не дальше.
+Authlib>=1.3.2,<2
+httpx
+
 # --- секреты: чтение .streamlit/secrets.toml из cron-скриптов
 # (py3.11+ имеет tomllib в стандартной библиотеке; toml — фолбэк для 3.10)
 toml>=0.10
