@@ -1,4 +1,4 @@
-# ОТПЕЧАТОК ИСТОЧНИКА: 0d0735414fafec188b6be8dfd995142b2aa72b6ecf592d268366d00fea175bf0
+# ОТПЕЧАТОК ИСТОЧНИКА: 27e6069a13d08f923436b8ff4839fd597c3081fbeefc684e6e73c6a17b803c51
 # access_screen.py — экран «Доступ»: один на два приложения.
 """Админка доступа (ТЗ 010): люди, роли, матрица прав, тестовый вход, журналы.
 
@@ -841,7 +841,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.admin.actions": "Журнал действий",
         "auth.admin.bad_country": "Не код страны: {v} (у {email}). Нужны двухбуквенные коды из справочника.",
         "auth.admin.bad_date": "Не дата: {v} (у {email}). Нужен формат ДД.ММ.ГГГГ.",
-        "auth.admin.caption": "Кто входит в Кабинет, с какой ролью и по каким странам.",
+        "auth.admin.caption": "Кто входит в Кабинет и Listing Suite, с какими ролями.",
         "auth.admin.cm_no_countries": "У странового менеджера {email} не назначено ни одной страны — он не сможет ничего править.",
         "auth.admin.col_action": "Действие",
         "auth.admin.col_active": "Доступ",
@@ -1034,7 +1034,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.admin.actions": "Журнал дій",
         "auth.admin.bad_country": "Не код країни: {v} (у {email}). Потрібні дволітерні коди з довідника.",
         "auth.admin.bad_date": "Не дата: {v} (у {email}). Потрібен формат ДД.ММ.РРРР.",
-        "auth.admin.caption": "Хто входить до Кабінету, з якою роллю та за якими країнами.",
+        "auth.admin.caption": "Хто входить до Кабінету та Listing Suite, з якими ролями.",
         "auth.admin.cm_no_countries": "Країновому менеджеру {email} не призначено жодної країни — він не зможе нічого правити.",
         "auth.admin.col_action": "Дія",
         "auth.admin.col_active": "Доступ",
@@ -1227,7 +1227,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.admin.actions": "Action log",
         "auth.admin.bad_country": "Not a country code: {v} (for {email}). Two-letter codes from the directory.",
         "auth.admin.bad_date": "Not a date: {v} (for {email}). Use DD.MM.YYYY.",
-        "auth.admin.caption": "Who signs in, with which role and for which countries.",
+        "auth.admin.caption": "Who signs in to Kabinet and Listing Suite, with which roles.",
         "auth.admin.cm_no_countries": "Country manager {email} has no countries assigned and will not be able to edit anything.",
         "auth.admin.col_action": "Action",
         "auth.admin.col_active": "Access",
