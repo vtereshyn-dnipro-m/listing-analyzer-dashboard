@@ -949,6 +949,7 @@ LANGS: dict[str, dict[str, str]] = {
         "auth.check_fail": "Mode NOT read — the app falls back to rollout (buttons for everyone). Reason:",
         "auth.check_hint": "The [kabinet_db] section needs pg_host and endpoint_name of the Kabinet database; the host and client are taken from [databricks], and that service principal must have a role in that database.",
         "auth.check_who": "Connected as: {user}",
+        "auth.admin.title": "Access",
     },
     "ru": {
         "app.tagline": "работа с листингами Amazon",
@@ -1884,6 +1885,7 @@ LANGS: dict[str, dict[str, str]] = {
         "auth.check_fail": "Режим НЕ прочитан — приложение откатилось на раскатку (кнопки у всех). Причина:",
         "auth.check_hint": "В секции [kabinet_db] нужны pg_host и endpoint_name базы Кабинета; хост и клиент берутся из [databricks], и у этого сервис-принципала должна быть роль в той базе.",
         "auth.check_who": "Подключились как: {user}",
+        "auth.admin.title": "Доступ",
     },
     "uk": {
         "app.tagline": "робота з лістингами Amazon",
@@ -2819,6 +2821,7 @@ LANGS: dict[str, dict[str, str]] = {
         "auth.check_fail": "Режим НЕ прочитано — застосунок відкотився на розкатку (кнопки в усіх). Причина:",
         "auth.check_hint": "У секції [kabinet_db] потрібні pg_host і endpoint_name бази Кабінету; хост і клієнт беруться з [databricks], і в цього сервіс-принципала має бути роль у тій базі.",
         "auth.check_who": "Підключилися як: {user}",
+        "auth.admin.title": "Доступ",
     },
 }
 
