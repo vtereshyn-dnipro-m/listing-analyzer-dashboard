@@ -36,16 +36,16 @@ _PROBE_AFTER_IDLE_S = 60
 
 # Что сказать, когда адреса нет. Текст один на все места: сообщение об отсутствующей
 # настройке — это инструкция, а не жалоба.
-# ПЕРВАЯ строка обязана быть самодостаточной: в журнал и на экран уезжает именно она
-# (остальное обрезается), и «Нет адреса базы Кабинета» без имени секции заставляло бы
-# искать настройку наугад.
-NEED_SECRETS = (
-    "Нет секции [kabinet_db] в секретах: нужны pg_host и endpoint_name базы Кабинета.\n"
-    "[kabinet_db]\n"
-    'pg_host = "ep-….database.us-east-1.cloud.databricks.com"\n'
-    'endpoint_name = "projects/kabinet-dashboard/branches/production/endpoints/primary"\n'
-    "Хост и клиент берутся из [databricks] — тот же принципал."
-)
+# ПЕРВАЯ строка обязана быть самодостаточной И называть недостающее по именам: в
+# журнал и на экран уезжает именно она (остальное обрезается), а подключение собирается
+# из двух секций — общий текст про одну из них отправил бы искать не туда.
+def need_secrets() -> str:
+    нет = чего_нет()
+    return ("Не хватает настроек: " + ", ".join(нет) + ".\n"
+            "[kabinet_db] — адрес базы Кабинета:\n"
+            '  pg_host = "ep-….database.us-east-1.cloud.databricks.com"\n'
+            '  endpoint_name = "projects/kabinet-dashboard/branches/production/endpoints/primary"\n'
+            "[databricks] — хост и сервис-принципал, тот же, что у своей базы.")
 
 
 # Последняя причина, по которой подключиться не удалось. Модульная переменная, а не
@@ -90,11 +90,30 @@ def _sec(section: str) -> dict:
         return {}
 
 
+def чего_нет() -> list:
+    """Каких именно настроек не хватает, с именем секции у каждой.
+
+    Нужно ровно затем, что подключение собирается из ДВУХ секций: адрес базы Кабинета
+    берётся из `[kabinet_db]`, а хост и клиент — из `[databricks]`, той же, что у своей
+    базы. Сообщение «нет секции [kabinet_db]» при отсутствующем `[databricks]` увело бы
+    искать не туда — а `[databricks]` может отсутствовать по делу: `services/db.py`
+    умеет работать и от `DATABASE_URL`, и тогда клиента Databricks в секретах нет
+    вовсе, хотя приложение прекрасно живёт."""
+    d, k = _sec("databricks"), _sec("kabinet_db")
+    нет = []
+    for ключ in ("host", "client_id", "client_secret"):
+        if not d.get(ключ):
+            нет.append(f"[databricks] {ключ}")
+    for ключ in ("pg_host", "endpoint_name"):
+        if not k.get(ключ):
+            нет.append(f"[kabinet_db] {ключ}")
+    return нет
+
+
 def configured() -> bool:
     """Настроено ли подключение. Отдельной функцией, потому что об этом спрашивают
     до первого запроса: страница должна сказать «вход не настроен», а не упасть."""
-    d, k = _sec("databricks"), _sec("kabinet_db")
-    return bool(d.get("client_id") and k.get("pg_host") and k.get("endpoint_name"))
+    return not чего_нет()
 
 
 @st.cache_resource(show_spinner=False)
@@ -110,7 +129,7 @@ def _token(force: bool = False) -> str:
         from databricks.sdk import WorkspaceClient
         d, k = _sec("databricks"), _sec("kabinet_db")
         if not configured():
-            raise RuntimeError(NEED_SECRETS)
+            raise RuntimeError(need_secrets())
         w = WorkspaceClient(host=d["host"], client_id=d["client_id"],
                             client_secret=d["client_secret"])
         box["token"] = w.postgres.generate_database_credential(
@@ -137,7 +156,7 @@ class _Pool(psycopg2.pool.ThreadedConnectionPool):
 def _pool() -> _Pool:
     d, k = _sec("databricks"), _sec("kabinet_db")
     if not configured():
-        raise RuntimeError(NEED_SECRETS)
+        raise RuntimeError(need_secrets())
     return _Pool(
         _POOL_MAX, _POOL_MAX,
         host=k["pg_host"], port=5432,
