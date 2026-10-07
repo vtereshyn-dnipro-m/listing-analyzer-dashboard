@@ -1,0 +1,122 @@
+{
+  "registry_version": "1.1",
+  "effective_date": "2026-09-30",
+  "registry_scope": "Extensible marketplace/channel standards for Content TZ compilation",
+  "profile_match_key": ["platform", "country", "language", "content_type"],
+  "governance": {
+    "unknown_profile_action": "LOCALE_REQUIREMENTS_PENDING",
+    "intake_required_fields": ["source_id", "authority", "platform", "country", "locale", "url", "checked_at", "recheck_by", "verification_status", "scope_note"],
+    "rule_required_fields": ["rule_id", "strength", "text", "source_ids"],
+    "admission_rule": "Only source-backed rules are added. Official policy outranks supporting guidance and internal recommendation.",
+    "versioning_rule": "The active filename is stable and unversioned. Any source, profile or rule change increments registry_version, archives the prior immutable file, and updates ACTIVE_PACKAGE.json atomically.",
+    "active_package_source": "ACTIVE_PACKAGE.json",
+    "gate_model": "Package integrity is evaluated separately from locale requirements. Missing locale coverage permits BASE_TZ_ONLY and blocks only the locale compliance appendix and publication-ready package.",
+    "downstream_contract": "Resolved mandatory and recommendation rule IDs plus their full rule text must be compiled into Content TZ, Prompt Package and provider-visible Creator constraints.",
+    "qa_boundary": "Output QA verifies execution; it cannot invent a missing channel requirement or retroactively grant compliance."
+  },
+  "default_unknown_verdict": "LOCALE_REQUIREMENTS_PENDING",
+  "precedence": ["MARKETPLACE_CATEGORY_POLICY", "MARKETPLACE_CONTENT_POLICY", "MARKETPLACE_BASELINE", "INTERNAL_RECOMMENDATION"],
+  "sources": [
+    {
+      "source_id": "AMZ_US_IMAGE_GUIDE_G1881",
+      "authority": "OFFICIAL_POLICY",
+      "marketplace": "AMAZON_US",
+      "locale": "en-US",
+      "url": "https://sellercentral.amazon.com/help/hub/reference/external/G1881?itemid=200164650",
+      "checked_at": "2026-09-28",
+      "recheck_by": "2026-12-28",
+      "verification_status": "VERIFIED",
+      "scope_note": "US product image requirements; category-specific style guides may add or override requirements."
+    },
+    {
+      "source_id": "AMZ_ADS_A_PLUS_GXAMM4S99TTG2Y57",
+      "authority": "OFFICIAL_POLICY",
+      "marketplace": "AMAZON_GLOBAL_ELIGIBILITY",
+      "locale": "en",
+      "url": "https://advertising.amazon.com/help/GXAMM4S99TTG2Y57",
+      "checked_at": "2026-09-28",
+      "recheck_by": "2026-12-28",
+      "verification_status": "VERIFIED",
+      "scope_note": "A+ eligibility and capability overview; not a substitute for locale/category component specifications."
+    },
+    {
+      "source_id": "AMZ_DE_IMAGE_GUIDANCE_FORUM_2024",
+      "authority": "OFFICIAL_SUPPORTING_GUIDANCE",
+      "marketplace": "AMAZON_DE",
+      "locale": "de-DE",
+      "url": "https://sellercentral.amazon.de/seller-forums/discussions/t/25486941-dd04-477a-8b10-5120ced97110?mons_sel_locale=de_DE",
+      "checked_at": "2026-09-28",
+      "recheck_by": "2026-10-28",
+      "verification_status": "SUPPORTING_ONLY",
+      "scope_note": "Amazon-authored forum guidance; insufficient alone for production approval."
+    }
+  ],
+  "profiles": [
+    {
+      "profile_id": "AMAZON_US",
+      "platform": "AMAZON",
+      "country": "US",
+      "languages": ["en-US"],
+      "status": "READY_WITH_LIMITATIONS",
+      "content_types": {
+        "MAIN_IMAGE": {
+          "status": "VERIFIED",
+          "rule_ids": ["US_IMG_MAIN_WHITE", "US_IMG_MAIN_FILL", "US_IMG_MAIN_PRODUCT_ONLY", "US_IMG_ACCURATE_REPRESENTATION", "US_IMG_CATEGORY_OVERRIDE"],
+          "source_ids": ["AMZ_US_IMAGE_GUIDE_G1881"]
+        },
+        "GALLERY": {
+          "status": "VERIFIED",
+          "rule_ids": ["US_IMG_NO_RATINGS_OR_PRICE", "US_IMG_NO_AMAZON_MARKS", "US_IMG_RECOMMENDED_SET"],
+          "source_ids": ["AMZ_US_IMAGE_GUIDE_G1881"]
+        },
+        "A_PLUS": {
+          "status": "READY_WITH_LIMITATIONS",
+          "rule_ids": ["A_PLUS_ELIGIBILITY", "A_PLUS_COMPONENT_POLICY_REQUIRED"],
+          "source_ids": ["AMZ_ADS_A_PLUS_GXAMM4S99TTG2Y57"]
+        },
+        "STORE": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": [], "source_ids": []},
+        "PRODUCT_VIDEO": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": [], "source_ids": []}
+      }
+    },
+    {
+      "profile_id": "AMAZON_DE",
+      "platform": "AMAZON",
+      "country": "DE",
+      "languages": ["de-DE"],
+      "status": "REQUIRES_CURRENT_SOURCE",
+      "content_types": {
+        "MAIN_IMAGE": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": [], "source_ids": ["AMZ_DE_IMAGE_GUIDANCE_FORUM_2024"]},
+        "GALLERY": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": [], "source_ids": ["AMZ_DE_IMAGE_GUIDANCE_FORUM_2024"]},
+        "A_PLUS": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": ["A_PLUS_ELIGIBILITY"], "source_ids": ["AMZ_ADS_A_PLUS_GXAMM4S99TTG2Y57"]},
+        "STORE": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": [], "source_ids": []},
+        "PRODUCT_VIDEO": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": [], "source_ids": []}
+      }
+    },
+    {
+      "profile_id": "AMAZON_ES",
+      "platform": "AMAZON",
+      "country": "ES",
+      "languages": ["es-ES"],
+      "status": "REQUIRES_CURRENT_SOURCE",
+      "content_types": {
+        "MAIN_IMAGE": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": [], "source_ids": []},
+        "GALLERY": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": [], "source_ids": []},
+        "A_PLUS": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": ["A_PLUS_ELIGIBILITY"], "source_ids": ["AMZ_ADS_A_PLUS_GXAMM4S99TTG2Y57"]},
+        "STORE": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": [], "source_ids": []},
+        "PRODUCT_VIDEO": {"status": "REQUIRES_CURRENT_SOURCE", "rule_ids": [], "source_ids": []}
+      }
+    }
+  ],
+  "rules": [
+    {"rule_id": "US_IMG_MAIN_WHITE", "strength": "MANDATORY", "text": "Main image background is pure white RGB 255,255,255.", "source_ids": ["AMZ_US_IMAGE_GUIDE_G1881"]},
+    {"rule_id": "US_IMG_MAIN_FILL", "strength": "MANDATORY", "text": "Product occupies at least 85% of the main image frame.", "source_ids": ["AMZ_US_IMAGE_GUIDE_G1881"]},
+    {"rule_id": "US_IMG_MAIN_PRODUCT_ONLY", "strength": "MANDATORY", "text": "Show only the product sold and included accessories; exclude unbundled props.", "source_ids": ["AMZ_US_IMAGE_GUIDE_G1881"]},
+    {"rule_id": "US_IMG_ACCURATE_REPRESENTATION", "strength": "MANDATORY", "text": "Image must realistically and accurately represent scale, quantity and color.", "source_ids": ["AMZ_US_IMAGE_GUIDE_G1881"]},
+    {"rule_id": "US_IMG_CATEGORY_OVERRIDE", "strength": "MANDATORY", "text": "Resolve applicable category style guide before production approval; category guidance may override baseline.", "source_ids": ["AMZ_US_IMAGE_GUIDE_G1881"]},
+    {"rule_id": "US_IMG_NO_RATINGS_OR_PRICE", "strength": "MANDATORY", "text": "Do not include customer-review, star-rating, pricing or promotional claims in product images.", "source_ids": ["AMZ_US_IMAGE_GUIDE_G1881"]},
+    {"rule_id": "US_IMG_NO_AMAZON_MARKS", "strength": "MANDATORY", "text": "Do not use Amazon logos, trademarks, badges or confusingly similar marks in product images.", "source_ids": ["AMZ_US_IMAGE_GUIDE_G1881"]},
+    {"rule_id": "US_IMG_RECOMMENDED_SET", "strength": "RECOMMENDATION", "text": "Plan at least six additional images and one video where supported; this is not a hard publication gate.", "source_ids": ["AMZ_US_IMAGE_GUIDE_G1881"]},
+    {"rule_id": "A_PLUS_ELIGIBILITY", "strength": "MANDATORY", "text": "Confirm seller/vendor eligibility and Brand Registry relationship before specifying A+ production.", "source_ids": ["AMZ_ADS_A_PLUS_GXAMM4S99TTG2Y57"]},
+    {"rule_id": "A_PLUS_COMPONENT_POLICY_REQUIRED", "strength": "MANDATORY", "text": "Resolve current marketplace and component-level A+ specifications before production approval.", "source_ids": ["AMZ_ADS_A_PLUS_GXAMM4S99TTG2Y57"]}
+  ]
+}

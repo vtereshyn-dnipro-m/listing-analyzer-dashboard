@@ -1,0 +1,20 @@
+{
+  "schema_version":"1.0",
+  "policy_id":"LS-INTAKE-POLICY-PRODUCTION-CANDIDATE",
+  "policy_version":"1.0",
+  "cases":[
+    {"case_id":"COUNT-AT-LIMIT","dimension":"file_count","value":100,"expected":"ACCEPT","reason_code":null},
+    {"case_id":"COUNT-OVER-LIMIT","dimension":"file_count","value":101,"expected":"REJECT","reason_code":"FILE_COUNT_EXCEEDED"},
+    {"case_id":"SINGLE-AT-LIMIT","dimension":"single_file_bytes","value":524288000,"expected":"ACCEPT","reason_code":null},
+    {"case_id":"SINGLE-OVER-LIMIT","dimension":"single_file_bytes","value":524288001,"expected":"REJECT","reason_code":"FILE_TOO_LARGE"},
+    {"case_id":"TOTAL-AT-LIMIT","dimension":"total_bytes","value":5368709120,"expected":"ACCEPT","reason_code":null},
+    {"case_id":"TOTAL-OVER-LIMIT","dimension":"total_bytes","value":5368709121,"expected":"REJECT","reason_code":"TOTAL_SIZE_EXCEEDED"},
+    {"case_id":"VIDEO-AT-LIMIT","dimension":"video_duration_seconds","value":1800,"expected":"ACCEPT","reason_code":null},
+    {"case_id":"VIDEO-OVER-LIMIT","dimension":"video_duration_seconds","value":1801,"expected":"REJECT","reason_code":"VIDEO_TOO_LONG"},
+    {"case_id":"DEPTH-AT-LIMIT","dimension":"recursion_depth","value":5,"expected":"ACCEPT","reason_code":null},
+    {"case_id":"DEPTH-OVER-LIMIT","dimension":"recursion_depth","value":6,"expected":"REJECT","reason_code":"RECURSION_DEPTH_EXCEEDED"},
+    {"case_id":"ARCHIVE-NOT-ALLOWED","dimension":"extension","value":".zip","expected":"REJECT","reason_code":"TYPE_NOT_ALLOWED"},
+    {"case_id":"PARTIAL-REQUIRES-CONFIRMATION","dimension":"partial_confirmation","value":false,"expected":"CONFIRMATION_REQUIRED","reason_code":"PARTIAL_CONFIRMATION_REQUIRED"},
+    {"case_id":"ZERO-ACCEPTED","dimension":"accepted_count","value":0,"expected":"NO_ACTION_REQUEST","reason_code":"NO_ACCEPTED_SOURCE_OBJECTS"}
+  ]
+}

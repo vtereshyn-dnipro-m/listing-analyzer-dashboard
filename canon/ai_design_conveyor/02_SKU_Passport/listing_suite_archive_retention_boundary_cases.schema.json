@@ -1,0 +1,11 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema_version","profile_ref","cases"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "profile_ref":{"type":["string","null"]},
+    "cases":{"type":"array","minItems":7,"items":{"type":"object","additionalProperties":false,"required":["case_id","age_days","profile_configured","legal_hold_active","dependency_active","purge_requested","expected_state","expected_reason_code"],"properties":{"case_id":{"type":"string","minLength":1},"age_days":{"type":"integer","minimum":0},"profile_configured":{"type":"boolean"},"legal_hold_active":{"type":"boolean"},"dependency_active":{"type":"boolean"},"purge_requested":{"type":"boolean"},"expected_state":{"enum":["RETAINED","LEGAL_HOLD","BLOCKED_BY_DEPENDENCY","ELIGIBLE_FOR_ADMIN_REVIEW","PURGE_NOT_AUTHORIZED"]},"expected_reason_code":{"type":"string","minLength":1}}}}
+  }
+}

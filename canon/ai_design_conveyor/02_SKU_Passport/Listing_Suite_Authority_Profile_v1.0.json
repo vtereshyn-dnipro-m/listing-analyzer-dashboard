@@ -1,0 +1,21 @@
+{
+  "schema_version":"1.0",
+  "profile_id":"LS-AUTHORITY-PROFILE-PRODUCTION-CANDIDATE",
+  "profile_version":"1.0",
+  "effective_at":"2026-10-04T00:00:00+03:00",
+  "binding_status":"BINDING_REQUIRED",
+  "issuer_allowlist":[],
+  "role_permissions":[
+    {"canonical_role":"DATA_CONTRIBUTOR","allowed_actions":["SUBMIT_SOURCE_EVIDENCE_DELTA","READ_OWN_REQUEST_STATUS"],"scope_rule":"ASSIGNED_SKU_ONLY"},
+    {"canonical_role":"PRODUCT_OWNER","allowed_actions":["SUBMIT_SOURCE_EVIDENCE_DELTA","READ_OWN_REQUEST_STATUS","READ_ACTIVE_PASSPORT","READ_ARCHIVE"],"scope_rule":"AUTHORIZED_SKU_SCOPE"},
+    {"canonical_role":"PRODUCT_OWNER_WITH_RECREATE_AUTHORITY","allowed_actions":["SUBMIT_SOURCE_EVIDENCE_DELTA","READ_OWN_REQUEST_STATUS","READ_ACTIVE_PASSPORT","READ_ARCHIVE","RECREATE_PASSPORT"],"scope_rule":"AUTHORIZED_SKU_SCOPE"},
+    {"canonical_role":"PASSPORT_ADMIN","allowed_actions":["SUBMIT_SOURCE_EVIDENCE_DELTA","READ_OWN_REQUEST_STATUS","READ_ACTIVE_PASSPORT","RECREATE_PASSPORT","RESTORE_ARCHIVED_PASSPORT","READ_ARCHIVE","REVIEW_ARCHIVE","APPLY_LEGAL_HOLD","RELEASE_LEGAL_HOLD","RECOVERY_ADMIN"],"scope_rule":"ADMINISTRATIVE_SCOPE"},
+    {"canonical_role":"AUDITOR","allowed_actions":["READ_OWN_REQUEST_STATUS","READ_ACTIVE_PASSPORT","READ_ARCHIVE"],"scope_rule":"AUTHORIZED_SKU_SCOPE"},
+    {"canonical_role":"LEGAL_OWNER","allowed_actions":["APPLY_LEGAL_HOLD","RELEASE_LEGAL_HOLD"],"scope_rule":"HOLD_SCOPE_ONLY"},
+    {"canonical_role":"AUDIT_OWNER","allowed_actions":["APPLY_LEGAL_HOLD","RELEASE_LEGAL_HOLD"],"scope_rule":"HOLD_SCOPE_ONLY"}
+  ],
+  "idp_bindings":[],
+  "configured_by":"PROJECT_OWNER_APPROVED_CANONICAL_MATRIX",
+  "approved_by":"PROJECT_OWNER",
+  "profile_sha256":"9da768b0a03bdd4e2573df020744c28cf366ffb2cbb242f8d19cee9c9996d7b8"
+}

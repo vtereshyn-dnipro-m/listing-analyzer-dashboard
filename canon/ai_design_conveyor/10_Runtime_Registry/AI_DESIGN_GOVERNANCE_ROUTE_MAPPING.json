@@ -1,0 +1,805 @@
+{
+  "mapping_id": "AI_DESIGN_GOVERNANCE_ROUTE_MAPPING",
+  "mapping_version": "1.2",
+  "execution_mode": "GRAPH_SPEC_ONLY",
+  "canonical_route_source": "AI Design Conveyor/01_Governance/Marketing_Book/06_Production_and_Learning/03_AI_Design_Content_Creation_Pipeline.md#R01-R41",
+  "edge_registry_ref": "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_CORE_EDGE_REGISTRY.json",
+  "node_registry_ref": "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_NODE_REGISTRY.json",
+  "routes": [
+    {
+      "route_id": "R01",
+      "route_name": "Scope and executor entry",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E010_INITIALIZE_PASSPORT_ROUTE",
+        "E300_CHECKPOINT_FROM_COORDINATOR",
+        "E310_RESUME_AT_COORDINATOR"
+      ],
+      "applicable_node_ids": [
+        "N010_RUN_INITIALIZATION",
+        "N020_PASSPORT_COORDINATION",
+        "N250_TRANSITION_REENTRY_CHECKPOINT"
+      ],
+      "owner_boundary": "Task owner and process owner",
+      "activation_rule": "New task, changed scope or re-entry.",
+      "failure_disposition": "Stop on missing owner, inactive type or unsafe capacity.",
+      "classification_reason": "Changes control state and selects the first executable stage."
+    },
+    {
+      "route_id": "R02",
+      "route_name": "Input validity and Passport entry",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E020_ROUTE_TO_PASSPORT_COLLECTION",
+        "E030_VALIDATE_COLLECTOR_PACKAGE",
+        "E040_AUDIT_VALIDATED_PASSPORT",
+        "E060_ROUTE_MATERIAL_GAPS",
+        "E070_APPLY_APPROVED_PASSPORT_DELTA",
+        "E080_RETURN_WRITTEN_PASSPORT_TO_COORDINATOR"
+      ],
+      "applicable_node_ids": [
+        "N020_PASSPORT_COORDINATION",
+        "N030_PASSPORT_COLLECTION",
+        "N040_PASSPORT_PACKAGE_VALIDATION",
+        "N050_PASSPORT_AUDIT",
+        "N060_PASSPORT_GAP_VERIFICATION",
+        "N070_PASSPORT_DELTA_WRITEBACK"
+      ],
+      "owner_boundary": "Content TZ Agent and Product Truth owners",
+      "activation_rule": "Entry or re-entry requires current facts and sources.",
+      "failure_disposition": "Return to source collection or verification; do not infer facts.",
+      "classification_reason": "Transfers work through the Product Truth chain."
+    },
+    {
+      "route_id": "R03",
+      "route_name": "Entity and buyer-evidence consistency",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E090_REQUEST_IMAGE_COLLECTION",
+        "E100_START_IMAGE_COLLECTION",
+        "E110_VALIDATE_IMAGE_COLLECTION",
+        "E120_REVIEW_VALID_IMAGE_COLLECTION",
+        "E130_APPLY_MEDIA_DELTA_TO_PASSPORT",
+        "E140_REQUEST_CONTENT_TZ"
+      ],
+      "applicable_node_ids": [
+        "N020_PASSPORT_COORDINATION",
+        "N080_IMAGE_COLLECTION_AUTHORIZATION",
+        "N090_IMAGE_COLLECTION_EXECUTION",
+        "N100_IMAGE_COLLECTION_REVIEW",
+        "N110_IMAGE_COLLECTION_VALIDATION",
+        "N120_CONTENT_TZ_AUTHORIZATION"
+      ],
+      "owner_boundary": "Content TZ owner with Product Truth boundary",
+      "activation_rule": "A product entity and buyer job must be evidence-bound before ideation.",
+      "failure_disposition": "Investigate conflicts or collect evidence before Content TZ.",
+      "classification_reason": "Controls transition from product evidence into content planning."
+    },
+    {
+      "route_id": "R04",
+      "route_name": "Competitive intelligence evidence",
+      "classification": "EVIDENCE_BRANCH",
+      "execution_disposition": "NODE_REQUIRED",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING"
+      ],
+      "owner_boundary": "Content TZ owner and decision owner",
+      "activation_rule": "Only when a decision relies on competitor evidence or AI recommendation.",
+      "failure_disposition": "Monitor or investigate; never convert competitor observation into our claim.",
+      "classification_reason": "Requires a typed research branch and conflict-preserving reducer, not a universal sequential edge."
+    },
+    {
+      "route_id": "R05",
+      "route_name": "Query mission and established demand",
+      "classification": "DIAGNOSTIC_ROUTER",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING",
+        "N140_CONTENT_TZ_VALIDATION"
+      ],
+      "owner_boundary": "Content TZ owner and relevant diagnostic owner",
+      "activation_rule": "Ambiguous search/GEO scope or risk to established demand.",
+      "failure_disposition": "Route non-content gaps to their owners; stop when demand preservation is unresolved.",
+      "classification_reason": "Selects an owner or blocks a phrase; it does not itself transfer production work."
+    },
+    {
+      "route_id": "R06",
+      "route_name": "Phrase evidence and surface allocation",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING",
+        "N140_CONTENT_TZ_VALIDATION",
+        "N160_PROMPT_PACKAGE_COMPILATION"
+      ],
+      "owner_boundary": "Content TZ and phrase-decision owner",
+      "activation_rule": "Every new product phrase, including localization.",
+      "failure_disposition": "Reject, observe or return for fact validation; never place unsupported phrase.",
+      "classification_reason": "Constrains content fields across existing nodes without creating a new stage."
+    },
+    {
+      "route_id": "R07",
+      "route_name": "Consumer reality evidence",
+      "classification": "EVIDENCE_BRANCH",
+      "execution_disposition": "NODE_REQUIRED",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING"
+      ],
+      "owner_boundary": "Market Intelligence and Commercial/Category owner",
+      "activation_rule": "New positioning, audience split or value story.",
+      "failure_disposition": "Stop with consumer evidence gap; do not invent persona.",
+      "classification_reason": "Needs an external evidence-producing branch before reduction into Content TZ."
+    },
+    {
+      "route_id": "R08",
+      "route_name": "Shopping journey failure diagnostic",
+      "classification": "DIAGNOSTIC_ROUTER",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N120_CONTENT_TZ_AUTHORIZATION",
+        "N130_CONTENT_TZ_AUTHORING"
+      ],
+      "owner_boundary": "Task owner and failure-stage owner",
+      "activation_rule": "AI-shopping or catalog failure is the task trigger.",
+      "failure_disposition": "Only content gaps enter Content TZ; retrieve/transaction defects route elsewhere.",
+      "classification_reason": "Classifies the problem before graph entry rather than producing content."
+    },
+    {
+      "route_id": "R09",
+      "route_name": "External visibility anomaly",
+      "classification": "DIAGNOSTIC_ROUTER",
+      "execution_disposition": "OUTSIDE_CORE_RUNTIME",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N010_RUN_INITIALIZATION"
+      ],
+      "owner_boundary": "Measurement or SEO owner; human disavow approver",
+      "activation_rule": "Visibility anomaly or backlink/disavow proposal.",
+      "failure_disposition": "No major change while incident remains unresolved; disavow requires human approval.",
+      "classification_reason": "Belongs to SEO/measurement incident handling and only re-enters core as a new content task."
+    },
+    {
+      "route_id": "R10",
+      "route_name": "Portfolio necessity decision",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E150_START_CONTENT_TZ_AUTHORING",
+        "E160_VALIDATE_CONTENT_TZ",
+        "E165_REWORK_CONTENT_TZ"
+      ],
+      "applicable_node_ids": [
+        "N120_CONTENT_TZ_AUTHORIZATION",
+        "N130_CONTENT_TZ_AUTHORING",
+        "N140_CONTENT_TZ_VALIDATION"
+      ],
+      "owner_boundary": "Content TZ Agent and process owner",
+      "activation_rule": "Applicable evidence checks are complete and content investment is being decided.",
+      "failure_disposition": "No brief for maintain, retire, investigate or unjustified investment.",
+      "classification_reason": "Controls whether authoring proceeds and its bounded rework loop."
+    },
+    {
+      "route_id": "R11",
+      "route_name": "Hypothesis claims channel and expectations",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E150_START_CONTENT_TZ_AUTHORING",
+        "E160_VALIDATE_CONTENT_TZ",
+        "E170_FREEZE_EXPECTED_DELIVERABLES",
+        "E175_REWORK_EXPECTED_DELIVERABLES"
+      ],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING",
+        "N140_CONTENT_TZ_VALIDATION",
+        "N150_EXPECTED_DELIVERABLES_FREEZE"
+      ],
+      "owner_boundary": "Content TZ Agent and process owner",
+      "activation_rule": "Authorized content task requires testable, claim-bound deliverables.",
+      "failure_disposition": "Return incomplete hypothesis, claim, channel or owner decision.",
+      "classification_reason": "Produces and freezes the execution contract consumed downstream."
+    },
+    {
+      "route_id": "R12",
+      "route_name": "Risk and evidence control",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E160_VALIDATE_CONTENT_TZ",
+        "E170_FREEZE_EXPECTED_DELIVERABLES",
+        "E190_VALIDATE_PROMPT_PACKAGE",
+        "E200_PREFLIGHT_AI_CREATOR",
+        "E290_REQUEST_HUMAN_RELEASE"
+      ],
+      "applicable_node_ids": [
+        "N140_CONTENT_TZ_VALIDATION",
+        "N150_EXPECTED_DELIVERABLES_FREEZE",
+        "N170_PROMPT_PACKAGE_VALIDATION",
+        "N180_AI_CREATOR_PREFLIGHT",
+        "N240_HUMAN_RELEASE_DECISION"
+      ],
+      "owner_boundary": "Local verifier and receiving human",
+      "activation_rule": "Before handoff or controlled action.",
+      "failure_disposition": "Block on failed deterministic or semantic evidence checks.",
+      "classification_reason": "Supplies acceptance gates at several real transfers rather than a single isolated policy note."
+    },
+    {
+      "route_id": "R13",
+      "route_name": "PPC change control",
+      "classification": "EXTERNAL_ACTION",
+      "execution_disposition": "OUTSIDE_CORE_RUNTIME",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [],
+      "owner_boundary": "PPC owner and authorized human",
+      "activation_rule": "Only an explicitly linked PPC change.",
+      "failure_disposition": "No live PPC action or authority inheritance from Content TZ.",
+      "classification_reason": "Separate commercial execution profile outside product-content production."
+    },
+    {
+      "route_id": "R14",
+      "route_name": "Approved Content TZ handoff",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E166_REQUEST_CONTENT_TZ_HUMAN_REVIEW",
+        "E167_REVIEWED_END_TO_END_TO_FREEZE",
+        "E168_COMPLETE_CONTENT_TZ_ONLY",
+        "E169_COMPLETE_REVIEWED_CONTENT_TZ_ONLY",
+        "E170_FREEZE_EXPECTED_DELIVERABLES",
+        "E180_PREPARE_EXECUTION_INPUTS",
+        "E183_RESOLVE_PROMPT_AGENT_RUNTIME",
+        "E184_RELOAD_AND_RERESOLVE_PROMPT_AGENT",
+        "E185_COMPILE_PROMPT_PACKAGE",
+        "E187_REWORK_EXECUTION_INPUTS",
+        "E190_VALIDATE_PROMPT_PACKAGE",
+        "E195_REWORK_PROMPT_PACKAGE"
+      ],
+      "applicable_node_ids": [
+        "N140_CONTENT_TZ_VALIDATION",
+        "N145_CONTENT_TZ_HUMAN_REVIEW",
+        "N147_EXTERNAL_CONTENT_TZ_EXPORT",
+        "N150_EXPECTED_DELIVERABLES_FREEZE",
+        "N155_CONTENT_TZ_EXECUTION_INPUT_ROUTING",
+        "N158_AGENT_RUNTIME_RESOLUTION",
+        "N160_PROMPT_PACKAGE_COMPILATION",
+        "N170_PROMPT_PACKAGE_VALIDATION"
+      ],
+      "owner_boundary": "Content TZ Agent to runtime-resolved Prompt Agent",
+      "activation_rule": "Approved production contract, launch control and AGENT_RESOLVED_READY receipt exist.",
+      "failure_disposition": "Return ambiguity or stale dependency to its owner; runtime resolution permits one reload before recoverable block.",
+      "classification_reason": "Transfers the approved brief into a verified callable execution-specific compiler under explicit launch scope."
+    },
+    {
+      "route_id": "R15",
+      "route_name": "AI generation and edit control",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E180_PREPARE_EXECUTION_INPUTS",
+        "E183_RESOLVE_PROMPT_AGENT_RUNTIME",
+        "E184_RELOAD_AND_RERESOLVE_PROMPT_AGENT",
+        "E185_COMPILE_PROMPT_PACKAGE",
+        "E187_REWORK_EXECUTION_INPUTS",
+        "E190_VALIDATE_PROMPT_PACKAGE",
+        "E200_PREFLIGHT_AI_CREATOR",
+        "E205_EVALUATE_PROVIDER_EXECUTION_AUTHORITY",
+        "E207_RESUME_AFTER_PROVIDER_AUTHORITY",
+        "E208_RESOLVE_PROVIDER_ADAPTER",
+        "E210_EXECUTE_ONE_PROVIDER_CALL",
+        "E215_RETURN_PROMPT_INPUT_DEFECT",
+        "E220_RECORD_PROVIDER_OUTPUT",
+        "E225_RETRY_TECHNICAL_PROVIDER_FAILURE",
+        "E230_ROUTE_OUTPUT_TO_FINISHING",
+        "E250_REWORK_PROMPT_FROM_QA",
+        "E265_REWORK_CREATOR_EXECUTION_FROM_QA",
+        "E209_EVALUATE_PROVIDER_ADMISSION",
+        "E267_EVALUATE_AUTOMATED_BATCH_CONTINUE",
+        "E268_CONTINUE_ADMITTED_BATCH_AT_PREFLIGHT",
+        "E266_CLASSIFY_QA_DEFECT_SCOPE"
+      ],
+      "applicable_node_ids": [
+        "N147_EXTERNAL_CONTENT_TZ_EXPORT",
+        "N150_EXPECTED_DELIVERABLES_FREEZE",
+        "N155_CONTENT_TZ_EXECUTION_INPUT_ROUTING",
+        "N158_AGENT_RUNTIME_RESOLUTION",
+        "N160_PROMPT_PACKAGE_COMPILATION",
+        "N170_PROMPT_PACKAGE_VALIDATION",
+        "N180_AI_CREATOR_PREFLIGHT",
+        "N185_PROVIDER_EXECUTION_AUTHORITY_GATE",
+        "N187_PROVIDER_ADAPTER_RESOLUTION",
+        "N190_AI_CREATOR_PROVIDER_EXECUTION",
+        "N200_AI_CREATOR_OUTPUT_RECORDING",
+        "N210_DETERMINISTIC_FINISHING",
+        "N220_CONTENT_OUTPUT_QA",
+        "N188_PROVIDER_ADMISSION_GATE",
+        "N225_AUTOMATED_BATCH_CONTINUE_GATE",
+        "N223_DEFECT_SCOPE_CLASSIFICATION_GATE"
+      ],
+      "owner_boundary": "Runtime Resolver, Prompt Agent, AI Creator and Production owner",
+      "activation_rule": "AI generation or material edit is selected and the Prompt Agent has AGENT_RESOLVED_READY.",
+      "failure_disposition": "Return to defect owner, reload once, recoverably block, rollback or bounded retry; never silently drift invariants.",
+      "classification_reason": "Defines the core AI production and repair path with verified agent callability."
+    },
+    {
+      "route_id": "R16",
+      "route_name": "Full output QA",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E220_RECORD_PROVIDER_OUTPUT",
+        "E230_ROUTE_OUTPUT_TO_FINISHING",
+        "E235_ROUTE_FINAL_OUTPUT_TO_QA",
+        "E240_ROUTE_FINISHED_EXPORT_TO_QA",
+        "E245_REWORK_FINISHING",
+        "E250_REWORK_PROMPT_FROM_QA",
+        "E255_REWORK_CONTENT_TZ_FROM_QA",
+        "E260_REWORK_PRODUCT_FACT_FROM_QA",
+        "E265_REWORK_CREATOR_EXECUTION_FROM_QA",
+        "E270_REQUEST_BATCH_CONTINUE",
+        "E209_EVALUATE_PROVIDER_ADMISSION",
+        "E267_EVALUATE_AUTOMATED_BATCH_CONTINUE",
+        "E268_CONTINUE_ADMITTED_BATCH_AT_PREFLIGHT",
+        "E266_CLASSIFY_QA_DEFECT_SCOPE",
+        "E264_APPLY_CONTENT_OUTPUT_QA_POLICY"
+      ],
+      "applicable_node_ids": [
+        "N200_AI_CREATOR_OUTPUT_RECORDING",
+        "N210_DETERMINISTIC_FINISHING",
+        "N220_CONTENT_OUTPUT_QA",
+        "N230_BATCH_CONTINUE_DECISION",
+        "N188_PROVIDER_ADMISSION_GATE",
+        "N225_AUTOMATED_BATCH_CONTINUE_GATE",
+        "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+        "N221_CONTENT_OUTPUT_QA_POLICY_GATE"
+      ],
+      "owner_boundary": "Content Standard Auditor and localization owner when applicable",
+      "activation_rule": "Any completed asset or localization.",
+      "failure_disposition": "Route execution, concept or fact defect to its actual owner and recheck affected output.",
+      "classification_reason": "Owns real output acceptance and typed targeted rework."
+    },
+    {
+      "route_id": "R17",
+      "route_name": "Humanity and genericity for trust-stakes copy",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING",
+        "N220_CONTENT_OUTPUT_QA",
+        "N240_HUMAN_RELEASE_DECISION"
+      ],
+      "owner_boundary": "Copy executor and named human owner",
+      "activation_rule": "AI-assisted copy within defined trust-stakes scope.",
+      "failure_disposition": "Targeted rework, evidence return or reject; N/A must have reason.",
+      "classification_reason": "An applicability-dependent QA overlay, not a universal workflow stage."
+    },
+    {
+      "route_id": "R18",
+      "route_name": "Creator disclosure and reuse rights",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING",
+        "N220_CONTENT_OUTPUT_QA",
+        "N240_HUMAN_RELEASE_DECISION"
+      ],
+      "owner_boundary": "Creator-task owner and named approver",
+      "activation_rule": "Creator or affiliate material connection exists.",
+      "failure_disposition": "Correct missing disclosure/evidence before release.",
+      "classification_reason": "Conditionally constrains affected assets without creating a general production node."
+    },
+    {
+      "route_id": "R19",
+      "route_name": "Final release and measurability",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E200_PREFLIGHT_AI_CREATOR",
+        "E205_EVALUATE_PROVIDER_EXECUTION_AUTHORITY",
+        "E207_RESUME_AFTER_PROVIDER_AUTHORITY",
+        "E208_RESOLVE_PROVIDER_ADAPTER",
+        "E210_EXECUTE_ONE_PROVIDER_CALL",
+        "E270_REQUEST_BATCH_CONTINUE",
+        "E280_CONTINUE_BATCH_AT_PREFLIGHT",
+        "E290_REQUEST_HUMAN_RELEASE",
+        "E209_EVALUATE_PROVIDER_ADMISSION",
+        "E267_EVALUATE_AUTOMATED_BATCH_CONTINUE",
+        "E268_CONTINUE_ADMITTED_BATCH_AT_PREFLIGHT",
+        "E264_APPLY_CONTENT_OUTPUT_QA_POLICY"
+      ],
+      "applicable_node_ids": [
+        "N180_AI_CREATOR_PREFLIGHT",
+        "N185_PROVIDER_EXECUTION_AUTHORITY_GATE",
+        "N187_PROVIDER_ADAPTER_RESOLUTION",
+        "N190_AI_CREATOR_PROVIDER_EXECUTION",
+        "N220_CONTENT_OUTPUT_QA",
+        "N230_BATCH_CONTINUE_DECISION",
+        "N240_HUMAN_RELEASE_DECISION",
+        "N188_PROVIDER_ADMISSION_GATE",
+        "N225_AUTOMATED_BATCH_CONTINUE_GATE",
+        "N221_CONTENT_OUTPUT_QA_POLICY_GATE"
+      ],
+      "owner_boundary": "Receiving human and process owner",
+      "activation_rule": "Before cost-bearing continuation, test or release.",
+      "failure_disposition": "Keep asset unpublished while release or measurement contract is missing.",
+      "classification_reason": "Contains explicit human-controlled transition points."
+    },
+    {
+      "route_id": "R20",
+      "route_name": "Experiment result and learning",
+      "classification": "EXTERNAL_MEASUREMENT",
+      "execution_disposition": "OUTSIDE_CORE_RUNTIME",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [],
+      "owner_boundary": "Experiment Analyst and process owner",
+      "activation_rule": "After a real test or observation.",
+      "failure_disposition": "Record bounded result; never auto-promote learning into Product Truth or standard.",
+      "classification_reason": "Post-release learning lifecycle is outside the current production graph."
+    },
+    {
+      "route_id": "R21",
+      "route_name": "Upstream change revalidation",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E010_INITIALIZE_PASSPORT_ROUTE",
+        "E020_ROUTE_TO_PASSPORT_COLLECTION",
+        "E060_ROUTE_MATERIAL_GAPS",
+        "E140_REQUEST_CONTENT_TZ",
+        "E260_REWORK_PRODUCT_FACT_FROM_QA",
+        "E300_CHECKPOINT_FROM_COORDINATOR",
+        "E310_RESUME_AT_COORDINATOR",
+        "E266_CLASSIFY_QA_DEFECT_SCOPE"
+      ],
+      "applicable_node_ids": [
+        "N010_RUN_INITIALIZATION",
+        "N020_PASSPORT_COORDINATION",
+        "N030_PASSPORT_COLLECTION",
+        "N060_PASSPORT_GAP_VERIFICATION",
+        "N120_CONTENT_TZ_AUTHORIZATION",
+        "N220_CONTENT_OUTPUT_QA",
+        "N250_TRANSITION_REENTRY_CHECKPOINT",
+        "N223_DEFECT_SCOPE_CLASSIFICATION_GATE"
+      ],
+      "owner_boundary": "Content TZ and changed-source owners",
+      "activation_rule": "Product Truth, claim, rights, policy, channel or promotion validity changes.",
+      "failure_disposition": "Supersede affected downstream artifacts and re-enter at the earliest invalidated stage.",
+      "classification_reason": "Controls deterministic invalidation and re-entry."
+    },
+    {
+      "route_id": "R22",
+      "route_name": "Audience segment pretest",
+      "classification": "EVIDENCE_BRANCH",
+      "execution_disposition": "NODE_REQUIRED",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING"
+      ],
+      "owner_boundary": "Content TZ and validation-route owner",
+      "activation_rule": "Conversational audience model influences positioning or creative.",
+      "failure_disposition": "Keep as hypothesis until real Voice-of-Customer validation.",
+      "classification_reason": "Needs a typed evidence branch; it cannot be treated as Product Truth."
+    },
+    {
+      "route_id": "R23",
+      "route_name": "GA4 semantic measurement",
+      "classification": "EXTERNAL_MEASUREMENT",
+      "execution_disposition": "OUTSIDE_CORE_RUNTIME",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [],
+      "owner_boundary": "Analytics, implementation and business owners",
+      "activation_rule": "A decision or experiment depends on event analytics.",
+      "failure_disposition": "Block metric use until semantic contract is complete.",
+      "classification_reason": "Analytics implementation is outside content-production runtime."
+    },
+    {
+      "route_id": "R24",
+      "route_name": "Conversion event lineage and trust",
+      "classification": "EXTERNAL_MEASUREMENT",
+      "execution_disposition": "OUTSIDE_CORE_RUNTIME",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [],
+      "owner_boundary": "Implementation, Analytics and Business owners",
+      "activation_rule": "Conversion event is used for decision or test.",
+      "failure_disposition": "No scale, stop, budget shift or causal claim below trusted state.",
+      "classification_reason": "Validates measurement evidence after external instrumentation."
+    },
+    {
+      "route_id": "R25",
+      "route_name": "Purchase signal parity",
+      "classification": "EXTERNAL_MEASUREMENT",
+      "execution_disposition": "OUTSIDE_CORE_RUNTIME",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [],
+      "owner_boundary": "Receipt owner, Analytics and Business owners",
+      "activation_rule": "Cross-channel purchase signals are compared.",
+      "failure_disposition": "Block ranking, scaling and causal learning when signals are non-comparable.",
+      "classification_reason": "Cross-system analytics control does not execute content production."
+    },
+    {
+      "route_id": "R26",
+      "route_name": "Sequence intent and segment analysis",
+      "classification": "EXTERNAL_MEASUREMENT",
+      "execution_disposition": "OUTSIDE_CORE_RUNTIME",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [],
+      "owner_boundary": "Analytics, Experiment and Business owners",
+      "activation_rule": "Applicable sequence, intent-transition or mix-shift condition is present.",
+      "failure_disposition": "Keep descriptive or thin evidence as hypothesis only.",
+      "classification_reason": "Conditional analytics methods require their own measurement runtime."
+    },
+    {
+      "route_id": "R27",
+      "route_name": "Video packaging promise",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING",
+        "N140_CONTENT_TZ_VALIDATION",
+        "N220_CONTENT_OUTPUT_QA",
+        "N240_HUMAN_RELEASE_DECISION"
+      ],
+      "owner_boundary": "Content TZ, Experiment Analyst and Content/Business owner",
+      "activation_rule": "Video selection depends on title or cover promise.",
+      "failure_disposition": "Revise package or stop on promise mismatch.",
+      "classification_reason": "Adds video-specific requirements to existing authoring, QA and release nodes."
+    },
+    {
+      "route_id": "R28",
+      "route_name": "Truth-bound product discovery concept",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N020_PASSPORT_COORDINATION",
+        "N130_CONTENT_TZ_AUTHORING",
+        "N140_CONTENT_TZ_VALIDATION",
+        "N220_CONTENT_OUTPUT_QA"
+      ],
+      "owner_boundary": "Passport Verifier, Content TZ, Production and release owners",
+      "activation_rule": "Product discovery asset uses identity, feature, benefit, suitability or comparison.",
+      "failure_disposition": "Return stale facts, variant conflicts or missing proof to their owner.",
+      "classification_reason": "Binds concepts to Product Truth across existing stages."
+    },
+    {
+      "route_id": "R29",
+      "route_name": "Parallel branch and fan-in",
+      "classification": "PARALLEL_FAN_OUT_IN",
+      "execution_disposition": "NODE_REQUIRED",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N220_CONTENT_OUTPUT_QA"
+      ],
+      "owner_boundary": "Content TZ owner, Auditor and human release owner",
+      "activation_rule": "Two or more independent functions share one immutable decision object and parallelism has benefit.",
+      "failure_disposition": "Preserve missing branches and conflicts; HOLD cannot be overwritten by OK.",
+      "classification_reason": "Requires explicit branch nodes, reducer edges and conflict-preserving fan-in semantics."
+    },
+    {
+      "route_id": "R30",
+      "route_name": "Creative production run",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E205_EVALUATE_PROVIDER_EXECUTION_AUTHORITY",
+        "E207_RESUME_AFTER_PROVIDER_AUTHORITY",
+        "E208_RESOLVE_PROVIDER_ADAPTER",
+        "E210_EXECUTE_ONE_PROVIDER_CALL",
+        "E220_RECORD_PROVIDER_OUTPUT",
+        "E209_EVALUATE_PROVIDER_ADMISSION",
+        "E267_EVALUATE_AUTOMATED_BATCH_CONTINUE",
+        "E268_CONTINUE_ADMITTED_BATCH_AT_PREFLIGHT",
+        "E266_CLASSIFY_QA_DEFECT_SCOPE"
+      ],
+      "applicable_node_ids": [
+        "N180_AI_CREATOR_PREFLIGHT",
+        "N185_PROVIDER_EXECUTION_AUTHORITY_GATE",
+        "N187_PROVIDER_ADAPTER_RESOLUTION",
+        "N190_AI_CREATOR_PROVIDER_EXECUTION",
+        "N200_AI_CREATOR_OUTPUT_RECORDING",
+        "N188_PROVIDER_ADMISSION_GATE",
+        "N225_AUTOMATED_BATCH_CONTINUE_GATE",
+        "N223_DEFECT_SCOPE_CLASSIFICATION_GATE"
+      ],
+      "owner_boundary": "Content TZ, Prompt Agent, AI Creator, Auditor and process owner",
+      "activation_rule": "Material generation/edit, paid provider call or scaled run.",
+      "failure_disposition": "Stop before provider call on missing bounded authority, adapter, entrypoint, credentials, capability, price, reference mode or remaining call/cost limit; video stays blocked without callable video adapter.",
+      "classification_reason": "Existing provider execution edges are the concrete implementation of this bounded run contract."
+    },
+    {
+      "route_id": "R31",
+      "route_name": "Handoff integrity and authorized transfer",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N020_PASSPORT_COORDINATION",
+        "N150_EXPECTED_DELIVERABLES_FREEZE",
+        "N170_PROMPT_PACKAGE_VALIDATION",
+        "N180_AI_CREATOR_PREFLIGHT",
+        "N250_TRANSITION_REENTRY_CHECKPOINT"
+      ],
+      "owner_boundary": "Sender, receiver, Auditor and process owner",
+      "activation_rule": "Handoff, checkpoint, fan-in/out or authorized asset transfer.",
+      "failure_disposition": "Stop on tampering, unauthorized egress, credential misuse or trajectory mismatch.",
+      "classification_reason": "A cross-cutting transfer invariant applied to many edges, not another hop."
+    },
+    {
+      "route_id": "R32",
+      "route_name": "Synthetic feedback and corpus provenance",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N200_AI_CREATOR_OUTPUT_RECORDING",
+        "N220_CONTENT_OUTPUT_QA"
+      ],
+      "owner_boundary": "Lineage owner, Product Truth Verifier and Auditor",
+      "activation_rule": "AI output is proposed for reuse, memory, examples, template, corpus or next generation.",
+      "failure_disposition": "Restrict or revalidate intended use; synthetic output never creates a product fact or test win.",
+      "classification_reason": "Controls reuse of produced artifacts rather than primary production flow."
+    },
+    {
+      "route_id": "R33",
+      "route_name": "Transition and re-entry",
+      "classification": "EXECUTION_EDGE",
+      "execution_disposition": "TYPED_EDGE_ACTIVE",
+      "mapped_edge_ids": [
+        "E300_CHECKPOINT_FROM_COORDINATOR",
+        "E310_RESUME_AT_COORDINATOR"
+      ],
+      "applicable_node_ids": [
+        "N020_PASSPORT_COORDINATION",
+        "N250_TRANSITION_REENTRY_CHECKPOINT"
+      ],
+      "owner_boundary": "Sender and receiving node owner",
+      "activation_rule": "Pause, blocker, owner/stage change, context reset or costly mode switch.",
+      "failure_disposition": "Remain blocked until context and side effects are reconciled.",
+      "classification_reason": "Exactly represented by checkpoint and resume edges."
+    },
+    {
+      "route_id": "R34",
+      "route_name": "Reusable dependency and prompt-template reuse",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N160_PROMPT_PACKAGE_COMPILATION",
+        "N170_PROMPT_PACKAGE_VALIDATION",
+        "N180_AI_CREATOR_PREFLIGHT"
+      ],
+      "owner_boundary": "Dependency owner, Prompt Agent and template reviewer",
+      "activation_rule": "Reusable skill/provider/tool is used or Prompt Agent compiles from approved Content TZ.",
+      "failure_disposition": "Revalidate stale dependency; require reason and review for a new template.",
+      "classification_reason": "Constrains dependency selection inside existing compilation and preflight nodes."
+    },
+    {
+      "route_id": "R35",
+      "route_name": "Value-to-price framing",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING",
+        "N140_CONTENT_TZ_VALIDATION",
+        "N220_CONTENT_OUTPUT_QA",
+        "N240_HUMAN_RELEASE_DECISION"
+      ],
+      "owner_boundary": "Content TZ, price/offer owner and release owner",
+      "activation_rule": "Content explains premium, comparison or economic value.",
+      "failure_disposition": "Stop false comparison or unsupported saving; agent cannot change price.",
+      "classification_reason": "Adds claim and authority constraints to existing content stages."
+    },
+    {
+      "route_id": "R36",
+      "route_name": "Carousel and editorial batch specialization",
+      "classification": "CONDITIONAL_SPECIALIZATION",
+      "execution_disposition": "NODE_REQUIRED",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING",
+        "N160_PROMPT_PACKAGE_COMPILATION",
+        "N220_CONTENT_OUTPUT_QA",
+        "N240_HUMAN_RELEASE_DECISION"
+      ],
+      "owner_boundary": "Content TZ, Carousel Compiler, Prompt Agent, Auditor and human owner",
+      "activation_rule": "Carousel, slideshow or editorial batch is requested.",
+      "failure_disposition": "Rework missing/distorted payload; render is not approval or publication.",
+      "classification_reason": "Needs a registered Carousel Compiler or explicit mapping to an existing compiler before runtime."
+    },
+    {
+      "route_id": "R37",
+      "route_name": "Comment cluster to brief",
+      "classification": "EVIDENCE_BRANCH",
+      "execution_disposition": "NODE_REQUIRED",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N090_IMAGE_COLLECTION_EXECUTION",
+        "N100_IMAGE_COLLECTION_REVIEW",
+        "N130_CONTENT_TZ_AUTHORING"
+      ],
+      "owner_boundary": "Comment Intelligence, Content TZ, Auditor and human/product/support owner",
+      "activation_rule": "Comments are proposed as evidence for brief, FAQ, reply video or angle test.",
+      "failure_disposition": "Route safety/support/product issues; isolated comment cannot become creative input.",
+      "classification_reason": "Requires typed clustering/provenance output before Content TZ can consume it."
+    },
+    {
+      "route_id": "R38",
+      "route_name": "Amazon quantity listing parity",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "OUTSIDE_CORE_RUNTIME",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N020_PASSPORT_COORDINATION",
+        "N130_CONTENT_TZ_AUTHORING",
+        "N220_CONTENT_OUTPUT_QA",
+        "N240_HUMAN_RELEASE_DECISION"
+      ],
+      "owner_boundary": "Content TZ, Listing owner and Passport Verifier",
+      "activation_rule": "Quantity variation, multipack or buyer-facing quantity promise is created or changed.",
+      "failure_disposition": "Return facts to verifier or eligibility to current marketplace review; no automatic listing update.",
+      "classification_reason": "The content check applies in core, but listing mutation remains external and human-controlled."
+    },
+    {
+      "route_id": "R39",
+      "route_name": "Delayed purchase intent release",
+      "classification": "EXTERNAL_ACTION",
+      "execution_disposition": "OUTSIDE_CORE_RUNTIME",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING",
+        "N240_HUMAN_RELEASE_DECISION"
+      ],
+      "owner_boundary": "Content TZ, Experiment Analyst, SKU, Finance/Commercial and release owners",
+      "activation_rule": "Seasonal or promotion brief assumes delayed purchase intent.",
+      "failure_disposition": "Collect evidence or redesign test; only Finance/Commercial approves offer.",
+      "classification_reason": "Depends on promotion authority and bounded test outside core production."
+    },
+    {
+      "route_id": "R40",
+      "route_name": "Shopping-agent surface test",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "OUTSIDE_CORE_RUNTIME",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING",
+        "N220_CONTENT_OUTPUT_QA",
+        "N240_HUMAN_RELEASE_DECISION"
+      ],
+      "owner_boundary": "Content TZ, Retrieval/Search, SKU, Runtime and release owners",
+      "activation_rule": "Content targets conversational, search, related-question or agent-facing retrieval.",
+      "failure_disposition": "Route retrieval/product/runtime defect to its owner; copy cannot mask system defect.",
+      "classification_reason": "Core creates and QA-checks the asset, while surface runtime test remains external."
+    },
+    {
+      "route_id": "R41",
+      "route_name": "Brand message and media execution controls",
+      "classification": "POLICY_GUARD",
+      "execution_disposition": "NON_EXECUTABLE_GOVERNANCE",
+      "mapped_edge_ids": [],
+      "applicable_node_ids": [
+        "N130_CONTENT_TZ_AUTHORING",
+        "N140_CONTENT_TZ_VALIDATION",
+        "N160_PROMPT_PACKAGE_COMPILATION",
+        "N170_PROMPT_PACKAGE_VALIDATION",
+        "N180_AI_CREATOR_PREFLIGHT",
+        "N210_DETERMINISTIC_FINISHING",
+        "N220_CONTENT_OUTPUT_QA"
+      ],
+      "owner_boundary": "Content TZ/marketer, Prompt Agent, executor, Auditor and release owner",
+      "activation_rule": "Substantive content optimization or media execution activates the applicable brand, proof, fidelity, channel and processing controls.",
+      "failure_disposition": "Return evidence, fidelity or platform defect to the responsible owner; QA never substitutes release.",
+      "classification_reason": "A conditional bundle of standards applied across existing nodes, not a standalone transition."
+    }
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version":"1.0",
+  "policy_id":"LS-INTAKE-POLICY-PRODUCTION-CANDIDATE",
+  "policy_version":"1.0",
+  "effective_at":"2026-10-04T00:00:00+03:00",
+  "allowed_extensions":[".pdf",".docx",".xlsx",".csv",".txt",".md",".json",".html",".jpg",".jpeg",".png",".webp",".mp4",".mov",".webm"],
+  "allowed_mime_types":["application/pdf","application/vnd.openxmlformats-officedocument.wordprocessingml.document","application/vnd.openxmlformats-officedocument.spreadsheetml.sheet","text/csv","text/plain","text/markdown","application/json","text/html","image/jpeg","image/png","image/webp","video/mp4","video/quicktime","video/webm"],
+  "max_file_count":100,
+  "max_single_file_bytes":524288000,
+  "max_total_bytes":5368709120,
+  "max_video_duration_seconds":1800,
+  "max_recursion_depth":5,
+  "archive_root_pattern":"product_root/артефакти/YYYY-MM-DD/",
+  "hash_algorithm":"SHA-256",
+  "configured_by":"PROJECT_OWNER_APPROVED_CONFIGURATION",
+  "approved_by":"PROJECT_OWNER",
+  "policy_sha256":"1ce2a86576b0b54647d96c1abe225a7985e7db243ddd175c2ffb25d3416e0a3e"
+}

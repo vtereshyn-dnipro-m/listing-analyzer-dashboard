@@ -1,0 +1,32 @@
+{
+  "schema_version": "1.0",
+  "receipt_id": "PSP-RECREATE-FIXTURE-INVALID-ROLLBACK",
+  "operation_id": "OP-FIXTURE-INVALID-ROLLBACK",
+  "idempotency_key": "FIXTURE-INVALID-ROLLBACK-0001",
+  "sku_id": "SKU-FIXTURE-001",
+  "state": "SWITCH_COMMITTED",
+  "old_passport": {
+    "passport_id": "PSP-FIXTURE-001",
+    "passport_lineage_id": "LINEAGE-FIXTURE-001",
+    "version": "7",
+    "path": "C:/product/SKU-FIXTURE-001/archive/passport.json",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "lifecycle_status": "ARCHIVED"
+  },
+  "new_passport": {
+    "passport_id": "PSP-FIXTURE-002",
+    "passport_lineage_id": "LINEAGE-FIXTURE-001",
+    "version": "1",
+    "path": "C:/product/SKU-FIXTURE-001/passport.json",
+    "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "lifecycle_status": "ACTIVE"
+  },
+  "archive_receipt": {"ref":"PSP-ARCHIVE-FIXTURE-001","sha256":"3333333333333333333333333333333333333333333333333333333333333333"},
+  "lock_id": "LOCK-SKU-FIXTURE-001",
+  "optimistic_lock_status": "PASS",
+  "canonical_pointer_count": 1,
+  "downstream_invalidation_status": "STALE_BINDINGS_RECORDED",
+  "rollback_status": "COMPLETED",
+  "publication_authority": "NOT_GRANTED",
+  "committed_at": "2026-10-04T12:10:00Z"
+}

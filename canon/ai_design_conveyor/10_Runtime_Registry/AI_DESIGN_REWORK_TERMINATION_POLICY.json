@@ -1,0 +1,6 @@
+{
+  "policy_id":"AI_DESIGN_REWORK_TERMINATION_POLICY","policy_version":"1.0","effective_date":"2026-10-04",
+  "automatic_edge_scope":"ALL_NON_HUMAN_WAIT_TRANSITIONS","zero_cost_automatic_transitions_allowed":false,"counter_reset_allowed":false,"exhaustion_terminal_status":"FAILED_EXHAUSTED",
+  "limits":{"automatic_transitions_per_run":250,"rework_transitions_per_asset":3,"distinct_defect_fingerprints_per_asset":3,"rework_transitions_per_package_minimum":5,"rework_transitions_per_mandatory_asset_coefficient":2,"upstream_reentries_per_asset":2,"qa_evidence_refreshes_per_asset":1,"reclassifications_per_defect":1,"checkpoint_resumes_per_run":2,"owner_approved_resumes_per_incident":1},
+  "exhaustion_codes":["RUN_AUTOMATIC_TRANSITION_BUDGET_EXHAUSTED","ASSET_REWORK_BUDGET_EXHAUSTED","PACKAGE_REWORK_BUDGET_EXHAUSTED","DISTINCT_DEFECT_BUDGET_EXHAUSTED","UPSTREAM_REENTRY_LIMIT_EXHAUSTED","QA_EVIDENCE_REFRESH_LIMIT_EXHAUSTED","RECLASSIFICATION_LIMIT_EXHAUSTED","CHECKPOINT_RESUME_LIMIT_EXHAUSTED","OWNER_RESUME_LIMIT_EXHAUSTED","ZERO_PROGRESS_TRANSITION_REJECTED","COUNTER_RESET_REJECTED"]
+}

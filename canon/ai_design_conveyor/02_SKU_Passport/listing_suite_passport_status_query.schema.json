@@ -1,0 +1,21 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema_version","query_id","actor_id","sku_id","requested_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "query_id":{"type":"string","pattern":"^LS-STATUS-QUERY-[A-Z0-9._-]+$"},
+    "actor_id":{"type":"string","minLength":1},
+    "sku_id":{"type":"string","minLength":1},
+    "requested_at":{"type":"string","format":"date-time"},
+    "request_id":{"type":"string","minLength":1},
+    "operation_id":{"type":"string","minLength":1},
+    "idempotency_key":{"type":"string","minLength":16}
+  },
+  "oneOf":[
+    {"required":["request_id"],"not":{"anyOf":[{"required":["operation_id"]},{"required":["idempotency_key"]}]}},
+    {"required":["operation_id"],"not":{"anyOf":[{"required":["request_id"]},{"required":["idempotency_key"]}]}},
+    {"required":["idempotency_key"],"not":{"anyOf":[{"required":["request_id"]},{"required":["operation_id"]}]}}
+  ]
+}

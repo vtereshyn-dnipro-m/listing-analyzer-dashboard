@@ -1,0 +1,3809 @@
+{
+  "registry_id": "AI_DESIGN_CORE_EDGE_REGISTRY",
+  "registry_version": "3.6",
+  "graph_contract_ref": "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_EXECUTION_GRAPH_CONTRACT.md",
+  "node_registry_ref": "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_NODE_REGISTRY.json",
+  "execution_mode": "GRAPH_SPEC_ONLY",
+  "scope": "CORE_PRODUCT_CONTENT_ROUTE",
+  "edges": [
+    {
+      "edge_id": "E010_INITIALIZE_PASSPORT_ROUTE",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N010_RUN_INITIALIZATION",
+      "target_node_id": "N020_PASSPORT_COORDINATION",
+      "trigger": "RUN_CREATED",
+      "guard_expression": "exact_product_identity_pinned == true AND graph_version_pinned == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_run_state.schema.json",
+      "required_source_receipts": [
+        "INITIAL_CHECKPOINT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "RUN_STATE:ACTIVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_AFTER_EXACT_USER_PRODUCT_REQUEST",
+      "side_effect_precondition": "No external side effect.",
+      "idempotency_key_expression": "run_id + graph_version + exact_product_identity_hash",
+      "upstream_hash_dependencies": [
+        "graph_contract_hash",
+        "node_registry_hash"
+      ],
+      "invalidation_scope": [
+        "ALL_DOWNSTREAM_WHEN_PRODUCT_IDENTITY_CHANGES"
+      ],
+      "resume_policy": "Resume from accepted initial checkpoint.",
+      "compensation_action": "Mark run blocked and request exact product identity.",
+      "governance_route_refs": [
+        "R01"
+      ]
+    },
+    {
+      "edge_id": "E020_ROUTE_TO_PASSPORT_COLLECTION",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N020_PASSPORT_COORDINATION",
+      "target_node_id": "N030_PASSPORT_COLLECTION",
+      "trigger": "PASSPORT_CREATE_OR_UPDATE_REQUIRED",
+      "guard_expression": "coordinator_route == COLLECTOR AND receiver_status == ACCEPTED",
+      "required_payload_schema": "AI Design Conveyor/02_SKU_Passport/02B_Шаблон_запуска_агента_собирателя.md",
+      "required_source_receipts": [
+        "PASSPORT_ROUTE_DECISION",
+        "HANDOFF_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PASSPORT_STAGE:COLLECTION_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NO_ADDITIONAL_APPROVAL_WHEN_ROUTE_IS_WITHIN_ACCEPTED_USER_SCOPE",
+      "side_effect_precondition": "Canonical Passport write remains prohibited until Collector write rules pass.",
+      "idempotency_key_expression": "run_id + passport_stage + collector_input_hash",
+      "upstream_hash_dependencies": [
+        "00A_hash",
+        "collector_instruction_hash",
+        "product_identity_hash"
+      ],
+      "invalidation_scope": [
+        "COLLECTOR_OUTPUT_PACKAGE",
+        "UNACCEPTED_PASSPORT_CANDIDATE"
+      ],
+      "resume_policy": "Resume from Coordinator handoff receipt.",
+      "compensation_action": "Return package to Coordinator without creating a parallel Passport.",
+      "governance_route_refs": [
+        "R01",
+        "R02"
+      ]
+    },
+    {
+      "edge_id": "E030_VALIDATE_COLLECTOR_PACKAGE",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N030_PASSPORT_COLLECTION",
+      "target_node_id": "N040_PASSPORT_PACKAGE_VALIDATION",
+      "trigger": "COLLECTOR_PACKAGE_READY",
+      "guard_expression": "collector_output_package_exists == true AND source_manifest_present == true",
+      "required_payload_schema": "AI Design Conveyor/02_SKU_Passport/02C_Контракт_выхода_агента_собирателя.md",
+      "required_source_receipts": [
+        "COLLECTOR_OUTPUT_PACKAGE"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_validator_input_acceptance_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "COLLECTOR_OUTPUT_PACKAGE:PENDING_VALIDATION"
+        ]
+      },
+      "failure_route_ids": [
+        "E035_REWORK_COLLECTOR_PACKAGE"
+      ],
+      "retry_route_id": "E035_REWORK_COLLECTOR_PACKAGE",
+      "approval_requirement": "NONE",
+      "side_effect_precondition": "Read-only validation.",
+      "idempotency_key_expression": "collector_package_hash + validator_version",
+      "upstream_hash_dependencies": [
+        "passport_candidate_hash",
+        "source_manifest_hash",
+        "02C_hash"
+      ],
+      "invalidation_scope": [
+        "PASSPORT_PACKAGE_VALIDATION_RECEIPT",
+        "PASSPORT_AUDIT_NOT_STARTED"
+      ],
+      "resume_policy": "Rerun validation only if package or validator hash changed.",
+      "compensation_action": "Preserve failed receipt and return exact defects to Collector.",
+      "governance_route_refs": [
+        "R02",
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E035_REWORK_COLLECTOR_PACKAGE",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N040_PASSPORT_PACKAGE_VALIDATION",
+      "target_node_id": "N030_PASSPORT_COLLECTION",
+      "trigger": "PACKAGE_STRUCTURE_FAIL_OR_HANDOFF_INTEGRITY_FAIL",
+      "guard_expression": "validation_verdict IN [PACKAGE_STRUCTURE_FAIL, HANDOFF_INTEGRITY_FAIL]",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_targeted_rework_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_VALIDATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "COLLECTOR_OUTPUT_PACKAGE:REWORK"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": "E030_VALIDATE_COLLECTOR_PACKAGE",
+      "approval_requirement": "NONE_FOR_TARGETED_STRUCTURAL_REWORK",
+      "side_effect_precondition": "Only named defects may be changed.",
+      "idempotency_key_expression": "failed_receipt_hash + collector_package_hash",
+      "upstream_hash_dependencies": [
+        "failed_validation_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "FAILED_COLLECTOR_PACKAGE_VERSION"
+      ],
+      "resume_policy": "Resume at Collector with bounded defect list.",
+      "compensation_action": "Keep previous failed package immutable.",
+      "governance_route_refs": [
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E040_AUDIT_VALIDATED_PASSPORT",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N040_PASSPORT_PACKAGE_VALIDATION",
+      "target_node_id": "N050_PASSPORT_AUDIT",
+      "trigger": "PACKAGE_STRUCTURE_PASS",
+      "guard_expression": "structural_validation == PASS AND auditor_receiver_status == ACCEPTED",
+      "required_payload_schema": "AI Design Conveyor/02_SKU_Passport/00A_Контракт_передач_Паспорта_SKU.md",
+      "required_source_receipts": [
+        "PACKAGE_STRUCTURE_PASS",
+        "HANDOFF_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PASSPORT_PACKAGE:ADMITTED_FOR_AUDIT"
+        ]
+      },
+      "failure_route_ids": [
+        "E035_REWORK_COLLECTOR_PACKAGE"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_FOR_FIRST_CONTRACTED_AUDIT_PASS",
+      "side_effect_precondition": "Auditor is read-only against Passport.",
+      "idempotency_key_expression": "passport_hash + source_manifest_hash + auditor_instruction_hash",
+      "upstream_hash_dependencies": [
+        "passport_hash",
+        "source_manifest_hash",
+        "validation_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "PASSPORT_AUDIT_REPORT",
+        "GAP_PACKAGE"
+      ],
+      "resume_policy": "Resume from accepted Auditor handoff.",
+      "compensation_action": "Return unaccepted package to Coordinator.",
+      "governance_route_refs": [
+        "R02",
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E050_ACCEPT_AUDITED_PASSPORT",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N050_PASSPORT_AUDIT",
+      "target_node_id": "N020_PASSPORT_COORDINATION",
+      "trigger": "AUDIT_ACCEPTED_OR_ACCEPTED_WITH_NONBLOCKING_GAPS",
+      "guard_expression": "audit_verdict IN [AUDIT_ACCEPTED, AUDIT_ACCEPTED_WITH_GAPS] AND no_material_conflict == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_passport_audit_receipt.schema.json",
+      "required_source_receipts": [
+        "PASSPORT_AUDIT_REPORT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PASSPORT:AUDITED"
+        ]
+      },
+      "failure_route_ids": [
+        "E060_ROUTE_MATERIAL_GAPS"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_UNLESS_AUDIT_CONTRACT_REQUIRES_OWNER_DECISION",
+      "side_effect_precondition": "No canonical write.",
+      "idempotency_key_expression": "audit_report_hash + passport_hash",
+      "upstream_hash_dependencies": [
+        "passport_hash",
+        "audit_report_hash"
+      ],
+      "invalidation_scope": [
+        "COORDINATOR_STAGE_DECISION"
+      ],
+      "resume_policy": "Coordinator decides next allowed stage from accepted audit receipt.",
+      "compensation_action": "Preserve gaps as explicit limitations.",
+      "governance_route_refs": [
+        "R02",
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E060_ROUTE_MATERIAL_GAPS",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N050_PASSPORT_AUDIT",
+      "target_node_id": "N060_PASSPORT_GAP_VERIFICATION",
+      "trigger": "MATERIAL_GAP_OR_CONFLICT_REQUIRES_EVIDENCE",
+      "guard_expression": "material_gap == true AND user_requested_gap_closure == true",
+      "required_payload_schema": "AI Design Conveyor/02_SKU_Passport/04_Шаблон_пакета_пробелов_Паспорта_SKU.md",
+      "required_source_receipts": [
+        "PASSPORT_AUDIT_REPORT",
+        "GAP_PACKAGE"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PASSPORT_GAPS:VERIFICATION_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "DIRECT_USER_REQUEST_OR_CONTRACT_REQUIRED_OWNER_INPUT",
+      "side_effect_precondition": "Verifier cannot write Passport.",
+      "idempotency_key_expression": "gap_package_hash + verifier_mode + request_id",
+      "upstream_hash_dependencies": [
+        "gap_package_hash",
+        "passport_hash"
+      ],
+      "invalidation_scope": [
+        "OPEN_GAP_STATUSES_ONLY"
+      ],
+      "resume_policy": "Wait for explicit returned evidence event.",
+      "compensation_action": "Leave unresolved gaps open without blocking unrelated content scope.",
+      "governance_route_refs": [
+        "R02",
+        "R03"
+      ]
+    },
+    {
+      "edge_id": "E070_APPLY_APPROVED_PASSPORT_DELTA",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N060_PASSPORT_GAP_VERIFICATION",
+      "target_node_id": "N070_PASSPORT_DELTA_WRITEBACK",
+      "trigger": "CANDIDATE_UPDATE_APPROVED",
+      "guard_expression": "candidate_update_status == APPROVED AND base_passport_hash_matches == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_approved_passport_delta.schema.json",
+      "required_source_receipts": [
+        "CANDIDATE_UPDATE_APPROVED"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "APPROVED_DELTA:PENDING_WRITEBACK"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "APPROVED_CANDIDATE_UPDATE_REQUIRED",
+      "side_effect_precondition": "Exact base version and change event must be sealed.",
+      "idempotency_key_expression": "candidate_delta_id + base_passport_hash",
+      "upstream_hash_dependencies": [
+        "candidate_delta_hash",
+        "base_passport_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_PASSPORT_FIELDS",
+        "DEPENDENT_DOWNSTREAM_ARTIFACTS_NOT_YET_BUILT"
+      ],
+      "resume_policy": "Reconcile change event before write retry.",
+      "compensation_action": "Do not mutate Passport; return base-version mismatch.",
+      "governance_route_refs": [
+        "R02",
+        "R21"
+      ]
+    },
+    {
+      "edge_id": "E080_RETURN_WRITTEN_PASSPORT_TO_COORDINATOR",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N070_PASSPORT_DELTA_WRITEBACK",
+      "target_node_id": "N020_PASSPORT_COORDINATION",
+      "trigger": "PASSPORT_DELTA_APPLIED",
+      "guard_expression": "write_receipt_valid == true AND readback_pass == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_passport_write_receipt.schema.json",
+      "required_source_receipts": [
+        "PASSPORT_DELTA_APPLIED"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "SKU_PASSPORT:NEW_CURRENT_VERSION"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_AFTER_APPROVED_DELTA",
+      "side_effect_precondition": "Post-write hash and readback available.",
+      "idempotency_key_expression": "change_event_id + new_passport_hash",
+      "upstream_hash_dependencies": [
+        "new_passport_hash",
+        "write_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "DOWNSTREAM_ARTIFACTS_DEPENDING_ON_CHANGED_PASSPORT_FIELDS"
+      ],
+      "resume_policy": "Coordinator uses the new current Passport version only.",
+      "compensation_action": "Keep prior Passport version current if write verification fails.",
+      "governance_route_refs": [
+        "R02",
+        "R21"
+      ]
+    },
+    {
+      "edge_id": "E090_REQUEST_IMAGE_COLLECTION",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N020_PASSPORT_COORDINATION",
+      "target_node_id": "N080_IMAGE_COLLECTION_AUTHORIZATION",
+      "trigger": "MEDIA_COLLECTION_REQUIRED_OR_USER_REQUESTED",
+      "guard_expression": "exact_passport_available == true AND media_collection_scope_needed == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_media_collection_request.schema.json",
+      "required_source_receipts": [
+        "PASSPORT_STAGE_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "MEDIA_COLLECTION_REQUEST:PENDING_OWNER"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "HUMAN_MEDIA_COLLECTION_AUTHORIZATION",
+      "side_effect_precondition": "No internet collection before authorization.",
+      "idempotency_key_expression": "collection_request_id + passport_hash",
+      "upstream_hash_dependencies": [
+        "passport_hash",
+        "media_gap_snapshot_hash"
+      ],
+      "invalidation_scope": [
+        "MEDIA_COLLECTION_REQUEST"
+      ],
+      "resume_policy": "Resume only after explicit owner decision.",
+      "compensation_action": "Continue without Image Collector only if scope explicitly excludes it.",
+      "governance_route_refs": [
+        "R01",
+        "R02",
+        "R10"
+      ]
+    },
+    {
+      "edge_id": "E100_START_IMAGE_COLLECTION",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N080_IMAGE_COLLECTION_AUTHORIZATION",
+      "target_node_id": "N090_IMAGE_COLLECTION_EXECUTION",
+      "trigger": "MEDIA_COLLECTION_AUTHORIZED",
+      "guard_expression": "authorization_scope_exact == true AND product_root_verified == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_media_collection_request.schema.json",
+      "required_source_receipts": [
+        "MEDIA_COLLECTION_AUTHORIZED"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "MEDIA_COLLECTION:ACTIVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "VALID_MEDIA_COLLECTION_AUTHORIZATION",
+      "side_effect_precondition": "Exact product root and external-read scope pinned.",
+      "idempotency_key_expression": "collection_id + authorization_receipt_hash",
+      "upstream_hash_dependencies": [
+        "passport_hash",
+        "authorization_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "MEDIA_COLLECTION_OUTPUTS_FOR_COLLECTION_ID"
+      ],
+      "resume_policy": "Resume from source-level manifest checkpoint.",
+      "compensation_action": "Stop external reads and preserve completed source records.",
+      "governance_route_refs": [
+        "R02",
+        "R10"
+      ]
+    },
+    {
+      "edge_id": "E110_VALIDATE_IMAGE_COLLECTION",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N090_IMAGE_COLLECTION_EXECUTION",
+      "target_node_id": "N110_IMAGE_COLLECTION_VALIDATION",
+      "trigger": "READY_FOR_HUMAN_REVIEW",
+      "guard_expression": "manifest_v0_5_exists == true AND collection_root_verified == true",
+      "required_payload_schema": "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collector_manifest_schema.v0.5.json",
+      "required_source_receipts": [
+        "IMAGE_COLLECTOR_MANIFEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_image_collection_validator_input_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "IMAGE_COLLECTOR_MANIFEST:PENDING_VALIDATION"
+        ]
+      },
+      "failure_route_ids": [
+        "E115_REWORK_IMAGE_COLLECTION_DELTA"
+      ],
+      "retry_route_id": "E115_REWORK_IMAGE_COLLECTION_DELTA",
+      "approval_requirement": "NONE",
+      "side_effect_precondition": "Read-only validation.",
+      "idempotency_key_expression": "collection_manifest_hash + validator_hash",
+      "upstream_hash_dependencies": [
+        "collection_manifest_hash",
+        "collection_root_inventory_hash"
+      ],
+      "invalidation_scope": [
+        "COLLECTION_VALIDATION_RECEIPT",
+        "COLLECTION_REVIEW_NOT_STARTED"
+      ],
+      "resume_policy": "Rerun only after changed manifest or validator.",
+      "compensation_action": "Preserve failed manifest and exact errors.",
+      "governance_route_refs": [
+        "R02",
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E115_REWORK_IMAGE_COLLECTION_DELTA",
+      "edge_version": "1.1",
+      "edge_class": "REWORK",
+      "source_node_id": "N110_IMAGE_COLLECTION_VALIDATION",
+      "target_node_id": "N090_IMAGE_COLLECTION_EXECUTION",
+      "trigger": "MANIFEST_CONTRACT_FAIL",
+      "guard_expression": "manifest_validation == FAIL AND rework_route_decision == DELTA_REWORK AND rework_attempt == 1 AND same_defect_occurrence == 1",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_image_collection_manifest_rework_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_MANIFEST_VALIDATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "IMAGE_COLLECTOR_MANIFEST:REWORK"
+        ]
+      },
+      "failure_route_ids": [
+        "E116_ESCALATE_REPEATED_MANIFEST_DEFECT",
+        "E117_ESCALATE_IMAGE_COLLECTION_IDENTITY_CONFLICT"
+      ],
+      "retry_route_id": "E110_VALIDATE_IMAGE_COLLECTION",
+      "approval_requirement": "NONE_FOR_NAMED_MANIFEST_DEFECTS",
+      "side_effect_precondition": "No full collection rerun. Repeated internet discovery requires named source IDs and explicit repeat_discovery_authorized=true in the schema-valid request.",
+      "idempotency_key_expression": "failed_manifest_receipt_hash + collection_id + defect_fingerprint + rework_attempt",
+      "upstream_hash_dependencies": [
+        "failed_manifest_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_SOURCE_RECORDS_AND_AGGREGATES"
+      ],
+      "resume_policy": "One delta-only recovery attempt, then return only through E110. Preserve protected artifact hashes.",
+      "compensation_action": "Keep unaffected collection artifacts unchanged; route repeated defect to E116 and product identity conflict to E117.",
+      "governance_route_refs": [
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E116_ESCALATE_REPEATED_MANIFEST_DEFECT",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N110_IMAGE_COLLECTION_VALIDATION",
+      "target_node_id": "N080_IMAGE_COLLECTION_AUTHORIZATION",
+      "trigger": "MANIFEST_REWORK_ESCALATION_REQUIRED",
+      "guard_expression": "rework_route_decision == ESCALATE_REPEATED_DEFECT AND same_defect_occurrence > 1",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_image_collection_manifest_rework_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_MANIFEST_VALIDATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "IMAGE_COLLECTOR_MANIFEST:REPEATED_DEFECT_ESCALATED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "MEDIA_COLLECTION_REQUEST_OWNER_DECISION_REQUIRED",
+      "side_effect_precondition": "No automatic rework or repeated discovery while escalation is open.",
+      "idempotency_key_expression": "failed_manifest_receipt_hash + defect_fingerprint + same_defect_occurrence",
+      "upstream_hash_dependencies": [
+        "failed_manifest_receipt_hash",
+        "rework_request_hash"
+      ],
+      "invalidation_scope": [
+        "AUTOMATIC_IMAGE_COLLECTION_REWORK"
+      ],
+      "resume_policy": "Resume only after a recorded owner decision with corrected scope or controlled stop.",
+      "compensation_action": "Preserve the failed package and all unaffected artifacts.",
+      "governance_route_refs": [
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E117_ESCALATE_IMAGE_COLLECTION_IDENTITY_CONFLICT",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N110_IMAGE_COLLECTION_VALIDATION",
+      "target_node_id": "N020_PASSPORT_COORDINATION",
+      "trigger": "IMAGE_COLLECTION_PRODUCT_IDENTITY_CONFLICT",
+      "guard_expression": "rework_route_decision == ESCALATE_PRODUCT_IDENTITY_CONFLICT",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_image_collection_manifest_rework_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_MANIFEST_VALIDATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PRODUCT_IDENTITY:CONFLICT_REQUIRES_PASSPORT_ROUTE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "PRODUCT_TRUTH_ROUTE_REQUIRED",
+      "side_effect_precondition": "Image Collector cannot patch Product Truth or continue collection for a conflicting identity.",
+      "idempotency_key_expression": "failed_manifest_receipt_hash + product_identity_hash + defect_fingerprint",
+      "upstream_hash_dependencies": [
+        "failed_manifest_receipt_hash",
+        "passport_hash",
+        "rework_request_hash"
+      ],
+      "invalidation_scope": [
+        "IMAGE_COLLECTION_OUTPUTS_BOUND_TO_CONFLICTING_IDENTITY"
+      ],
+      "resume_policy": "Resume collection only after a new accepted Passport route and exact identity binding.",
+      "compensation_action": "Quarantine affected collection outputs; preserve source evidence without Product Truth writeback.",
+      "governance_route_refs": [
+        "R01",
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E120_REVIEW_VALID_IMAGE_COLLECTION",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N110_IMAGE_COLLECTION_VALIDATION",
+      "target_node_id": "N100_IMAGE_COLLECTION_REVIEW",
+      "trigger": "MANIFEST_CONTRACT_PASS",
+      "guard_expression": "manifest_validation == PASS",
+      "required_payload_schema": "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collector_manifest_schema.v0.5.json",
+      "required_source_receipts": [
+        "MANIFEST_CONTRACT_PASS"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "MEDIA_COLLECTION:REVIEW_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [
+        "E115_REWORK_IMAGE_COLLECTION_DELTA"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "NONE",
+      "side_effect_precondition": "Reviewer remains read-only.",
+      "idempotency_key_expression": "manifest_hash + reviewer_instruction_hash + skeptic_instruction_hash",
+      "upstream_hash_dependencies": [
+        "manifest_hash",
+        "validation_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "COLLECTION_REVIEW_RECEIPT"
+      ],
+      "resume_policy": "Resume from accepted review handoff.",
+      "compensation_action": "Return to manifest delta rework when review input is incomplete.",
+      "governance_route_refs": [
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E130_APPLY_MEDIA_DELTA_TO_PASSPORT",
+      "edge_version": "1.1",
+      "edge_class": "FORWARD",
+      "source_node_id": "N100_IMAGE_COLLECTION_REVIEW",
+      "target_node_id": "N070_PASSPORT_DELTA_WRITEBACK",
+      "trigger": "PASSPORT_MEDIA_DELTA_READY",
+      "guard_expression": "passport_media_delta_exists == true AND passport_delta_route == CONTINUE_INDEPENDENTLY",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_passport_media_delta.schema.json",
+      "required_source_receipts": [
+        "IMAGE_COLLECTION_REVIEW_AGGREGATION_RECEIPT",
+        "PASSPORT_MEDIA_DELTA"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PASSPORT_MEDIA_DELTA:PENDING_WRITEBACK"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "VERIFIED_EVIDENCE_BOUNDED_DELTA",
+      "side_effect_precondition": "Collector applies delta; Reviewer cannot write Passport.",
+      "idempotency_key_expression": "collection_id + passport_media_delta_hash + base_passport_hash",
+      "upstream_hash_dependencies": [
+        "passport_media_delta_hash",
+        "review_receipt_hash",
+        "base_passport_hash"
+      ],
+      "invalidation_scope": [
+        "PASSPORT_MEDIA_SECTIONS",
+        "DOWNSTREAM_MEDIA_BINDINGS_NOT_YET_BUILT"
+      ],
+      "resume_policy": "Reconcile Passport base hash before writeback.",
+      "compensation_action": "Keep status PASSPORT_UPDATE_PENDING.",
+      "governance_route_refs": [
+        "R02",
+        "R21"
+      ]
+    },
+    {
+      "edge_id": "E135_REWORK_REVIEWED_COLLECTION",
+      "edge_version": "1.1",
+      "edge_class": "REWORK",
+      "source_node_id": "N100_IMAGE_COLLECTION_REVIEW",
+      "target_node_id": "N090_IMAGE_COLLECTION_EXECUTION",
+      "trigger": "TARGETED_MEDIA_REMEDIATION_REQUIRED",
+      "guard_expression": "route_class IN [ASSET_LOCAL_REWORK, TARGETED_SOURCE_RECOVERY] AND remediation_attempt == 1 AND same_defect_occurrence == 1 AND full_collection_rerun_authorized == false AND scope_expansion_authorized == false",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_image_collection_review_remediation_request.schema.json",
+      "required_source_receipts": [
+        "IMAGE_COLLECTION_REVIEW_AGGREGATION_RECEIPT",
+        "IMAGE_COLLECTION_REVIEW_REMEDIATION_REQUEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "MEDIA_COLLECTION:TARGETED_REWORK"
+        ]
+      },
+      "failure_route_ids": [
+        "E136_REWORK_REVIEW_RECEIPT",
+        "E137_ESCALATE_REVIEW_QUARANTINE",
+        "E139_REQUEST_COLLECTION_SCOPE_EXPANSION"
+      ],
+      "retry_route_id": "E110_VALIDATE_IMAGE_COLLECTION",
+      "approval_requirement": "NONE_FOR_EXISTING_AUTHORIZED_COLLECTION_SCOPE",
+      "side_effect_precondition": "Only named assets or source IDs may change; full collection rerun and scope expansion are forbidden.",
+      "idempotency_key_expression": "aggregation_receipt_hash + defect_fingerprints + remediation_attempt",
+      "upstream_hash_dependencies": [
+        "aggregation_receipt_hash",
+        "remediation_request_hash"
+      ],
+      "invalidation_scope": [
+        "NAMED_ASSET_IDS",
+        "NAMED_SOURCE_IDS",
+        "AFFECTED_LINEAGE_AND_SUMMARIES"
+      ],
+      "resume_policy": "Resume only named assets or source IDs; after one failed repeat route to owner decision rather than loop.",
+      "compensation_action": "Preserve accepted, rejected and quarantined evidence records and their lineage.",
+      "governance_route_refs": [
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E136_REWORK_REVIEW_RECEIPT",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N100_IMAGE_COLLECTION_REVIEW",
+      "target_node_id": "N100_IMAGE_COLLECTION_REVIEW",
+      "trigger": "REVIEW_RECEIPT_REWORK_REQUIRED",
+      "guard_expression": "route_class == REVIEW_RECEIPT_REWORK AND remediation_attempt == 0",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_image_collection_review_remediation_request.schema.json",
+      "required_source_receipts": [
+        "IMAGE_COLLECTION_REVIEW_AGGREGATION_RECEIPT",
+        "IMAGE_COLLECTION_REVIEW_REMEDIATION_REQUEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": false,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "REVIEW_RECEIPT:REWORK_REQUIRED"
+        ]
+      },
+      "failure_route_ids": [
+        "E137_ESCALATE_REVIEW_QUARANTINE"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_FOR_REVIEW_RECORD_CORRECTION",
+      "side_effect_precondition": "Collected files, source scope and Passport evidence must not change.",
+      "idempotency_key_expression": "aggregation_receipt_hash + defect_fingerprints",
+      "upstream_hash_dependencies": [
+        "aggregation_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_REVIEW_RECEIPTS",
+        "REVIEW_AGGREGATION"
+      ],
+      "resume_policy": "Correct the named review record once and re-aggregate.",
+      "compensation_action": "Keep media evidence unchanged and escalate an unresolved disagreement.",
+      "governance_route_refs": [
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E137_ESCALATE_REVIEW_QUARANTINE",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N100_IMAGE_COLLECTION_REVIEW",
+      "target_node_id": "N080_IMAGE_COLLECTION_AUTHORIZATION",
+      "trigger": "OWNER_DECISION_REQUIRED",
+      "guard_expression": "route_class == QUARANTINE_OWNER_DECISION",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_image_collection_review_remediation_request.schema.json",
+      "required_source_receipts": [
+        "IMAGE_COLLECTION_REVIEW_AGGREGATION_RECEIPT",
+        "IMAGE_COLLECTION_REVIEW_REMEDIATION_REQUEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "AFFECTED_MEDIA:QUARANTINED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_OWNER_DECISION",
+      "side_effect_precondition": "No quarantined asset may enter a production-input pool.",
+      "idempotency_key_expression": "aggregation_receipt_hash + quarantined_asset_ids",
+      "upstream_hash_dependencies": [
+        "aggregation_receipt_hash",
+        "remediation_request_hash"
+      ],
+      "invalidation_scope": [
+        "QUARANTINED_ASSET_DECISION"
+      ],
+      "resume_policy": "Resume only after a recorded owner decision for each quarantined asset.",
+      "compensation_action": "Keep asset blocked while Passport evidence continues independently.",
+      "governance_route_refs": [
+        "R01",
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E139_REQUEST_COLLECTION_SCOPE_EXPANSION",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N100_IMAGE_COLLECTION_REVIEW",
+      "target_node_id": "N080_IMAGE_COLLECTION_AUTHORIZATION",
+      "trigger": "SCOPE_EXPANSION_AUTHORIZATION_REQUIRED",
+      "guard_expression": "route_class == COLLECTION_SCOPE_EXPANSION_REQUIRED AND scope_expansion_authorized == false",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_image_collection_review_remediation_request.schema.json",
+      "required_source_receipts": [
+        "IMAGE_COLLECTION_REVIEW_AGGREGATION_RECEIPT",
+        "IMAGE_COLLECTION_REVIEW_REMEDIATION_REQUEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "COLLECTION_SCOPE_EXPANSION:PENDING_OWNER"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_SCOPE_EXPANSION_AUTHORIZATION",
+      "side_effect_precondition": "No new source discovery or provider action before authorization.",
+      "idempotency_key_expression": "aggregation_receipt_hash + requested_scope_hash",
+      "upstream_hash_dependencies": [
+        "aggregation_receipt_hash",
+        "remediation_request_hash"
+      ],
+      "invalidation_scope": [
+        "COLLECTION_SCOPE_AUTHORIZATION"
+      ],
+      "resume_policy": "Return through the normal authorized collection route with a new bounded scope.",
+      "compensation_action": "Keep existing evidence and accepted asset pool unchanged.",
+      "governance_route_refs": [
+        "R01",
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E140_REQUEST_CONTENT_TZ",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N020_PASSPORT_COORDINATION",
+      "target_node_id": "N120_CONTENT_TZ_AUTHORIZATION",
+      "trigger": "PASSPORT_SCOPE_SUFFICIENT_AND_CONTENT_TASK_REQUESTED",
+      "guard_expression": "passport_readiness IN [READY, READY_WITH_LIMITATIONS] AND content_task_requested == true",
+      "required_payload_schema": "AI Design Conveyor/03_Content_TZ/05_Routing/Content_TZ_Agent_On_Request_Contract.md",
+      "required_source_receipts": [
+        "CURRENT_PASSPORT_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ_REQUEST:PENDING_OWNER"
+        ]
+      },
+      "failure_route_ids": [
+        "E090_REQUEST_IMAGE_COLLECTION"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_CONTENT_TZ_REQUEST",
+      "side_effect_precondition": "No Content TZ authoring before accepted scope.",
+      "idempotency_key_expression": "content_tz_request_id + passport_hash",
+      "upstream_hash_dependencies": [
+        "passport_hash",
+        "product_media_registry_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_TZ_REQUEST"
+      ],
+      "resume_policy": "Wait for explicit marketplace, locale, deliverable and readiness decision.",
+      "compensation_action": "Keep Passport ready without starting downstream content production.",
+      "governance_route_refs": [
+        "R01",
+        "R02",
+        "R10",
+        "R11"
+      ]
+    },
+    {
+      "edge_id": "E150_START_CONTENT_TZ_AUTHORING",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N120_CONTENT_TZ_AUTHORIZATION",
+      "target_node_id": "N130_CONTENT_TZ_AUTHORING",
+      "trigger": "CONTENT_TZ_REQUEST_ACCEPTED",
+      "guard_expression": "request_scope_complete == true AND passport_hash_pinned == true AND content_tz_scenario_control == SCENARIO_SELECTED",
+      "required_payload_schema": "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/input_intake_schema.json",
+      "required_source_receipts": [
+        "CONTENT_TZ_REQUEST_ACCEPTED",
+        "CONTENT_TZ_SCENARIO_CONTROL_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:AUTHORING_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "ACCEPTED_CONTENT_TZ_REQUEST",
+      "side_effect_precondition": "Approved scope and Product Truth are read-only inputs.",
+      "idempotency_key_expression": "content_tz_request_hash + passport_hash + standards_baseline_hash",
+      "upstream_hash_dependencies": [
+        "passport_hash",
+        "content_tz_request_hash",
+        "standards_baseline_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_TZ_AND_ALL_DOWNSTREAM_ARTIFACTS"
+      ],
+      "resume_policy": "Resume from accepted request and pinned source hashes.",
+      "compensation_action": "Return INPUT_BLOCKED without creating speculative TZ.",
+      "governance_route_refs": [
+        "R02",
+        "R03",
+        "R10",
+        "R11"
+      ]
+    },
+    {
+      "edge_id": "E160_VALIDATE_CONTENT_TZ",
+      "edge_version": "1.1",
+      "edge_class": "FORWARD",
+      "source_node_id": "N130_CONTENT_TZ_AUTHORING",
+      "target_node_id": "N140_CONTENT_TZ_VALIDATION",
+      "trigger": "CONTENT_TZ_PACKAGE_READY_FOR_REVIEW",
+      "guard_expression": "content_tz_file_exists == true AND expected_deliverables_draft_exists == true AND content_tz_self_check == SELF_CHECK_PASS AND source_bindings_complete == true",
+      "required_payload_schema": "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/tz_output_schema.json",
+      "required_source_receipts": [
+        "CONTENT_TZ_READY_FOR_REVIEW",
+        "CONTENT_TZ_EXPECTED_DELIVERABLES_SELF_CHECK_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_validator_input_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:PENDING_VALIDATION",
+          "EXPECTED_DELIVERABLES_DRAFT:PENDING_VALIDATION"
+        ]
+      },
+      "failure_route_ids": [
+        "E165_REWORK_CONTENT_TZ"
+      ],
+      "retry_route_id": "E165_REWORK_CONTENT_TZ",
+      "approval_requirement": "NONE",
+      "side_effect_precondition": "Read-only validation.",
+      "idempotency_key_expression": "content_tz_hash + expected_deliverables_draft_hash + self_check_receipt_hash + validator_suite_hash",
+      "upstream_hash_dependencies": [
+        "content_tz_hash",
+        "expected_deliverables_draft_hash",
+        "self_check_receipt_hash",
+        "passport_hash",
+        "standards_baseline_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_TZ_PACKAGE_VALIDATION_RECEIPT",
+        "EXPECTED_MANIFEST_NOT_FROZEN"
+      ],
+      "resume_policy": "Rerun only after TZ or validator change.",
+      "compensation_action": "Preserve failed TZ version and exact defect list.",
+      "governance_route_refs": [
+        "R11",
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E165_REWORK_CONTENT_TZ",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N140_CONTENT_TZ_VALIDATION",
+      "target_node_id": "N130_CONTENT_TZ_AUTHORING",
+      "trigger": "CONTENT_TZ_VALIDATION_FAIL_OR_SEMANTIC_GAP",
+      "guard_expression": "tz_validation IN [CONTENT_TZ_VALIDATION_FAIL, CONTENT_TZ_SEMANTIC_GAP]",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_targeted_rework_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_CONTENT_TZ_VALIDATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:TARGETED_REWORK"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": "E160_VALIDATE_CONTENT_TZ",
+      "approval_requirement": "NONE_FOR_TARGETED_REWORK_WITHIN_APPROVED_SCOPE",
+      "side_effect_precondition": "No strategy or Product Truth change without upstream decision.",
+      "idempotency_key_expression": "failed_tz_receipt_hash + content_tz_version",
+      "upstream_hash_dependencies": [
+        "failed_tz_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_TZ_FIELDS_AND_UNFROZEN_DOWNSTREAM"
+      ],
+      "resume_policy": "Resume with exact classified defects.",
+      "compensation_action": "Return to Passport or owner if defect is upstream, not TZ execution.",
+      "governance_route_refs": [
+        "R11",
+        "R12"
+      ]
+    },
+    {
+      "edge_id": "E161_CANCEL_CONTENT_TZ_AFTER_REVIEW",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N145_CONTENT_TZ_HUMAN_REVIEW",
+      "target_node_id": "N146_CONTENT_TZ_REVIEW_CANCELLATION",
+      "trigger": "CONTENT_TZ_REVIEW_CANCELLED",
+      "guard_expression": "review_decision == CANCEL",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_human_review_receipt.schema.json",
+      "required_source_receipts": [
+        "CONTENT_TZ_HUMAN_REVIEW_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_human_review_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_COMPLETED",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:REVIEW_CANCELLED",
+          "DOWNSTREAM:NOT_STARTED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_OWNER_CANCEL",
+      "side_effect_precondition": "No Prompt Agent, provider or publication side effect has started.",
+      "idempotency_key_expression": "content_tz_human_review_receipt_hash + CANCEL",
+      "upstream_hash_dependencies": [
+        "content_tz_hash",
+        "content_tz_human_review_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "CURRENT_RUN_ONLY"
+      ],
+      "resume_policy": "No resume; a future request creates a new run.",
+      "compensation_action": "Keep Content TZ and review receipt as historical evidence.",
+      "governance_route_refs": [
+        "R11",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E162_SUBMIT_EDITED_CONTENT_TZ_FOR_REVALIDATION",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N145_CONTENT_TZ_HUMAN_REVIEW",
+      "target_node_id": "N140_CONTENT_TZ_VALIDATION",
+      "trigger": "CONTENT_TZ_HUMAN_EDIT_SUBMITTED",
+      "guard_expression": "review_decision == EDIT_SUBMITTED AND result_revision_new == true AND validation_required == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_human_review_receipt.schema.json",
+      "required_source_receipts": [
+        "CONTENT_TZ_HUMAN_REVIEW_RECEIPT",
+        "EDITED_CONTENT_TZ_REVISION"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_validator_input_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:PENDING_REVALIDATION",
+          "EXPECTED_DELIVERABLES_DRAFT:PENDING_REVALIDATION"
+        ]
+      },
+      "failure_route_ids": [
+        "E163_RETURN_CONTENT_TZ_TO_AUTHORING"
+      ],
+      "retry_route_id": "E163_RETURN_CONTENT_TZ_TO_AUTHORING",
+      "approval_requirement": "SATISFIED_BY_EXACT_HUMAN_EDIT_RECEIPT",
+      "side_effect_precondition": "Edited revision is immutable, prior revision is preserved and downstream freeze is forbidden.",
+      "idempotency_key_expression": "content_tz_human_review_receipt_hash + result_content_tz_hash",
+      "upstream_hash_dependencies": [
+        "reviewed_content_tz_hash",
+        "result_content_tz_hash",
+        "content_tz_human_review_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_TZ_PACKAGE_VALIDATION_RECEIPT",
+        "EXPECTED_MANIFEST_NOT_FROZEN"
+      ],
+      "resume_policy": "Only a new N140 validation pass can continue.",
+      "compensation_action": "Preserve both revisions and return exact validation defects.",
+      "governance_route_refs": [
+        "R11",
+        "R12",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E163_RETURN_CONTENT_TZ_TO_AUTHORING",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N145_CONTENT_TZ_HUMAN_REVIEW",
+      "target_node_id": "N130_CONTENT_TZ_AUTHORING",
+      "trigger": "CONTENT_TZ_REVIEW_RETURN_TO_AGENT",
+      "guard_expression": "review_decision == RETURN_TO_AGENT AND requested_changes_complete == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_human_review_receipt.schema.json",
+      "required_source_receipts": [
+        "CONTENT_TZ_HUMAN_REVIEW_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:HUMAN_REQUESTED_REWORK"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": "E160_VALIDATE_CONTENT_TZ",
+      "approval_requirement": "SATISFIED_BY_EXACT_RETURN_TO_AGENT_RECEIPT",
+      "side_effect_precondition": "Only requested fields may change; Product Truth and scope remain pinned.",
+      "idempotency_key_expression": "content_tz_human_review_receipt_hash + reviewed_content_tz_hash",
+      "upstream_hash_dependencies": [
+        "reviewed_content_tz_hash",
+        "content_tz_human_review_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_CONTENT_TZ_FIELDS",
+        "UNFROZEN_EXPECTED_DELIVERABLES_DRAFT"
+      ],
+      "resume_policy": "Create a new revision, self-check and return through E160.",
+      "compensation_action": "Escalate scope or Product Truth requests instead of applying them inline.",
+      "governance_route_refs": [
+        "R11",
+        "R12",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E166_REQUEST_CONTENT_TZ_HUMAN_REVIEW",
+      "edge_version": "1.1",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N140_CONTENT_TZ_VALIDATION",
+      "target_node_id": "N145_CONTENT_TZ_HUMAN_REVIEW",
+      "trigger": "CONTENT_TZ_PACKAGE_VALIDATION_PASS_AND_REVIEW_REQUIRED",
+      "guard_expression": "content_tz_validation == PASS AND expected_draft_validation == PASS AND cross_artifact_parity == PASS AND review_mode == HUMAN_REVIEW_REQUIRED",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_launch_control.schema.json",
+      "required_source_receipts": [
+        "CONTENT_TZ_PACKAGE_VALIDATION_PASS",
+        "CONTENT_TZ_EXPECTED_DELIVERABLES_SELF_CHECK_RECEIPT",
+        "CONTENT_TZ_SCENARIO_CONTROL_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:HUMAN_REVIEW_REQUIRED"
+        ]
+      },
+      "failure_route_ids": [
+        "E165_REWORK_CONTENT_TZ"
+      ],
+      "retry_route_id": "E165_REWORK_CONTENT_TZ",
+      "approval_requirement": "CONTENT_TZ_HUMAN_REVIEW_REQUIRED_BY_LAUNCH_CONTROL",
+      "side_effect_precondition": "No downstream compilation before named owner decision.",
+      "idempotency_key_expression": "content_tz_hash + launch_control_id",
+      "upstream_hash_dependencies": [
+        "content_tz_hash",
+        "launch_control_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_TZ_HUMAN_REVIEW_RECEIPT"
+      ],
+      "resume_policy": "Wait; silence is not acceptance.",
+      "compensation_action": "Preserve validated Content TZ and return exact review findings if rejected.",
+      "governance_route_refs": [
+        "R11",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E167_REVIEWED_END_TO_END_TO_FREEZE",
+      "edge_version": "1.1",
+      "edge_class": "FORWARD",
+      "source_node_id": "N145_CONTENT_TZ_HUMAN_REVIEW",
+      "target_node_id": "N150_EXPECTED_DELIVERABLES_FREEZE",
+      "trigger": "CONTENT_TZ_ACCEPTED_WITHOUT_CHANGES_FOR_INTERNAL_PIPELINE",
+      "guard_expression": "delivery_route == INTERNAL_PIPELINE AND review_mode == HUMAN_REVIEW_REQUIRED AND review_decision == ACCEPT_WITHOUT_CHANGES AND content_tz_package_validation == PASS AND reviewed_draft_hash_current == true",
+      "required_payload_schema": "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/expected_deliverables_manifest_schema.json",
+      "required_source_receipts": [
+        "CONTENT_TZ_HUMAN_REVIEW_RECEIPT",
+        "CONTENT_TZ_PACKAGE_VALIDATION_PASS",
+        "CONTENT_TZ_EXPECTED_DELIVERABLES_SELF_CHECK_RECEIPT",
+        "CONTENT_TZ_SCENARIO_CONTROL_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_expected_deliverables_freeze_input_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "EXPECTED_DELIVERABLES_MANIFEST:FREEZE_PENDING"
+        ]
+      },
+      "failure_route_ids": [
+        "E175_REWORK_EXPECTED_DELIVERABLES"
+      ],
+      "retry_route_id": "E175_REWORK_EXPECTED_DELIVERABLES",
+      "approval_requirement": "SATISFIED_BY_ACCEPT_WITHOUT_CHANGES_RECEIPT",
+      "side_effect_precondition": "Internal local processing only.",
+      "idempotency_key_expression": "content_tz_human_review_receipt_hash + content_tz_package_validation_hash + expected_manifest_hash",
+      "upstream_hash_dependencies": [
+        "content_tz_hash",
+        "expected_manifest_hash",
+        "content_tz_package_validation_hash",
+        "launch_control_hash"
+      ],
+      "invalidation_scope": [
+        "EXPECTED_DELIVERABLES_MANIFEST",
+        "ALL_PROMPT_AND_CREATOR_OUTPUTS"
+      ],
+      "resume_policy": "Continue automatically after accepted review.",
+      "compensation_action": "Return only manifest defects to Content TZ.",
+      "governance_route_refs": [
+        "R11",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E168_COMPLETE_CONTENT_TZ_ONLY",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N140_CONTENT_TZ_VALIDATION",
+      "target_node_id": "N147_EXTERNAL_CONTENT_TZ_EXPORT",
+      "trigger": "CONTENT_TZ_VALIDATION_PASS_FOR_EXTERNAL_EXPORT",
+      "guard_expression": "delivery_route == EXTERNAL_DELIVERY AND review_mode == AUTO_CONTINUE",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_launch_control.schema.json",
+      "required_source_receipts": [
+        "CONTENT_TZ_VALIDATION_PASS",
+        "CONTENT_TZ_SCENARIO_CONTROL_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_external_content_tz_delivery_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:EXPORT_PENDING",
+          "DOWNSTREAM:NOT_STARTED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXTERNAL_TZ_DELIVERY_SCENARIO_SELECTED",
+      "side_effect_precondition": "Prompt Agent and provider remain not started.",
+      "idempotency_key_expression": "content_tz_hash + launch_control_id + CONTENT_TZ_READY",
+      "upstream_hash_dependencies": [
+        "content_tz_hash",
+        "launch_control_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_TZ_EDITABLE_EXPORT",
+        "CONTENT_TZ_EXPORT_MANIFEST"
+      ],
+      "resume_policy": "Continue only to E171 after export package validation.",
+      "compensation_action": "Keep canonical Content TZ validated and report exact export failure.",
+      "governance_route_refs": [
+        "R11",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E169_COMPLETE_REVIEWED_CONTENT_TZ_ONLY",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N145_CONTENT_TZ_HUMAN_REVIEW",
+      "target_node_id": "N147_EXTERNAL_CONTENT_TZ_EXPORT",
+      "trigger": "CONTENT_TZ_ACCEPTED_WITHOUT_CHANGES_FOR_EXTERNAL_DELIVERY",
+      "guard_expression": "delivery_route == EXTERNAL_DELIVERY AND review_mode == HUMAN_REVIEW_REQUIRED AND review_decision == ACCEPT_WITHOUT_CHANGES",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_launch_control.schema.json",
+      "required_source_receipts": [
+        "CONTENT_TZ_HUMAN_REVIEW_RECEIPT",
+        "CONTENT_TZ_SCENARIO_CONTROL_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_external_content_tz_delivery_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:EXPORT_PENDING",
+          "DOWNSTREAM:NOT_STARTED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "SATISFIED_BY_ACCEPT_WITHOUT_CHANGES_RECEIPT",
+      "side_effect_precondition": "Prompt Agent and provider remain not started.",
+      "idempotency_key_expression": "content_tz_human_review_receipt_hash + CONTENT_TZ_READY",
+      "upstream_hash_dependencies": [
+        "content_tz_hash",
+        "launch_control_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_TZ_EDITABLE_EXPORT",
+        "CONTENT_TZ_EXPORT_MANIFEST"
+      ],
+      "resume_policy": "Continue only to E171 after export package validation.",
+      "compensation_action": "Keep canonical Content TZ and accepted review receipt; report exact export failure.",
+      "governance_route_refs": [
+        "R11",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E170_FREEZE_EXPECTED_DELIVERABLES",
+      "edge_version": "1.1",
+      "edge_class": "FORWARD",
+      "source_node_id": "N140_CONTENT_TZ_VALIDATION",
+      "target_node_id": "N150_EXPECTED_DELIVERABLES_FREEZE",
+      "trigger": "CONTENT_TZ_PACKAGE_VALIDATION_PASS",
+      "guard_expression": "tz_validation == PASS AND expected_draft_validation == PASS AND cross_artifact_parity == PASS AND expected_deliverable_requirements_complete == true AND delivery_route == INTERNAL_PIPELINE AND review_mode == AUTO_CONTINUE",
+      "required_payload_schema": "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/expected_deliverables_manifest_schema.json",
+      "required_source_receipts": [
+        "CONTENT_TZ_PACKAGE_VALIDATION_PASS",
+        "CONTENT_TZ_EXPECTED_DELIVERABLES_SELF_CHECK_RECEIPT",
+        "CONTENT_TZ_SCENARIO_CONTROL_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_expected_deliverables_freeze_input_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "EXPECTED_DELIVERABLES_MANIFEST:FREEZE_PENDING"
+        ]
+      },
+      "failure_route_ids": [
+        "E175_REWORK_EXPECTED_DELIVERABLES"
+      ],
+      "retry_route_id": "E175_REWORK_EXPECTED_DELIVERABLES",
+      "approval_requirement": "NONE_AFTER_ACCEPTED_TZ_SCOPE",
+      "side_effect_precondition": "Manifest is created from TZ, never from produced outputs.",
+      "idempotency_key_expression": "content_tz_hash + expected_manifest_version",
+      "upstream_hash_dependencies": [
+        "content_tz_hash"
+      ],
+      "invalidation_scope": [
+        "EXPECTED_DELIVERABLES_MANIFEST",
+        "ALL_PROMPT_AND_CREATOR_OUTPUTS"
+      ],
+      "resume_policy": "Do not continue until immutable manifest freeze receipt exists.",
+      "compensation_action": "Return missing expectation fields to Content TZ authoring.",
+      "governance_route_refs": [
+        "R11",
+        "R12",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E171_DELIVER_EXTERNAL_CONTENT_TZ",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N147_EXTERNAL_CONTENT_TZ_EXPORT",
+      "target_node_id": "N149_EXTERNAL_CONTENT_TZ_DELIVERY",
+      "trigger": "EXTERNAL_TZ_EXPORT_READY",
+      "guard_expression": "export_validation == PASS AND delivery_authority_valid == true AND recipient_bound == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_external_content_tz_delivery_receipt.schema.json",
+      "required_source_receipts": [
+        "EXTERNAL_TZ_EXPORT_READY",
+        "CONTENT_TZ_SCENARIO_CONTROL_RECEIPT",
+        "DELIVERY_AUTHORITY_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_external_content_tz_delivery_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_COMPLETED",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ_EXPORT:DELIVERY_DISPOSITION_RECORDED",
+          "DOWNSTREAM:NOT_STARTED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_EXACT_EXPORT_DELIVERY_AUTHORITY",
+      "side_effect_precondition": "Exact export hash, recipient, method and authority are sealed; external adapter receipt is mandatory for DELIVERED.",
+      "idempotency_key_expression": "editable_export_hash + recipient_id + delivery_method + authority_ref",
+      "upstream_hash_dependencies": [
+        "content_tz_hash",
+        "editable_export_hash",
+        "export_manifest_hash",
+        "delivery_authority_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_TZ_DELIVERY_RECEIPT"
+      ],
+      "resume_policy": "Terminal after delivery disposition; a future generation request starts a new run.",
+      "compensation_action": "Remain at export-ready local package when external delivery is blocked or outcome is unknown.",
+      "governance_route_refs": [
+        "R11",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E175_REWORK_EXPECTED_DELIVERABLES",
+      "edge_version": "1.1",
+      "edge_class": "REWORK",
+      "source_node_id": "N150_EXPECTED_DELIVERABLES_FREEZE",
+      "target_node_id": "N130_CONTENT_TZ_AUTHORING",
+      "trigger": "EXPECTED_DELIVERABLES_TARGETED_REWORK_REQUIRED",
+      "guard_expression": "route_class IN [DRAFT_LOCAL_REWORK, CONTENT_TZ_FIELD_REWORK] AND remediation_attempt == 1 AND same_defect_occurrence == 1 AND scope_change_authorized == false",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_expected_deliverables_remediation_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_EXPECTED_MANIFEST_RECEIPT",
+        "EXPECTED_DELIVERABLES_REMEDIATION_REQUEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:EXPECTED_SET_REWORK"
+        ]
+      },
+      "failure_route_ids": [
+        "E176_REVALIDATE_EXPECTED_DELIVERABLE_BINDINGS",
+        "E177_REQUEST_DELIVERABLE_SCOPE_DECISION",
+        "E178_ROUTE_EXPECTED_DELIVERABLE_UPSTREAM_GAP",
+        "E179_ESCALATE_EXPECTED_DELIVERABLE_DEFECT"
+      ],
+      "retry_route_id": "E160_VALIDATE_CONTENT_TZ",
+      "approval_requirement": "NONE_FOR_ONE_TARGETED_REWORK_WITHIN_ACCEPTED_SCOPE",
+      "side_effect_precondition": "Only named fields and assets may change; frozen prior version remains immutable.",
+      "idempotency_key_expression": "failed_expected_manifest_receipt_hash + defect_fingerprints + remediation_attempt",
+      "upstream_hash_dependencies": [
+        "failed_expected_manifest_receipt_hash",
+        "expected_deliverables_remediation_request_hash"
+      ],
+      "invalidation_scope": [
+        "EXPECTED_DELIVERABLES_FIELDS",
+        "UNBUILT_DOWNSTREAM_ONLY"
+      ],
+      "resume_policy": "Revalidate the complete Content TZ package after one targeted correction; repeated fingerprint escalates instead of looping.",
+      "compensation_action": "Keep previous frozen manifest immutable and preserve the rejected draft plus defect evidence.",
+      "governance_route_refs": [
+        "R11",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E176_REVALIDATE_EXPECTED_DELIVERABLE_BINDINGS",
+      "edge_version": "1.0",
+      "edge_class": "RETRY",
+      "source_node_id": "N150_EXPECTED_DELIVERABLES_FREEZE",
+      "target_node_id": "N140_CONTENT_TZ_VALIDATION",
+      "trigger": "EXPECTED_DELIVERABLE_BINDING_REVALIDATION_REQUIRED",
+      "guard_expression": "route_class == STALE_BINDING_REVALIDATION",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_expected_deliverables_remediation_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_EXPECTED_MANIFEST_RECEIPT",
+        "EXPECTED_DELIVERABLES_REMEDIATION_REQUEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_validator_input_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ_PACKAGE:REVALIDATION_REQUIRED"
+        ]
+      },
+      "failure_route_ids": [
+        "E179_ESCALATE_EXPECTED_DELIVERABLE_DEFECT"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_FOR_HASH_REVALIDATION",
+      "side_effect_precondition": "Content TZ and deliverable scope must not change.",
+      "idempotency_key_expression": "content_tz_hash + draft_manifest_hash + current_dependency_hashes",
+      "upstream_hash_dependencies": [
+        "content_tz_hash",
+        "draft_manifest_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_TZ_PACKAGE_VALIDATION_RECEIPT"
+      ],
+      "resume_policy": "Recompute bindings and rerun independent package validation once.",
+      "compensation_action": "Preserve content and await owner decision if binding remains unresolved.",
+      "governance_route_refs": [
+        "R12",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E177_REQUEST_DELIVERABLE_SCOPE_DECISION",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N150_EXPECTED_DELIVERABLES_FREEZE",
+      "target_node_id": "N120_CONTENT_TZ_AUTHORIZATION",
+      "trigger": "DELIVERABLE_SCOPE_CHANGE_DECISION_REQUIRED",
+      "guard_expression": "route_class == DELIVERABLE_SCOPE_CHANGE_REQUIRED",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_expected_deliverables_remediation_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_EXPECTED_MANIFEST_RECEIPT",
+        "EXPECTED_DELIVERABLES_REMEDIATION_REQUEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "DELIVERABLE_SCOPE_CHANGE:PENDING_OWNER"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_DELIVERABLE_SCOPE_CHANGE_DECISION",
+      "side_effect_precondition": "No asset add, delete, merge, split, rename, locale or count change before decision.",
+      "idempotency_key_expression": "failed_expected_manifest_receipt_hash + requested_scope_delta_hash",
+      "upstream_hash_dependencies": [
+        "failed_expected_manifest_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_TZ_SCOPE",
+        "EXPECTED_DELIVERABLES_DRAFT"
+      ],
+      "resume_policy": "Resume through N130 with a newly authorized scope revision.",
+      "compensation_action": "Keep current scope and all frozen manifests unchanged.",
+      "governance_route_refs": [
+        "R01",
+        "R11",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E178_ROUTE_EXPECTED_DELIVERABLE_UPSTREAM_GAP",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N150_EXPECTED_DELIVERABLES_FREEZE",
+      "target_node_id": "N020_PASSPORT_COORDINATION",
+      "trigger": "EXPECTED_DELIVERABLE_UPSTREAM_INPUT_REQUIRED",
+      "guard_expression": "route_class == UPSTREAM_EVIDENCE_GAP",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_expected_deliverables_remediation_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_EXPECTED_MANIFEST_RECEIPT",
+        "EXPECTED_DELIVERABLES_REMEDIATION_REQUEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "EXPECTED_DELIVERABLES:UPSTREAM_INPUT_BLOCKED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_FOR_00A_CLASSIFIED_UPSTREAM_ROUTE",
+      "side_effect_precondition": "Content TZ Agent must not invent Product Truth or evidence.",
+      "idempotency_key_expression": "defect_fingerprints + passport_hash",
+      "upstream_hash_dependencies": [
+        "passport_hash",
+        "failed_expected_manifest_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_PRODUCT_TRUTH_BINDINGS",
+        "CONTENT_TZ_PACKAGE"
+      ],
+      "resume_policy": "Return only after accepted upstream receipt and rebuild the affected package.",
+      "compensation_action": "Keep downstream generation blocked.",
+      "governance_route_refs": [
+        "R02",
+        "R11"
+      ]
+    },
+    {
+      "edge_id": "E179_ESCALATE_EXPECTED_DELIVERABLE_DEFECT",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N150_EXPECTED_DELIVERABLES_FREEZE",
+      "target_node_id": "N120_CONTENT_TZ_AUTHORIZATION",
+      "trigger": "EXPECTED_DELIVERABLE_DEFECT_OWNER_DECISION_REQUIRED",
+      "guard_expression": "route_class IN [FREEZE_CONTROL_DEFECT, REPEATED_DEFECT_ESCALATION]",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_expected_deliverables_remediation_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_EXPECTED_MANIFEST_RECEIPT",
+        "EXPECTED_DELIVERABLES_REMEDIATION_REQUEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "EXPECTED_DELIVERABLES_DEFECT:ESCALATED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_OWNER_DECISION",
+      "side_effect_precondition": "No automatic repeat for the same fingerprint and no mutation of frozen manifests.",
+      "idempotency_key_expression": "defect_fingerprints + same_defect_occurrence",
+      "upstream_hash_dependencies": [
+        "failed_expected_manifest_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "EXPECTED_DELIVERABLES_FREEZE_DECISION"
+      ],
+      "resume_policy": "Resume only from a recorded owner route decision.",
+      "compensation_action": "Stop the branch and preserve all evidence.",
+      "governance_route_refs": [
+        "R01",
+        "R14"
+      ]
+    },
+    {
+      "edge_id": "E180_PREPARE_EXECUTION_INPUTS",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N150_EXPECTED_DELIVERABLES_FREEZE",
+      "target_node_id": "N155_CONTENT_TZ_EXECUTION_INPUT_ROUTING",
+      "trigger": "EXPECTED_DELIVERABLES_MANIFEST_FROZEN",
+      "guard_expression": "content_tz_validation == PASS AND expected_manifest_frozen == true AND semantic_scope_frozen == true",
+      "required_payload_schema": "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/expected_deliverables_manifest_schema.json",
+      "required_source_receipts": [
+        "EXPECTED_DELIVERABLES_MANIFEST_FROZEN",
+        "CONTENT_TZ_VALIDATION_PASS"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "EXECUTION_INPUTS:ROUTING_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_AFTER_ACCEPTED_CONTENT_SCOPE",
+      "side_effect_precondition": "Local reversible assessment and routing only; no provider call.",
+      "idempotency_key_expression": "content_tz_hash + expected_manifest_hash + product_truth_hash + media_registry_hash",
+      "upstream_hash_dependencies": [
+        "content_tz_hash",
+        "expected_manifest_hash",
+        "product_truth_hash",
+        "product_media_registry_hash"
+      ],
+      "invalidation_scope": [
+        "EXECUTION_INPUTS",
+        "PROMPT_PACKAGE_AND_ALL_CREATOR_OUTPUTS"
+      ],
+      "resume_policy": "Resume automatically from frozen manifest and pinned input hashes without human approval.",
+      "compensation_action": "Return only affected expected_asset_id to Content TZ routing.",
+      "governance_route_refs": [
+        "R14",
+        "R15"
+      ]
+    },
+    {
+      "edge_id": "E183_RESOLVE_PROMPT_AGENT_RUNTIME",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N155_CONTENT_TZ_EXECUTION_INPUT_ROUTING",
+      "target_node_id": "N158_AGENT_RUNTIME_RESOLUTION",
+      "trigger": "EXECUTION_INPUTS_READY",
+      "guard_expression": "execution_inputs_frozen == true AND route_receipt_count == expected_asset_count AND prompt_receiver_status == ACCEPTED",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_prompt_input_acceptance_receipt.schema.json",
+      "required_source_receipts": [
+        "EXECUTION_INPUTS_READY",
+        "PROMPT_INPUT_ACCEPTED"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_agent_runtime_resolution_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROMPT_AGENT:RUNTIME_RESOLUTION_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": "E184_RELOAD_AND_RERESOLVE_PROMPT_AGENT",
+      "approval_requirement": "NONE_FOR_READ_ONLY_RUNTIME_RESOLUTION",
+      "side_effect_precondition": "No provider call, prompt compilation or publication side effect.",
+      "idempotency_key_expression": "prompt_input_acceptance_hash + canonical_skill_hash + installed_skill_hash + adapter_registry_hash",
+      "upstream_hash_dependencies": [
+        "prompt_input_acceptance_hash",
+        "canonical_skill_hash",
+        "installed_skill_hash",
+        "adapter_registry_hash"
+      ],
+      "invalidation_scope": [
+        "AGENT_RUNTIME_RESOLUTION_RECEIPT"
+      ],
+      "resume_policy": "Continue only on AGENT_RESOLVED_READY; request one reload on AGENT_RELOAD_REQUIRED.",
+      "compensation_action": "Preserve frozen execution inputs and classify the exact runtime resolution defect.",
+      "governance_route_refs": [
+        "R14",
+        "R15"
+      ]
+    },
+    {
+      "edge_id": "E184_RELOAD_AND_RERESOLVE_PROMPT_AGENT",
+      "edge_version": "1.0",
+      "edge_class": "RETRY",
+      "source_node_id": "N158_AGENT_RUNTIME_RESOLUTION",
+      "target_node_id": "N158_AGENT_RUNTIME_RESOLUTION",
+      "trigger": "AGENT_RELOAD_REQUIRED",
+      "guard_expression": "agent_resolution_verdict == AGENT_RELOAD_REQUIRED AND reload_attempt_count == 0",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_agent_runtime_resolution_receipt.schema.json",
+      "required_source_receipts": [
+        "AGENT_RELOAD_REQUIRED"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_agent_runtime_resolution_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": false,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROMPT_AGENT:RELOAD_AND_RERESOLVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_FOR_SINGLE_LOCAL_RELOAD",
+      "side_effect_precondition": "At most one host skill/adapter reload; no provider or publication action.",
+      "idempotency_key_expression": "prior_resolution_receipt_hash + reload_attempt_count",
+      "upstream_hash_dependencies": [
+        "prior_resolution_receipt_hash",
+        "canonical_skill_hash",
+        "installed_skill_hash"
+      ],
+      "invalidation_scope": [
+        "AGENT_RUNTIME_RESOLUTION_RECEIPT"
+      ],
+      "resume_policy": "Second unresolved result becomes recoverable RUN_BLOCKED; never emit AGENT_NOT_FOUND.",
+      "compensation_action": "Keep N158 checkpoint and all upstream artifacts unchanged.",
+      "governance_route_refs": [
+        "R14",
+        "R15"
+      ]
+    },
+    {
+      "edge_id": "E185_COMPILE_PROMPT_PACKAGE",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N158_AGENT_RUNTIME_RESOLUTION",
+      "target_node_id": "N160_PROMPT_PACKAGE_COMPILATION",
+      "trigger": "AGENT_RESOLVED_READY",
+      "guard_expression": "agent_resolution_verdict == AGENT_RESOLVED_READY AND input_check == INPUT_ADMISSIBLE",
+      "required_payload_schema": "AI Design Conveyor/05_Prompt_Compilation/schemas/prompt_agent_input.schema.json",
+      "required_source_receipts": [
+        "EXECUTION_INPUTS_READY",
+        "PROMPT_INPUT_ACCEPTED",
+        "AGENT_RESOLVED_READY"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_prompt_input_acceptance_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "EXECUTION_INPUTS:FROZEN",
+          "PROMPT_PACKAGE:COMPILATION_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [
+        "E187_REWORK_EXECUTION_INPUTS"
+      ],
+      "retry_route_id": "E187_REWORK_EXECUTION_INPUTS",
+      "approval_requirement": "NONE_FOR_ACCEPTED_SCOPE_AND_COMPLETE_EXECUTION_INPUTS",
+      "side_effect_precondition": "Prompt Agent acceptance is read-only and cannot call provider.",
+      "idempotency_key_expression": "execution_input_routing_receipt_hash + agent_runtime_resolution_receipt_hash + prompt_agent_version",
+      "upstream_hash_dependencies": [
+        "content_tz_hash",
+        "expected_manifest_hash",
+        "product_truth_hash",
+        "execution_input_routing_receipt_hash",
+        "agent_runtime_resolution_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "PROMPT_PACKAGE_AND_ALL_CREATOR_OUTPUTS"
+      ],
+      "resume_policy": "Continue automatically after schema-valid Prompt receiver ACCEPTED receipt.",
+      "compensation_action": "Return exact rejected route or assessment IDs to N155 without reopening accepted semantic scope.",
+      "governance_route_refs": [
+        "R14",
+        "R15"
+      ]
+    },
+    {
+      "edge_id": "E187_REWORK_EXECUTION_INPUTS",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N160_PROMPT_PACKAGE_COMPILATION",
+      "target_node_id": "N155_CONTENT_TZ_EXECUTION_INPUT_ROUTING",
+      "trigger": "PROMPT_RECEIVER_REJECTS_EXECUTION_INPUTS",
+      "guard_expression": "prompt_receiver_status == REJECTED AND rejection_class IN [PRODUCT_TRUTH_INSUFFICIENT, TARGET_DESCRIPTION_INSUFFICIENT, USEFUL_SIGNAL_UNCLASSIFIED, PRODUCT_TRUTH_CONFLICT_NOT_ISOLATED, REGISTRY_ENRICHMENT_REQUIRED, ROUTE_BINDING_MISMATCH]",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_prompt_input_acceptance_receipt.schema.json",
+      "required_source_receipts": [
+        "PROMPT_INPUT_REJECTED"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "EXECUTION_INPUTS:BOUNDED_REWORK"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": "E185_COMPILE_PROMPT_PACKAGE",
+      "approval_requirement": "NONE_FOR_BOUNDED_ROUTING_REWORK",
+      "side_effect_precondition": "Do not alter frozen deliverable scope or Product Truth.",
+      "idempotency_key_expression": "prompt_input_rejection_hash + affected_expected_asset_ids",
+      "upstream_hash_dependencies": [
+        "prompt_input_rejection_hash",
+        "expected_manifest_hash",
+        "product_truth_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_EXECUTION_INPUT_ROUTES",
+        "UNBUILT_PROMPT_UNITS"
+      ],
+      "resume_policy": "Rerun only affected assessments/routes, then renew receiver acceptance.",
+      "compensation_action": "Escalate to owner only if requested deliverable scope or Product Truth must change.",
+      "governance_route_refs": [
+        "R14",
+        "R15"
+      ]
+    },
+    {
+      "edge_id": "E190_VALIDATE_PROMPT_PACKAGE",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N160_PROMPT_PACKAGE_COMPILATION",
+      "target_node_id": "N170_PROMPT_PACKAGE_VALIDATION",
+      "trigger": "READY_FOR_GENERATION_REVIEW",
+      "guard_expression": "prompt_package_exists == true AND semantic_receipt_present == true",
+      "required_payload_schema": "AI Design Conveyor/05_Prompt_Compilation/schemas/prompt_package.schema.json",
+      "required_source_receipts": [
+        "READY_FOR_GENERATION_REVIEW",
+        "SEMANTIC_COMPILATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_prompt_package_validator_input_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROMPT_PACKAGE:PENDING_VALIDATION"
+        ]
+      },
+      "failure_route_ids": [
+        "E195_REWORK_PROMPT_PACKAGE"
+      ],
+      "retry_route_id": "E195_REWORK_PROMPT_PACKAGE",
+      "approval_requirement": "NONE",
+      "side_effect_precondition": "Read-only validation; provider calls prohibited.",
+      "idempotency_key_expression": "prompt_package_hash + validator_suite_hash",
+      "upstream_hash_dependencies": [
+        "prompt_package_hash",
+        "content_tz_hash",
+        "expected_manifest_hash"
+      ],
+      "invalidation_scope": [
+        "PROMPT_VALIDATION_RECEIPT",
+        "CREATOR_RUN_INPUT_NOT_CREATED"
+      ],
+      "resume_policy": "Rerun only after package or validator change.",
+      "compensation_action": "Preserve failed package and exact validation defects.",
+      "governance_route_refs": [
+        "R14",
+        "R15"
+      ]
+    },
+    {
+      "edge_id": "E195_REWORK_PROMPT_PACKAGE",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N170_PROMPT_PACKAGE_VALIDATION",
+      "target_node_id": "N160_PROMPT_PACKAGE_COMPILATION",
+      "trigger": "PROMPT_PACKAGE_VALIDATION_FAIL_OR_SEMANTIC_COMPILATION_FAIL",
+      "guard_expression": "prompt_validation IN [PROMPT_PACKAGE_VALIDATION_FAIL, SEMANTIC_COMPILATION_FAIL]",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_targeted_rework_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_PROMPT_VALIDATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROMPT_PACKAGE:TARGETED_REWORK"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": "E190_VALIDATE_PROMPT_PACKAGE",
+      "approval_requirement": "NONE_FOR_COMPILATION_DEFECT_WITHIN_APPROVED_TZ",
+      "side_effect_precondition": "Prompt Agent cannot alter approved TZ.",
+      "idempotency_key_expression": "failed_prompt_receipt_hash + prompt_package_version",
+      "upstream_hash_dependencies": [
+        "failed_prompt_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_PROMPT_UNITS",
+        "UNEXECUTED_CREATOR_RUNS"
+      ],
+      "resume_policy": "Resume with exact atomic defect list.",
+      "compensation_action": "Return upstream if defect is caused by ambiguous TZ.",
+      "governance_route_refs": [
+        "R14",
+        "R15"
+      ]
+    },
+    {
+      "edge_id": "E200_PREFLIGHT_AI_CREATOR",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N170_PROMPT_PACKAGE_VALIDATION",
+      "target_node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "trigger": "PROMPT_PACKAGE_VALIDATION_PASS",
+      "guard_expression": "prompt_validation == PASS AND one_pilot_asset_selected == true",
+      "required_payload_schema": "AI Design Conveyor/06_Content_Production/schemas/ai_creator_run_input.schema.json",
+      "required_source_receipts": [
+        "PROMPT_PACKAGE_VALIDATION_PASS"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "AI_CREATOR_RUN_INPUT:PREFLIGHT_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [
+        "E195_REWORK_PROMPT_PACKAGE"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "NO_PROVIDER_CALL_AUTHORITY_GRANTED_BY_THIS_EDGE",
+      "side_effect_precondition": "Preflight only; provider execution remains separately gated.",
+      "idempotency_key_expression": "run_input_hash + provider_capability_snapshot_hash",
+      "upstream_hash_dependencies": [
+        "prompt_package_hash",
+        "content_tz_hash",
+        "provider_capability_snapshot_hash"
+      ],
+      "invalidation_scope": [
+        "SEALED_EXECUTION_RECORD",
+        "UNEXECUTED_INVOCATION"
+      ],
+      "resume_policy": "Resume from exact run-input hash.",
+      "compensation_action": "Return classified prompt defect to Prompt Agent; capability problem remains blocked.",
+      "governance_route_refs": [
+        "R15"
+      ]
+    },
+    {
+      "edge_id": "E205_EVALUATE_PROVIDER_EXECUTION_AUTHORITY",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "target_node_id": "N185_PROVIDER_EXECUTION_AUTHORITY_GATE",
+      "trigger": "SEALED_EXECUTION_GATE_PASS",
+      "guard_expression": "preflight == PASS AND sealed_execution_record_exists == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_execution_policy.schema.json",
+      "required_source_receipts": [
+        "SEALED_EXECUTION_GATE_PASS",
+        "PROVIDER_CAPABILITY_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_execution_authority_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROVIDER_EXECUTION_AUTHORITY:PENDING_EVALUATION"
+        ]
+      },
+      "failure_route_ids": [
+        "E215_RETURN_PROMPT_INPUT_DEFECT"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "POLICY_DECLARED_FOR_RUN",
+      "side_effect_precondition": "Read-only authority evaluation; no provider call.",
+      "idempotency_key_expression": "policy_hash + sealed_execution_record_hash + asset_id",
+      "upstream_hash_dependencies": [
+        "provider_execution_policy_hash",
+        "sealed_execution_record_hash",
+        "provider_capability_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "PROVIDER_AUTHORITY_VERDICT_FOR_THIS_ASSET"
+      ],
+      "resume_policy": "Preserve upstream artifacts and wait at authority gate when bounded authority is absent.",
+      "compensation_action": "Do not call provider; preserve provider-ready sealed record.",
+      "governance_route_refs": [
+        "R15",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E207_RESUME_AFTER_PROVIDER_AUTHORITY",
+      "edge_version": "1.0",
+      "edge_class": "RESUME",
+      "source_node_id": "N185_PROVIDER_EXECUTION_AUTHORITY_GATE",
+      "target_node_id": "N185_PROVIDER_EXECUTION_AUTHORITY_GATE",
+      "trigger": "PROVIDER_EXECUTION_POLICY_UPDATED",
+      "guard_expression": "prior_verdict == WAITING_PROVIDER_AUTHORITY AND policy_changed == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_execution_policy.schema.json",
+      "required_source_receipts": [
+        "WAITING_PROVIDER_AUTHORITY",
+        "UPDATED_PROVIDER_EXECUTION_POLICY"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_execution_authority_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": false,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROVIDER_EXECUTION_AUTHORITY:REEVALUATED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NEW_OR_UPDATED_BOUNDED_AUTHORITY",
+      "side_effect_precondition": "Read-only reevaluation; upstream hashes remain pinned.",
+      "idempotency_key_expression": "new_policy_hash + sealed_execution_record_hash + asset_id",
+      "upstream_hash_dependencies": [
+        "new_provider_execution_policy_hash",
+        "sealed_execution_record_hash"
+      ],
+      "invalidation_scope": [
+        "PROVIDER_AUTHORITY_VERDICT_ONLY"
+      ],
+      "resume_policy": "Resume at N185; do not rerun Passport, Content TZ or Prompt Agent while their hashes remain unchanged.",
+      "compensation_action": "Remain WAITING_PROVIDER_AUTHORITY when the new policy is still insufficient.",
+      "governance_route_refs": [
+        "R15",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E206_EVALUATE_PRODUCTION_BATCH_BUDGET",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N185_PROVIDER_EXECUTION_AUTHORITY_GATE",
+      "target_node_id": "N186_PRODUCTION_BATCH_BUDGET_GATE",
+      "trigger": "PROVIDER_EXECUTION_AUTHORIZED",
+      "guard_expression": "authority_verdict == PROVIDER_EXECUTION_AUTHORIZED AND sealed_execution_record_valid == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_production_batch_budget_request.schema.json",
+      "required_source_receipts": [
+        "PROVIDER_EXECUTION_AUTHORIZED",
+        "SEALED_EXECUTION_GATE_PASS"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_production_batch_budget_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PRODUCTION_BATCH_BUDGET:PENDING_EVALUATION"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "IMMUTABLE_RUN_BUDGET_DECLARED",
+      "side_effect_precondition": "Read-only budget evaluation; provider call prohibited.",
+      "idempotency_key_expression": "budget_version + run_fingerprint + usage_counters + next_call_estimate",
+      "upstream_hash_dependencies": [
+        "provider_execution_authority_receipt_hash",
+        "production_batch_budget_request_hash",
+        "usage_ledger_hash"
+      ],
+      "invalidation_scope": [
+        "PRODUCTION_BATCH_BUDGET_VERDICT_FOR_NEXT_CALL"
+      ],
+      "resume_policy": "Resume after terminal invocation reconciliation or versioned budget update; preserve usage counters.",
+      "compensation_action": "Do not start a new provider call; set WAITING_BUDGET_DECISION when exhausted.",
+      "governance_route_refs": [
+        "R15",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E208_RESOLVE_PROVIDER_ADAPTER",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N186_PRODUCTION_BATCH_BUDGET_GATE",
+      "target_node_id": "N187_PROVIDER_ADAPTER_RESOLUTION",
+      "trigger": "PROVIDER_EXECUTION_AUTHORIZED",
+      "guard_expression": "budget_verdict IN [BUDGET_HEALTHY, BUDGET_TIGHT] AND next_call_authorized == true AND sealed_execution_record_valid == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_adapter_resolution_request.schema.json",
+      "required_source_receipts": [
+        "PRODUCTION_BATCH_BUDGET_RECEIPT",
+        "PROVIDER_EXECUTION_AUTHORIZED",
+        "SEALED_EXECUTION_GATE_PASS"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_adapter_resolution_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROVIDER_ADAPTER:PENDING_RESOLUTION"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "SATISFIED_BY_PROVIDER_EXECUTION_AUTHORITY_AND_PRODUCTION_BUDGET",
+      "side_effect_precondition": "Read-only adapter resolution; provider call prohibited.",
+      "idempotency_key_expression": "budget_receipt_hash + authority_receipt_hash + sealed_execution_record_hash + adapter_registry_hash + host_capability_snapshot_hash",
+      "upstream_hash_dependencies": [
+        "production_batch_budget_receipt_hash",
+        "provider_execution_authority_receipt_hash",
+        "sealed_execution_record_hash",
+        "provider_adapter_registry_hash",
+        "host_capability_snapshot_hash"
+      ],
+      "invalidation_scope": [
+        "PROVIDER_ADAPTER_RESOLUTION_FOR_THIS_ASSET"
+      ],
+      "resume_policy": "Re-resolve locally after capability or registry update without rerunning Passport, Content TZ or Prompt Agent.",
+      "compensation_action": "Do not call provider; retain authorized sealed asset and exact blocker verdict.",
+      "governance_route_refs": [
+        "R15",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E209_EVALUATE_PROVIDER_ADMISSION",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N187_PROVIDER_ADAPTER_RESOLUTION",
+      "target_node_id": "N188_PROVIDER_ADMISSION_GATE",
+      "trigger": "ADAPTER_RESOLVED_READY",
+      "guard_expression": "adapter_resolution == ADAPTER_RESOLVED_READY AND authority_verdict == PROVIDER_EXECUTION_AUTHORIZED",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_adapter_resolution_receipt.schema.json",
+      "required_source_receipts": [
+        "ADAPTER_RESOLVED_READY",
+        "PROVIDER_EXECUTION_AUTHORIZED"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_admission_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROVIDER_ADMISSION:PENDING_EVALUATION"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "SATISFIED_BY_BOUNDED_PROVIDER_AUTHORITY",
+      "side_effect_precondition": "Read-only admission evaluation.",
+      "idempotency_key_expression": "adapter_resolution_hash + admission_registry_hash + fingerprint_id",
+      "upstream_hash_dependencies": [
+        "provider_adapter_resolution_receipt_hash",
+        "provider_admission_registry_hash"
+      ],
+      "invalidation_scope": [
+        "PROVIDER_ADMISSION_VERDICT_FOR_FINGERPRINT"
+      ],
+      "resume_policy": "Re-evaluate after commissioning evidence or registry change only.",
+      "compensation_action": "Do not call provider when admission is suspended or requires revalidation.",
+      "governance_route_refs": [
+        "R15",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E211_ACQUIRE_EXECUTION_LEASE",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N188_PROVIDER_ADMISSION_GATE",
+      "target_node_id": "N189_EXECUTION_LEASE_AND_IDEMPOTENCY_GATE",
+      "trigger": "ADAPTER_EXECUTION_ALLOWED",
+      "guard_expression": "admission_verdict IN allowed_execution_verdicts AND budget_verdict IN [BUDGET_HEALTHY, BUDGET_TIGHT]",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_execution_lease_request.schema.json",
+      "required_source_receipts": [
+        "PROVIDER_ADMISSION_RECEIPT",
+        "PRODUCTION_BATCH_BUDGET_RECEIPT",
+        "PROVIDER_EXECUTION_AUTHORIZED",
+        "SEALED_EXECUTION_GATE_PASS"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_execution_lease_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "EXECUTION_LEASE:PENDING"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "SATISFIED_BY_PRIOR_EXECUTION_GATES",
+      "side_effect_precondition": "Local exact-asset lease only; provider call prohibited.",
+      "idempotency_key_expression": "run_id + asset_id + operation + fingerprint_id + sealed_record_hash",
+      "upstream_hash_dependencies": [
+        "provider_admission_receipt_hash",
+        "production_batch_budget_receipt_hash",
+        "sealed_execution_record_hash",
+        "side_effect_ledger_hash"
+      ],
+      "invalidation_scope": [
+        "EXECUTION_LEASE_FOR_EXACT_ASSET_OPERATION"
+      ],
+      "resume_policy": "Return existing lease/result or reconcile ambiguity; do not rerun upstream content stages.",
+      "compensation_action": "Do not call provider when lease is held, conflicted or ambiguous.",
+      "governance_route_refs": [
+        "R15",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E212_REUSE_IDEMPOTENT_PROVIDER_RESULT",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N189_EXECUTION_LEASE_AND_IDEMPOTENCY_GATE",
+      "target_node_id": "N200_AI_CREATOR_OUTPUT_RECORDING",
+      "trigger": "IDEMPOTENT_RESULT_EXISTS",
+      "guard_expression": "lease_verdict == IDEMPOTENT_RESULT_EXISTS AND terminal_execution_receipt_exists == true AND output_file_exists == true",
+      "required_payload_schema": "AI Design Conveyor/06_Content_Production/schemas/ai_creator_run_result.schema.json",
+      "required_source_receipts": [
+        "EXECUTION_LEASE_RECEIPT",
+        "IDEMPOTENT_RESULT_EXISTS",
+        "EXECUTION_RECEIPT",
+        "OUTPUT_SAVED"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_output_recording_acceptance_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROVIDER_OUTPUT:REUSED_PENDING_LINEAGE_VALIDATION"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_FOR_VERIFIED_EXISTING_RESULT",
+      "side_effect_precondition": "No provider call; reuse exact terminal result only.",
+      "idempotency_key_expression": "idempotency_key + execution_receipt_hash + output_file_hash",
+      "upstream_hash_dependencies": [
+        "execution_lease_receipt_hash",
+        "execution_receipt_hash",
+        "output_file_hash"
+      ],
+      "invalidation_scope": [
+        "OUTPUT_MANIFEST_FOR_EXISTING_INVOCATION"
+      ],
+      "resume_policy": "Continue with exact existing terminal result and rebuild only local lineage if required.",
+      "compensation_action": "Quarantine invalid existing result and require reconciliation; do not call provider.",
+      "governance_route_refs": [
+        "R15",
+        "R16",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E210_EXECUTE_ONE_PROVIDER_CALL",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N189_EXECUTION_LEASE_AND_IDEMPOTENCY_GATE",
+      "target_node_id": "N190_AI_CREATOR_PROVIDER_EXECUTION",
+      "trigger": "ADAPTER_EXECUTION_ALLOWED",
+      "guard_expression": "lease_verdict == LEASE_ACQUIRED AND admission_verdict IN allowed_execution_verdicts AND adapter_resolution == ADAPTER_RESOLVED_READY AND authority_verdict == PROVIDER_EXECUTION_AUTHORIZED",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_adapter_resolution_receipt.schema.json",
+      "required_source_receipts": [
+        "EXECUTION_LEASE_RECEIPT",
+        "LEASE_ACQUIRED",
+        "PROVIDER_ADMISSION_RECEIPT",
+        "ADAPTER_RESOLVED_READY",
+        "PROVIDER_EXECUTION_AUTHORIZED",
+        "SEALED_EXECUTION_GATE_PASS",
+        "PROVIDER_CAPABILITY_RECEIPT",
+        "COST_AUTHORITY_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_single_provider_invocation_acceptance_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROVIDER_INVOCATION:AUTHORIZED"
+        ]
+      },
+      "failure_route_ids": [
+        "E215_RETURN_PROMPT_INPUT_DEFECT"
+      ],
+      "retry_route_id": "E225_RETRY_TECHNICAL_PROVIDER_FAILURE",
+      "approval_requirement": "BOUNDED_AUTHORITY_AND_EXCLUSIVE_EXECUTION_LEASE",
+      "side_effect_precondition": "Exact-asset exclusive lease, commissioning or admitted profile, resolved adapter, bounded authority and sealed invocation.",
+      "idempotency_key_expression": "internal_invocation_id",
+      "upstream_hash_dependencies": [
+        "execution_lease_receipt_hash",
+        "provider_admission_receipt_hash",
+        "provider_adapter_resolution_receipt_hash",
+        "provider_execution_authority_receipt_hash",
+        "sealed_execution_record_hash",
+        "prompt_package_hash",
+        "reference_input_hashes"
+      ],
+      "invalidation_scope": [
+        "THIS_INVOCATION_AND_ITS_OUTPUTS"
+      ],
+      "resume_policy": "Reconcile provider job and lease before retry; never issue a second call for the same idempotency key.",
+      "compensation_action": "Do not call provider; preserve sealed record as not executed.",
+      "governance_route_refs": [
+        "R15",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E215_RETURN_PROMPT_INPUT_DEFECT",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "target_node_id": "N160_PROMPT_PACKAGE_COMPILATION",
+      "trigger": "PREFLIGHT_CLASSIFIES_PROMPT_OR_REFERENCE_PACKAGE_DEFECT",
+      "guard_expression": "preflight_issue_class == PROMPT_PACKAGE_DEFECT",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_targeted_rework_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_PREFLIGHT_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROMPT_PACKAGE:RETURNED_FROM_PREFLIGHT"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": "E190_VALIDATE_PROMPT_PACKAGE",
+      "approval_requirement": "NONE_FOR_CLASSIFIED_PROMPT_DEFECT",
+      "side_effect_precondition": "No provider call has occurred.",
+      "idempotency_key_expression": "failed_preflight_receipt_hash + prompt_package_hash",
+      "upstream_hash_dependencies": [
+        "failed_preflight_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_PROMPT_UNITS",
+        "SEALED_RECORD_NOT_EXECUTED"
+      ],
+      "resume_policy": "Resume at Prompt Agent with exact defect class.",
+      "compensation_action": "Retain preflight evidence; do not alter TZ.",
+      "governance_route_refs": [
+        "R15"
+      ]
+    },
+    {
+      "edge_id": "E220_RECORD_PROVIDER_OUTPUT",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N190_AI_CREATOR_PROVIDER_EXECUTION",
+      "target_node_id": "N200_AI_CREATOR_OUTPUT_RECORDING",
+      "trigger": "OUTPUT_SAVED",
+      "guard_expression": "terminal_execution_receipt_exists == true AND output_file_exists == true",
+      "required_payload_schema": "AI Design Conveyor/06_Content_Production/schemas/ai_creator_run_result.schema.json",
+      "required_source_receipts": [
+        "EXECUTION_RECEIPT",
+        "OUTPUT_SAVED"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_output_recording_acceptance_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROVIDER_OUTPUT:PENDING_LINEAGE_VALIDATION"
+        ]
+      },
+      "failure_route_ids": [
+        "E225_RETRY_TECHNICAL_PROVIDER_FAILURE"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_AFTER_AUTHORIZED_EXECUTION",
+      "side_effect_precondition": "No second provider call.",
+      "idempotency_key_expression": "internal_invocation_id + execution_receipt_hash",
+      "upstream_hash_dependencies": [
+        "execution_receipt_hash",
+        "output_file_hash"
+      ],
+      "invalidation_scope": [
+        "OUTPUT_MANIFEST_FOR_THIS_INVOCATION"
+      ],
+      "resume_policy": "Rebuild local manifest from terminal receipt and actual file.",
+      "compensation_action": "Quarantine unverified output; do not claim success.",
+      "governance_route_refs": [
+        "R15",
+        "R16",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E225_RETRY_TECHNICAL_PROVIDER_FAILURE",
+      "edge_version": "1.0",
+      "edge_class": "RETRY",
+      "source_node_id": "N190_AI_CREATOR_PROVIDER_EXECUTION",
+      "target_node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "trigger": "CLASSIFIED_TECHNICAL_GENERATION_FAILURE",
+      "guard_expression": "attempt_verdict == TECHNICAL_RETRY_AUTHORIZED AND provider_state_reconciled == true AND attempts_remaining == true AND cost_remaining == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_retry_rework_decision_request.schema.json",
+      "required_source_receipts": [
+        "FAILED_EXECUTION_RECEIPT",
+        "PROVIDER_RECONCILIATION_RECEIPT",
+        "RETRY_REWORK_DECISION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_retry_rework_decision_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROVIDER_INVOCATION:TECHNICAL_RETRY_PENDING"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": "E210_EXECUTE_ONE_PROVIDER_CALL",
+      "approval_requirement": "TECHNICAL_RETRY_AUTHORIZED_WITHIN_ONE_RETRY_AND_TWO_CALL_LIMIT",
+      "side_effect_precondition": "Prior invocation terminal state reconciled; new invocation ID required.",
+      "idempotency_key_expression": "new_internal_invocation_id + prior_failure_receipt_hash",
+      "upstream_hash_dependencies": [
+        "prior_failure_receipt_hash",
+        "unchanged_prompt_hash"
+      ],
+      "invalidation_scope": [
+        "FAILED_INVOCATION_ONLY"
+      ],
+      "resume_policy": "Only FAILED_CONFIRMED or NOT_STARTED may retry with a new invocation ID; UNKNOWN routes to reconciliation.",
+      "compensation_action": "Open circuit breaker when outcome is unknown or attempt/cost/call authority is exhausted.",
+      "governance_route_refs": [
+        "R15"
+      ]
+    },
+    {
+      "edge_id": "E230_ROUTE_OUTPUT_TO_FINISHING",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N200_AI_CREATOR_OUTPUT_RECORDING",
+      "target_node_id": "N210_DETERMINISTIC_FINISHING",
+      "trigger": "BASE_VISUAL_READY_FOR_FINISHING",
+      "guard_expression": "output_manifest == PASS AND finishing_required == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_deterministic_finishing_plan.schema.json",
+      "required_source_receipts": [
+        "OUTPUT_MANIFEST_PASS",
+        "BASE_VISUAL_READY_FOR_FINISHING"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_finishing_input_acceptance_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "BASE_VISUAL:FINISHING_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [
+        "E215_RETURN_PROMPT_INPUT_DEFECT"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "APPROVED_FINISHING_PLAN",
+      "side_effect_precondition": "All overlays, copy, fonts, locale and tool routes are bound.",
+      "idempotency_key_expression": "base_visual_hash + finishing_plan_hash + tool_version",
+      "upstream_hash_dependencies": [
+        "base_visual_hash",
+        "finishing_plan_hash"
+      ],
+      "invalidation_scope": [
+        "FINAL_EXPORT",
+        "CONTENT_QA_RECEIPT"
+      ],
+      "resume_policy": "Resume from saved project/timeline receipt.",
+      "compensation_action": "Keep base visual non-final and return missing plan upstream.",
+      "governance_route_refs": [
+        "R15",
+        "R16"
+      ]
+    },
+    {
+      "edge_id": "E235_ROUTE_FINAL_OUTPUT_TO_QA",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N200_AI_CREATOR_OUTPUT_RECORDING",
+      "target_node_id": "N220_CONTENT_OUTPUT_QA",
+      "trigger": "READY_FOR_QA_WITHOUT_FINISHING",
+      "guard_expression": "output_manifest == PASS AND finishing_required == false",
+      "required_payload_schema": "AI Design Conveyor/06_Content_Production/schemas/ai_creator_output_manifest.schema.json",
+      "required_source_receipts": [
+        "OUTPUT_MANIFEST_PASS",
+        "READY_FOR_QA"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "FINAL_MEDIA_OUTPUT:QA_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NONE",
+      "side_effect_precondition": "QA is read-only against output.",
+      "idempotency_key_expression": "final_output_hash + qa_standard_hash",
+      "upstream_hash_dependencies": [
+        "final_output_hash",
+        "content_tz_hash",
+        "expected_manifest_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_QA_RECEIPT",
+        "SET_COMPLETENESS_RECEIPT"
+      ],
+      "resume_policy": "Resume from accepted QA handoff.",
+      "compensation_action": "Remain READY_FOR_QA_PENDING_RECEIVER.",
+      "governance_route_refs": [
+        "R16"
+      ]
+    },
+    {
+      "edge_id": "E240_ROUTE_FINISHED_EXPORT_TO_QA",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N210_DETERMINISTIC_FINISHING",
+      "target_node_id": "N220_CONTENT_OUTPUT_QA",
+      "trigger": "FINAL_EXPORT_READY_FOR_QA",
+      "guard_expression": "execution_evidence == PASS AND final_export_hash_valid == true",
+      "required_payload_schema": "AI Design Conveyor/09_Shared_Contracts/Runtime/execution_evidence/execution_evidence_receipt.schema.json",
+      "required_source_receipts": [
+        "FINAL_EXPORT_READY_FOR_QA",
+        "EXECUTION_EVIDENCE_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "FINAL_EXPORT:QA_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [
+        "E245_REWORK_FINISHING"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "NONE",
+      "side_effect_precondition": "QA receives final export, not intermediate timeline.",
+      "idempotency_key_expression": "final_export_hash + qa_standard_hash",
+      "upstream_hash_dependencies": [
+        "final_export_hash",
+        "execution_evidence_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_QA_RECEIPT",
+        "SET_COMPLETENESS_RECEIPT"
+      ],
+      "resume_policy": "Resume from accepted final-export QA handoff.",
+      "compensation_action": "Keep prior export non-current.",
+      "governance_route_refs": [
+        "R16"
+      ]
+    },
+    {
+      "edge_id": "E262_ESCALATE_INCOMPLETE_CONTENT_QA",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N220_CONTENT_OUTPUT_QA",
+      "target_node_id": "N224_DEFECT_ESCALATION_DECISION",
+      "trigger": "CONTENT_QA_INSPECTION_BLOCKED",
+      "guard_expression": "inspection_outcome IN [INPUT_ARTIFACT_DEFECT, EVIDENCE_UNAVAILABLE]",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_output_qa_inspection_exception_receipt.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_INSPECTION_EXCEPTION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_QA:INSPECTION_BLOCKED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "HUMAN_OWNER_DECISION_REQUIRED",
+      "side_effect_precondition": "No QA PASS, provider call or publication authority may be emitted.",
+      "idempotency_key_expression": "run_id + asset_id + output_sha256 + inspection_outcome + attempt_number",
+      "upstream_hash_dependencies": [
+        "final_output_hash",
+        "inspection_exception_receipt_hash",
+        "expected_manifest_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_QA_RECEIPT",
+        "CONTENT_PACKAGE_QA_RECEIPT"
+      ],
+      "resume_policy": "Resume only through the N224 owner decision and N250 checkpoint after corrected input or new evidence.",
+      "compensation_action": "Keep affected asset and package blocked; do not infer a QA verdict.",
+      "governance_route_refs": [
+        "R16",
+        "R19"
+      ]
+    },
+    {
+      "edge_id": "E263_RETRY_CONTENT_OUTPUT_QA_INSPECTION",
+      "edge_version": "1.0",
+      "edge_class": "RETRY",
+      "source_node_id": "N220_CONTENT_OUTPUT_QA",
+      "target_node_id": "N220_CONTENT_OUTPUT_QA",
+      "trigger": "TRANSIENT_QA_INSPECTION_FAILURE",
+      "guard_expression": "inspection_outcome == RETRYABLE_TECHNICAL_FAILURE AND qa_evidence_refresh_budget_remaining == true AND new_attempt_evidence == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_output_qa_inspection_exception_receipt.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_INSPECTION_EXCEPTION_RECEIPT",
+        "TERMINATION_BUDGET_ALLOW"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_QA:BOUNDED_INSPECTION_RETRY"
+        ]
+      },
+      "failure_route_ids": [
+        "E262_ESCALATE_INCOMPLETE_CONTENT_QA"
+      ],
+      "retry_route_id": "E263_RETRY_CONTENT_OUTPUT_QA_INSPECTION",
+      "approval_requirement": "NONE_WITHIN_TERMINATION_BUDGET",
+      "side_effect_precondition": "Retry is read-only and requires a concrete retry action plus new attempt evidence.",
+      "idempotency_key_expression": "run_id + asset_id + output_sha256 + attempt_number + attempt_evidence_hash",
+      "upstream_hash_dependencies": [
+        "final_output_hash",
+        "inspection_exception_receipt_hash",
+        "termination_ledger_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_QA_INSPECTION_ATTEMPT",
+        "CONTENT_QA_EVIDENCE_RECEIPT"
+      ],
+      "resume_policy": "Retry the same immutable asset once per allowed qa_evidence_refresh budget unit; counters never reset.",
+      "compensation_action": "On budget exhaustion, State-Transition Writer sets FAILED_EXHAUSTED and does not reactivate N220.",
+      "governance_route_refs": [
+        "R16"
+      ]
+    },
+    {
+      "edge_id": "E264_APPLY_CONTENT_OUTPUT_QA_POLICY",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N220_CONTENT_OUTPUT_QA",
+      "target_node_id": "N221_CONTENT_OUTPUT_QA_POLICY_GATE",
+      "trigger": "CONTENT_QA_INSPECTION_COMPLETE",
+      "guard_expression": "qa_evidence_complete == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_output_qa_request.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_EVIDENCE_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_output_qa_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_QA:POLICY_EVALUATION_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_DETERMINISTIC_POLICY",
+      "side_effect_precondition": "Read-only decision over inspected evidence.",
+      "idempotency_key_expression": "output_hash + qa_evidence_hash + qa_standard_version + expected_manifest_hash",
+      "upstream_hash_dependencies": [
+        "final_output_hash",
+        "content_qa_evidence_hash",
+        "content_tz_hash",
+        "expected_manifest_hash"
+      ],
+      "invalidation_scope": [
+        "CONTENT_QA_RECEIPT",
+        "CONTENT_PACKAGE_QA_RECEIPT"
+      ],
+      "resume_policy": "Re-evaluate affected evidence only; unresolved mandatory evidence remains inconclusive.",
+      "compensation_action": "Do not emit PASS when critical evidence is missing.",
+      "governance_route_refs": [
+        "R16",
+        "R19"
+      ]
+    },
+    {
+      "edge_id": "E266_CLASSIFY_QA_DEFECT_SCOPE",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N221_CONTENT_OUTPUT_QA_POLICY_GATE",
+      "target_node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "trigger": "QA_DEFECT_REQUIRES_ROUTING",
+      "guard_expression": "qa_verdict == REWORK_REQUIRED",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_request.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "QA_DEFECT:SCOPE_CLASSIFICATION_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [
+        "E270_REQUEST_BATCH_CONTINUE"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_DETERMINISTIC_CLASSIFICATION",
+      "side_effect_precondition": "Read-only classification; no new provider call.",
+      "idempotency_key_expression": "qa_receipt_hash + defect_history_hash + dependency_binding_hash + runtime_signal_hash",
+      "upstream_hash_dependencies": [
+        "content_qa_receipt_hash",
+        "expected_manifest_hash",
+        "provider_execution_receipt_hash",
+        "artifact_lineage_hash"
+      ],
+      "invalidation_scope": [
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT"
+      ],
+      "resume_policy": "Route only the classified affected scope; unaffected assets remain eligible.",
+      "compensation_action": "Open circuit breaker when critical classification facts are unresolved.",
+      "governance_route_refs": [
+        "R15",
+        "R16",
+        "R21",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E245_REWORK_FINISHING",
+      "edge_version": "1.1",
+      "edge_class": "REWORK",
+      "source_node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "target_node_id": "N210_DETERMINISTIC_FINISHING",
+      "trigger": "QA_CLASSIFIES_FINISHING_DEFECT",
+      "guard_expression": "qa_defect_class == FINISHING_EXECUTION_DEFECT",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_RECEIPT",
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_finishing_rework_acceptance_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "FINAL_EXPORT:FINISHING_REWORK"
+        ]
+      },
+      "failure_route_ids": [
+        "E246_RECLASSIFY_REJECTED_FINISHING_DEFECT",
+        "E247_ESCALATE_FINISHING_REWORK_BLOCKER",
+        "E248_OPEN_QA_DEFECT_CIRCUIT_BREAKER"
+      ],
+      "retry_route_id": "E240_ROUTE_FINISHED_EXPORT_TO_QA",
+      "approval_requirement": "NONE_FOR_BOUNDED_FINISHING_FIX",
+      "side_effect_precondition": "Protected product and approved copy remain unchanged.",
+      "idempotency_key_expression": "qa_receipt_hash + finishing_defect_ids",
+      "upstream_hash_dependencies": [
+        "base_visual_hash",
+        "defect_scope_classification_receipt_hash",
+        "qa_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "FINAL_EXPORT",
+        "AFFECTED_QA_CHECKS",
+        "PARENT_OUTPUT_WHEN_APPLICABLE"
+      ],
+      "resume_policy": "Accept one bounded rerender per fingerprint, then repeat affected parent/set QA; the same fingerprint cannot re-enter E245.",
+      "compensation_action": "Keep prior failed export immutable.",
+      "governance_route_refs": [
+        "R16"
+      ]
+    },
+    {
+      "edge_id": "E246_RECLASSIFY_REJECTED_FINISHING_DEFECT",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N210_DETERMINISTIC_FINISHING",
+      "target_node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "trigger": "FINISHING_REWORK_RECLASSIFICATION_REQUIRED",
+      "guard_expression": "finishing_acceptance_verdict == REJECTED_NOT_FINISHING_DEFECT AND evidence_changed == true AND reclassification_attempt == 1",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_finishing_rework_acceptance_receipt.schema.json",
+      "required_source_receipts": [
+        "FINISHING_REWORK_ACCEPTANCE_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "QA_DEFECT:ONE_RECLASSIFICATION_REQUIRED"
+        ]
+      },
+      "failure_route_ids": [
+        "E247_ESCALATE_FINISHING_REWORK_BLOCKER"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_FOR_ONE_RECLASSIFICATION_WITH_NEW_EVIDENCE",
+      "side_effect_precondition": "New evidence hash must differ; no finishing action or provider call occurred.",
+      "idempotency_key_expression": "defect_fingerprint + current_evidence_sha256 + reclassification_attempt",
+      "upstream_hash_dependencies": [
+        "classification_receipt_hash",
+        "current_evidence_sha256"
+      ],
+      "invalidation_scope": [
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT"
+      ],
+      "resume_policy": "Classify once using the added evidence; unchanged evidence or another rejection opens escalation.",
+      "compensation_action": "Keep export blocked and preserve both classification revisions.",
+      "governance_route_refs": [
+        "R16",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E247_ESCALATE_FINISHING_REWORK_BLOCKER",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N210_DETERMINISTIC_FINISHING",
+      "target_node_id": "N224_DEFECT_ESCALATION_DECISION",
+      "trigger": "FINISHING_REWORK_OWNER_DECISION_REQUIRED",
+      "guard_expression": "finishing_acceptance_verdict IN [FINISHING_INPUT_BLOCKED, PROTECTED_CHANGE_REQUIRED, REPEATED_DEFECT_ESCALATION]",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_finishing_rework_acceptance_receipt.schema.json",
+      "required_source_receipts": [
+        "FINISHING_REWORK_ACCEPTANCE_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "FINISHING_REWORK:CIRCUIT_OPEN"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_OWNER_ROUTE_DECISION",
+      "side_effect_precondition": "Failed QA cannot be waived and the same fingerprint cannot return to E245.",
+      "idempotency_key_expression": "defect_fingerprint + finishing_rework_attempt + reclassification_attempt",
+      "upstream_hash_dependencies": [
+        "finishing_rework_acceptance_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_EXPORT_AND_DEPENDENT_SET"
+      ],
+      "resume_policy": "Resume only through an owner-selected upstream or new-evidence route.",
+      "compensation_action": "Keep affected export blocked and preserve unaffected assets.",
+      "governance_route_refs": [
+        "R01",
+        "R16",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E248_OPEN_QA_DEFECT_CIRCUIT_BREAKER",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "target_node_id": "N224_DEFECT_ESCALATION_DECISION",
+      "trigger": "QA_DEFECT_CIRCUIT_BREAKER_OPEN",
+      "guard_expression": "defect_scope_verdict == BATCH_CIRCUIT_BREAKER_OPEN AND circuit_breaker_open == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_RECEIPT",
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "QA_DEFECT:CIRCUIT_BREAKER_OPEN"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_OWNER_ROUTE_DECISION",
+      "side_effect_precondition": "No automatic rework edge may activate while breaker is open.",
+      "idempotency_key_expression": "classification_receipt_hash + blocked_asset_ids",
+      "upstream_hash_dependencies": [
+        "classification_receipt_hash",
+        "qa_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "CLASSIFIED_BLOCKED_SCOPE"
+      ],
+      "resume_policy": "Resume only after new evidence or corrected upstream input; failed QA remains binding.",
+      "compensation_action": "Stop affected scope and preserve continuable assets.",
+      "governance_route_refs": [
+        "R01",
+        "R16",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E249_CHECKPOINT_DEFECT_ESCALATION_DECISION",
+      "edge_version": "1.0",
+      "edge_class": "RESUME",
+      "source_node_id": "N224_DEFECT_ESCALATION_DECISION",
+      "target_node_id": "N250_TRANSITION_REENTRY_CHECKPOINT",
+      "trigger": "DEFECT_ESCALATION_ROUTE_DECIDED",
+      "guard_expression": "owner_route_decision IN [ROUTE_UPSTREAM, EXCLUDE_ASSET_WITH_AUTHORITY, RESUME_AFTER_NEW_EVIDENCE]",
+      "required_payload_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "required_source_receipts": [
+        "OWNER_ROUTE_DECISION"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_external_content_tz_delivery_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "DEFECT_ESCALATION:CHECKPOINT_PENDING"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "SATISFIED_BY_OWNER_ROUTE_DECISION",
+      "side_effect_precondition": "Re-entry must preserve failed QA, counters and prior side effects.",
+      "idempotency_key_expression": "owner_route_decision_hash + defect_fingerprint + run_state_hash",
+      "upstream_hash_dependencies": [
+        "owner_route_decision_hash",
+        "run_state_hash"
+      ],
+      "invalidation_scope": [
+        "OWNER_SELECTED_REENTRY_SCOPE"
+      ],
+      "resume_policy": "Checkpoint gate selects the exact upstream or new-evidence re-entry; no direct return to E245.",
+      "compensation_action": "Remain blocked when checkpoint or decision binding is invalid.",
+      "governance_route_refs": [
+        "R01",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E250_REWORK_PROMPT_FROM_QA",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "target_node_id": "N160_PROMPT_PACKAGE_COMPILATION",
+      "trigger": "QA_CLASSIFIES_PROMPT_DEFECT",
+      "guard_expression": "qa_defect_class == PROMPT_DEFECT",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_RECEIPT",
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PROMPT_PACKAGE:QA_REWORK"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": "E190_VALIDATE_PROMPT_PACKAGE",
+      "approval_requirement": "NONE_WITHIN_APPROVED_TZ",
+      "side_effect_precondition": "Existing failed output remains immutable; no provider retry before new validation.",
+      "idempotency_key_expression": "qa_receipt_hash + prompt_defect_ids",
+      "upstream_hash_dependencies": [
+        "content_tz_hash",
+        "defect_scope_classification_receipt_hash",
+        "qa_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_PROMPT_UNITS",
+        "AFFECTED_CREATOR_OUTPUTS"
+      ],
+      "resume_policy": "Recompile only affected atomic units, then full applicable validation.",
+      "compensation_action": "Do not edit failed output in Prompt Agent.",
+      "governance_route_refs": [
+        "R15",
+        "R16"
+      ]
+    },
+    {
+      "edge_id": "E253_ESCALATE_CONTENT_TZ_PRODUCT_TRUTH_CHANGE",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "target_node_id": "N224_DEFECT_ESCALATION_DECISION",
+      "trigger": "CONTENT_TZ_PRODUCT_TRUTH_CHANGE_REQUIRED",
+      "guard_expression": "upstream_owner == CONTENT_TZ AND product_truth_change_required == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_RECEIPT",
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:PRODUCT_TRUTH_CHANGE_OWNER_DECISION"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NAMED_PRODUCT_TRUTH_OWNER_DECISION",
+      "side_effect_precondition": "No Product Truth or Content TZ mutation is performed by this edge.",
+      "idempotency_key_expression": "defect_scope_receipt_hash + product_truth_change_fingerprint",
+      "upstream_hash_dependencies": [
+        "content_qa_receipt_hash",
+        "defect_scope_classification_receipt_hash",
+        "product_truth_hash"
+      ],
+      "invalidation_scope": [
+        "OWNER_ROUTE_DECISION",
+        "TARGETED_CONTENT_TZ_AMENDMENT_REQUEST"
+      ],
+      "resume_policy": "Resume only after explicit Product Truth owner decision and a new accepted upstream artifact revision.",
+      "compensation_action": "Keep affected content scope blocked and preserve the current Product Truth revision.",
+      "governance_route_refs": [
+        "R15",
+        "R16"
+      ]
+    },
+    {
+      "edge_id": "E254_ESCALATE_CONTENT_TZ_SCOPE_CHANGE",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "target_node_id": "N224_DEFECT_ESCALATION_DECISION",
+      "trigger": "CONTENT_TZ_CORRECTION_REQUIRES_SCOPE_OR_PRODUCT_TRUTH_DECISION",
+      "guard_expression": "upstream_owner == CONTENT_TZ AND scope_change_required == true AND product_truth_change_required == false",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_RECEIPT",
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ_SCOPE_CHANGE:OWNER_DECISION_REQUIRED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_OWNER_SCOPE_DECISION",
+      "side_effect_precondition": "No Content TZ mutation and no downstream retry before owner decision.",
+      "idempotency_key_expression": "classification_receipt_hash + qa_receipt_hash + scope_change_reason",
+      "upstream_hash_dependencies": [
+        "classification_receipt_hash",
+        "qa_receipt_hash",
+        "content_tz_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_SCOPE_ONLY"
+      ],
+      "resume_policy": "A changed scope starts a new authorized content request; it is not applied through E255.",
+      "compensation_action": "Keep current Content TZ and failed downstream chain immutable.",
+      "governance_route_refs": [
+        "R01",
+        "R16",
+        "R21"
+      ]
+    },
+    {
+      "edge_id": "E255_REWORK_CONTENT_TZ_FROM_QA",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "target_node_id": "N130_CONTENT_TZ_AUTHORING",
+      "trigger": "QA_CLASSIFIES_TZ_DEFECT",
+      "guard_expression": "qa_defect_class == CONTENT_TZ_DEFECT AND upstream_owner == CONTENT_TZ AND amendment_verdict == TARGETED_TZ_AMENDMENT_READY AND scope_change_required == false AND product_truth_change_required == false",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_targeted_content_tz_amendment_request.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_RECEIPT",
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT",
+        "TARGETED_CONTENT_TZ_AMENDMENT_REQUEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "CONTENT_TZ:QA_REWORK",
+          "PROMPT_AND_OUTPUTS:STALE_PENDING_REVALIDATION"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": "E160_VALIDATE_CONTENT_TZ",
+      "approval_requirement": "NONE_FOR_EXACT_FIELD_AMENDMENT_WITHIN_PINNED_SCOPE",
+      "side_effect_precondition": "Only allowlisted field paths may change; immutable fields and frozen scope remain unchanged.",
+      "idempotency_key_expression": "qa_receipt_hash + amendment_request_hash + source_content_tz_hash",
+      "upstream_hash_dependencies": [
+        "defect_scope_classification_receipt_hash",
+        "amendment_request_hash",
+        "passport_hash",
+        "qa_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_CONTENT_TZ_FIELDS",
+        "DEPENDENCY_BOUND_EXPECTED_MANIFEST_UNITS",
+        "DEPENDENCY_BOUND_PROMPT_UNITS",
+        "DEPENDENCY_BOUND_OUTPUTS"
+      ],
+      "resume_policy": "Create a new targeted TZ revision, self-check, validate through E160/N140 and issue defect-to-correction closure before rebuilding dependency-bound downstream.",
+      "compensation_action": "Keep prior chain as superseded evidence.",
+      "governance_route_refs": [
+        "R16",
+        "R21"
+      ]
+    },
+    {
+      "edge_id": "E260_REWORK_PRODUCT_FACT_FROM_QA",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "target_node_id": "N020_PASSPORT_COORDINATION",
+      "trigger": "QA_CLASSIFIES_PRODUCT_TRUTH_DEFECT",
+      "guard_expression": "qa_defect_class == PRODUCT_TRUTH_OR_SOURCE_DEFECT",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_RECEIPT",
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "PASSPORT:REVALIDATION_REQUIRED",
+          "ALL_DEPENDENT_CONTENT:STALE_PENDING_REVALIDATION"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "PRODUCT_TRUTH_ROUTE_REQUIRED",
+      "side_effect_precondition": "QA cannot edit Passport or downstream claims.",
+      "idempotency_key_expression": "qa_receipt_hash + product_truth_defect_ids",
+      "upstream_hash_dependencies": [
+        "defect_scope_classification_receipt_hash",
+        "passport_hash",
+        "qa_receipt_hash"
+      ],
+      "invalidation_scope": [
+        "PASSPORT_AFFECTED_FIELDS",
+        "CONTENT_TZ",
+        "EXPECTED_MANIFEST",
+        "PROMPT_PACKAGES",
+        "DEPENDENT_OUTPUTS"
+      ],
+      "resume_policy": "Resume from Passport Coordinator after new accepted Product Truth version.",
+      "compensation_action": "Hold affected outputs; preserve unaffected artifacts when dependency graph permits.",
+      "governance_route_refs": [
+        "R02",
+        "R16",
+        "R21"
+      ]
+    },
+    {
+      "edge_id": "E265_REWORK_CREATOR_EXECUTION_FROM_QA",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "target_node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "trigger": "QA_CLASSIFIES_CREATOR_EXECUTION_DEFECT",
+      "guard_expression": "attempt_verdict == REGENERATION_AUTHORIZED AND prompt_package_still_valid == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_retry_rework_decision_request.schema.json",
+      "required_source_receipts": [
+        "CONTENT_QA_RECEIPT",
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT",
+        "RETRY_REWORK_DECISION_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_retry_rework_decision_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "AI_CREATOR_RUN:REWORK_REQUIRED"
+        ]
+      },
+      "failure_route_ids": [
+        "E250_REWORK_PROMPT_FROM_QA"
+      ],
+      "retry_route_id": "E210_EXECUTE_ONE_PROVIDER_CALL",
+      "approval_requirement": "ONE_REGENERATION_WITH_CORRECTION_DELTA_AND_MAX_TWO_PROVIDER_CALLS_PER_ASSET",
+      "side_effect_precondition": "Prior output remains failed evidence; new invocation ID required.",
+      "idempotency_key_expression": "qa_receipt_hash + new_internal_invocation_id",
+      "upstream_hash_dependencies": [
+        "defect_scope_classification_receipt_hash",
+        "qa_receipt_hash",
+        "unchanged_prompt_package_hash"
+      ],
+      "invalidation_scope": [
+        "AFFECTED_CREATOR_OUTPUT",
+        "AFFECTED_QA_CHECKS"
+      ],
+      "resume_policy": "Return through full preflight with correction delta and new invocation ID; identical repetition is prohibited.",
+      "compensation_action": "Use local edit or upstream rework when eligible; repeated material defect opens circuit breaker.",
+      "governance_route_refs": [
+        "R15",
+        "R16"
+      ]
+    },
+    {
+      "edge_id": "E267_EVALUATE_AUTOMATED_BATCH_CONTINUE",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N221_CONTENT_OUTPUT_QA_POLICY_GATE",
+      "target_node_id": "N225_AUTOMATED_BATCH_CONTINUE_GATE",
+      "trigger": "QA_PASS_WITH_REMAINING_ASSETS",
+      "guard_expression": "qa_verdict == PASS AND production_admission == PRODUCTION_ADMITTED AND remaining_expected_asset_ids_count > 0",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_automated_batch_continue_request.schema.json",
+      "required_source_receipts": [
+        "CONTENT_OUTPUT_QA_RECEIPT",
+        "PROVIDER_ADMISSION_RECEIPT",
+        "EXPECTED_DELIVERABLES_MANIFEST_FROZEN"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_automated_batch_continue_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "BATCH:AUTO_CONTINUE_EVALUATION"
+        ]
+      },
+      "failure_route_ids": [
+        "E270_REQUEST_BATCH_CONTINUE"
+      ],
+      "retry_route_id": null,
+      "approval_requirement": "PREAUTHORIZED_BOUNDED_AND_PRODUCTION_ADMITTED",
+      "side_effect_precondition": "No provider call; automatic checks only.",
+      "idempotency_key_expression": "qa_receipt_hash + admission_fingerprint_id + remaining_asset_set_hash",
+      "upstream_hash_dependencies": [
+        "content_qa_receipt_hash",
+        "provider_admission_receipt_hash",
+        "expected_manifest_hash",
+        "provider_policy_hash"
+      ],
+      "invalidation_scope": [
+        "AUTOMATED_BATCH_CONTINUE_DECISION"
+      ],
+      "resume_policy": "Continue automatically only while all checks stay true.",
+      "compensation_action": "Open circuit breaker or route to configured human review.",
+      "governance_route_refs": [
+        "R15",
+        "R16",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E268_CONTINUE_ADMITTED_BATCH_AT_PREFLIGHT",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N225_AUTOMATED_BATCH_CONTINUE_GATE",
+      "target_node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "trigger": "AUTO_BATCH_CONTINUE",
+      "guard_expression": "auto_batch_receipt_valid == true AND next_asset_id IN approved_remaining_asset_ids",
+      "required_payload_schema": "AI Design Conveyor/06_Content_Production/schemas/ai_creator_run_input.schema.json",
+      "required_source_receipts": [
+        "AUTOMATED_BATCH_CONTINUE_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_batch_preflight_input_acceptance_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "NEXT_ASSET:PREFLIGHT_ACTIVE_AUTOMATED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "VALID_AUTOMATED_BATCH_CONTINUE_RECEIPT",
+      "side_effect_precondition": "One next asset only; provider call remains separately gated.",
+      "idempotency_key_expression": "automated_batch_continue_receipt_hash + next_asset_id",
+      "upstream_hash_dependencies": [
+        "automated_batch_continue_receipt_hash",
+        "prompt_package_hash_for_next_asset"
+      ],
+      "invalidation_scope": [
+        "NEXT_ASSET_INVOCATION_ONLY"
+      ],
+      "resume_policy": "Process next asset without human pause; repeat automatic QA and circuit-breaker checks.",
+      "compensation_action": "Stop batch when next asset is outside frozen remaining set.",
+      "governance_route_refs": [
+        "R15",
+        "R16",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E270_REQUEST_BATCH_CONTINUE",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N221_CONTENT_OUTPUT_QA_POLICY_GATE",
+      "target_node_id": "N230_BATCH_CONTINUE_DECISION",
+      "trigger": "HUMAN_BATCH_REVIEW_REQUIRED",
+      "guard_expression": "manual_batch_decision_required == true AND remaining_expected_asset_ids_count > 0",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_batch_continue_request.schema.json",
+      "required_source_receipts": [
+        "PILOT_QA_RECEIPT",
+        "EXPECTED_DELIVERABLES_MANIFEST_FROZEN"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_batch_continue_decision_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "BATCH:AWAITING_CONTINUE_DECISION"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_ONLY_FOR_CONFIGURED_OR_EXCEPTION_REVIEW",
+      "side_effect_precondition": "No remaining provider call before decision.",
+      "idempotency_key_expression": "pilot_qa_receipt_hash + remaining_asset_set_hash",
+      "upstream_hash_dependencies": [
+        "pilot_qa_receipt_hash",
+        "expected_manifest_hash"
+      ],
+      "invalidation_scope": [
+        "BATCH_CONTINUE_DECISION"
+      ],
+      "resume_policy": "No routine pause; use only for configured checkpoint, commissioning review or exception.",
+      "compensation_action": "Keep completed pilot output; do not generate remaining assets.",
+      "governance_route_refs": [
+        "R16",
+        "R19"
+      ]
+    },
+    {
+      "edge_id": "E280_CONTINUE_BATCH_AT_PREFLIGHT",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N230_BATCH_CONTINUE_DECISION",
+      "target_node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "trigger": "CONTINUE_BATCH",
+      "guard_expression": "continue_receipt_valid == true AND next_asset_id IN approved_remaining_asset_ids",
+      "required_payload_schema": "AI Design Conveyor/06_Content_Production/schemas/ai_creator_run_input.schema.json",
+      "required_source_receipts": [
+        "BATCH_CONTINUE_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_batch_preflight_input_acceptance_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "NEXT_ASSET:PREFLIGHT_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "VALID_BATCH_CONTINUE_RECEIPT",
+      "side_effect_precondition": "One next asset only; provider call still separately gated.",
+      "idempotency_key_expression": "batch_continue_receipt_hash + next_asset_id",
+      "upstream_hash_dependencies": [
+        "batch_continue_receipt_hash",
+        "prompt_package_hash_for_next_asset"
+      ],
+      "invalidation_scope": [
+        "NEXT_ASSET_INVOCATION_ONLY"
+      ],
+      "resume_policy": "Process remaining assets one by one through preflight and QA.",
+      "compensation_action": "Stop batch when next asset is outside approved set.",
+      "governance_route_refs": [
+        "R15",
+        "R16",
+        "R19"
+      ]
+    },
+    {
+      "edge_id": "E287_ESCALATE_RUN_CLOSEOUT_BLOCKER",
+      "edge_version": "1.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N235_RUN_CLOSEOUT_GATE",
+      "target_node_id": "N224_DEFECT_ESCALATION_DECISION",
+      "trigger": "RUN_CLOSEOUT_BLOCKER_REQUIRES_OWNER",
+      "guard_expression": "closeout_exception_route == OWNER_DECISION",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_run_closeout_exception_package.schema.json",
+      "required_source_receipts": [
+        "RUN_CLOSEOUT_RECEIPT",
+        "RUN_CLOSEOUT_EXCEPTION_PACKAGE"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "RUN_CLOSEOUT:BLOCKED_OWNER_DECISION"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NAMED_CLOSEOUT_RECOVERY_OWNER",
+      "side_effect_precondition": "No production-complete, release or publication authority may be emitted.",
+      "idempotency_key_expression": "run_id + manifest_id + closeout_verdict + evidence_fingerprint",
+      "upstream_hash_dependencies": [
+        "final_deliverables_manifest_hash",
+        "run_closeout_receipt_hash",
+        "closeout_exception_package_hash"
+      ],
+      "invalidation_scope": [
+        "RUN_CLOSEOUT_VERDICT",
+        "HUMAN_RELEASE_DECISION"
+      ],
+      "resume_policy": "Resume only through N224 and N250 after an exact recovery owner supplies corrected evidence.",
+      "compensation_action": "Preserve QA-passed unaffected assets and keep the package unreleased.",
+      "governance_route_refs": [
+        "R16",
+        "R17",
+        "R18",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E288_REEVALUATE_RUN_CLOSEOUT",
+      "edge_version": "1.0",
+      "edge_class": "RETRY",
+      "source_node_id": "N235_RUN_CLOSEOUT_GATE",
+      "target_node_id": "N235_RUN_CLOSEOUT_GATE",
+      "trigger": "RUN_CLOSEOUT_EVIDENCE_CHANGED",
+      "guard_expression": "closeout_exception_route == REEVALUATE AND closeout_evidence_changed == true AND closeout_recheck_budget_remaining == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_run_closeout_exception_package.schema.json",
+      "required_source_receipts": [
+        "RUN_CLOSEOUT_EXCEPTION_PACKAGE",
+        "TERMINATION_BUDGET_ALLOW"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "RUN_CLOSEOUT:BOUNDED_REEVALUATION"
+        ]
+      },
+      "failure_route_ids": [
+        "E287_ESCALATE_RUN_CLOSEOUT_BLOCKER"
+      ],
+      "retry_route_id": "E288_REEVALUATE_RUN_CLOSEOUT",
+      "approval_requirement": "NONE_WITHIN_TERMINATION_BUDGET",
+      "side_effect_precondition": "Re-evaluation is read-only and requires a changed evidence fingerprint.",
+      "idempotency_key_expression": "run_id + manifest_id + evidence_fingerprint + previous_evidence_fingerprint",
+      "upstream_hash_dependencies": [
+        "final_deliverables_manifest_hash",
+        "closeout_exception_package_hash",
+        "termination_ledger_hash"
+      ],
+      "invalidation_scope": [
+        "RUN_CLOSEOUT_VERDICT",
+        "RUN_CLOSEOUT_EXCEPTION_PACKAGE"
+      ],
+      "resume_policy": "Re-evaluate changed closeout evidence only; counters never reset and unchanged evidence is prohibited.",
+      "compensation_action": "State-Transition Writer sets FAILED_EXHAUSTED on zero progress or budget exhaustion and does not reactivate N235.",
+      "governance_route_refs": [
+        "R16",
+        "R17",
+        "R18",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E289_EVALUATE_RUN_CLOSEOUT",
+      "edge_version": "1.0",
+      "edge_class": "FORWARD",
+      "source_node_id": "N221_CONTENT_OUTPUT_QA_POLICY_GATE",
+      "target_node_id": "N235_RUN_CLOSEOUT_GATE",
+      "trigger": "FULL_EXPECTED_SET_QA_PASS",
+      "guard_expression": "content_package_qa_verdict == CONTENT_PACKAGE_QA_PASS",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_final_deliverables_manifest.schema.json",
+      "required_source_receipts": [
+        "CONTENT_OUTPUT_QA_RECEIPT",
+        "CONTENT_PACKAGE_QA_RECEIPT",
+        "FINAL_DELIVERABLES_MANIFEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_run_closeout_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "RUN_CLOSEOUT:PENDING_RECONCILIATION"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_FOR_DETERMINISTIC_CLOSEOUT",
+      "side_effect_precondition": "Local manifest reconciliation only; no release or publication.",
+      "idempotency_key_expression": "final_deliverables_manifest_hash + side_effect_ledger_hash + budget_ledger_hash + checkpoint_hash",
+      "upstream_hash_dependencies": [
+        "final_deliverables_manifest_hash",
+        "content_package_qa_receipt_hash",
+        "side_effect_ledger_hash",
+        "budget_ledger_hash",
+        "checkpoint_hash"
+      ],
+      "invalidation_scope": [
+        "RUN_CLOSEOUT_VERDICT"
+      ],
+      "resume_policy": "Re-evaluate only changed closeout evidence; preserve QA-passed assets.",
+      "compensation_action": "Keep run partial or reconciliation-required; do not mark DONE.",
+      "governance_route_refs": [
+        "R16",
+        "R17",
+        "R18",
+        "R19",
+        "R30"
+      ]
+    },
+    {
+      "edge_id": "E290_REQUEST_HUMAN_RELEASE",
+      "edge_version": "2.0",
+      "edge_class": "CONDITIONAL",
+      "source_node_id": "N235_RUN_CLOSEOUT_GATE",
+      "target_node_id": "N240_HUMAN_RELEASE_DECISION",
+      "trigger": "RUN_READY_FOR_HUMAN_FINAL_CONTENT_ACCEPTANCE",
+      "guard_expression": "closeout_verdict IN [PRODUCTION_COMPLETE, COMPLETE_WITH_APPROVED_EXCLUSIONS] AND content_package_qa_verdict == CONTENT_PACKAGE_QA_PASS",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_human_final_content_acceptance_request.schema.json",
+      "required_source_receipts": [
+        "RUN_CLOSEOUT_RECEIPT",
+        "PRODUCTION_CLOSEOUT_COMPLETE",
+        "CONTENT_OUTPUT_QA_RECEIPT",
+        "CONTENT_PACKAGE_QA_RECEIPT"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_human_final_content_decision_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "WAITING_HUMAN_DECISION",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "OUTPUT_PACKAGE:WAITING_HUMAN_FINAL_ACCEPTANCE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NAMED_HUMAN_FINAL_CONTENT_REVIEWER",
+      "side_effect_precondition": "Mandatory human review; this edge never transfers content to a platform and does not publish or upload.",
+      "idempotency_key_expression": "run_closeout_receipt_hash + release_scope_hash",
+      "upstream_hash_dependencies": [
+        "run_closeout_receipt_hash",
+        "qa_package_hash",
+        "expected_manifest_hash",
+        "current_policy_snapshot_hash"
+      ],
+      "invalidation_scope": [
+        "HUMAN_FINAL_CONTENT_DECISION"
+      ],
+      "resume_policy": "Remain production-complete and WAITING_HUMAN_FINAL_ACCEPTANCE until an explicit decision; absence is not HOLD.",
+      "compensation_action": "Keep the final set internal and QA-passed; no platform action is initiated.",
+      "governance_route_refs": [
+        "R16",
+        "R17",
+        "R18",
+        "R19"
+      ]
+    },
+    {
+      "edge_id": "E291_CLASSIFY_HUMAN_FINAL_CONTENT_CORRECTION",
+      "edge_version": "1.0",
+      "edge_class": "REWORK",
+      "source_node_id": "N240_HUMAN_RELEASE_DECISION",
+      "target_node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "trigger": "HUMAN_FINAL_CONTENT_CORRECTION_REQUESTED",
+      "guard_expression": "final_content_decision == REQUEST_CORRECTION AND correction_request_valid == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_final_content_correction_request.schema.json",
+      "required_source_receipts": [
+        "HUMAN_FINAL_CONTENT_DECISION_RECEIPT",
+        "FINAL_CONTENT_CORRECTION_REQUEST"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_REWORK",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "FINAL_CONTENT:CORRECTION_CLASSIFICATION_ACTIVE"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "EXPLICIT_HUMAN_CORRECTION_REQUEST",
+      "side_effect_precondition": "No platform action; N223 classifies the defect before any correction agent is activated.",
+      "idempotency_key_expression": "package_hash + correction_request_hash + human_final_content_decision_hash",
+      "upstream_hash_dependencies": [
+        "final_content_package_hash",
+        "human_final_content_decision_receipt_hash",
+        "final_content_correction_request_hash"
+      ],
+      "invalidation_scope": [
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT",
+        "AFFECTED_CONTENT_QA_RECEIPTS",
+        "RUN_CLOSEOUT_VERDICT",
+        "HUMAN_FINAL_CONTENT_DECISION"
+      ],
+      "resume_policy": "After N223 classification, correct only affected scope, repeat QA and closeout, then create a new N240 decision for the new revision.",
+      "compensation_action": "Keep the rejected revision immutable and all unaffected QA-passed assets preserved.",
+      "governance_route_refs": [
+        "R15",
+        "R16",
+        "R19"
+      ]
+    },
+    {
+      "edge_id": "E300_CHECKPOINT_FROM_COORDINATOR",
+      "edge_version": "1.0",
+      "edge_class": "CHECKPOINT",
+      "source_node_id": "N020_PASSPORT_COORDINATION",
+      "target_node_id": "N250_TRANSITION_REENTRY_CHECKPOINT",
+      "trigger": "SESSION_BOUNDARY_OR_EXPLICIT_PAUSE",
+      "guard_expression": "run_state_consistent == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_run_state.schema.json",
+      "required_source_receipts": [
+        "LATEST_STAGE_RECEIPTS"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_checkpoint_acceptance_receipt.schema.json",
+      "state_delta": {
+        "set_run_state": "RUN_ACTIVE",
+        "complete_source_node": false,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "RUN_STATE:CHECKPOINTING"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "NONE_FOR_SAFE_CHECKPOINT",
+      "side_effect_precondition": "No external side effect is repeated.",
+      "idempotency_key_expression": "run_id + state_hash + checkpoint_sequence",
+      "upstream_hash_dependencies": [
+        "run_state_hash",
+        "latest_receipt_set_hash"
+      ],
+      "invalidation_scope": [
+        "CHECKPOINT_ONLY"
+      ],
+      "resume_policy": "Checkpoint can later resume only through registered resume edge.",
+      "compensation_action": "Keep prior checkpoint current if new checkpoint validation fails.",
+      "governance_route_refs": [
+        "R01",
+        "R21",
+        "R33"
+      ]
+    },
+    {
+      "edge_id": "E310_RESUME_AT_COORDINATOR",
+      "edge_version": "1.0",
+      "edge_class": "RESUME",
+      "source_node_id": "N250_TRANSITION_REENTRY_CHECKPOINT",
+      "target_node_id": "N020_PASSPORT_COORDINATION",
+      "trigger": "RESUME_ROUTE_READY",
+      "guard_expression": "recovery_run_state == RESUME_READY AND checkpoint_valid == true AND side_effects_reconciled == true AND graph_version_compatible == true",
+      "required_payload_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_recovery_resume_receipt.schema.json",
+      "required_source_receipts": [
+        "CHECKPOINT_VALID",
+        "RECOVERY_RESUME_RECEIPT",
+        "RESUME_READY"
+      ],
+      "receiver_acceptance_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "state_delta": {
+        "set_run_state": "WAITING_RECEIVER_ACCEPTANCE",
+        "complete_source_node": true,
+        "activate_target_node": true,
+        "artifact_status_updates": [
+          "RUN_STATE:RESUMED"
+        ]
+      },
+      "failure_route_ids": [],
+      "retry_route_id": null,
+      "approval_requirement": "OWNER_DECISION_ONLY_FOR_FULL_RESTART_GRAPH_MIGRATION_OR_UNRESOLVED_SIDE_EFFECT",
+      "side_effect_precondition": "Provider and external state reconciled before resume.",
+      "idempotency_key_expression": "checkpoint_id + recovery_resume_receipt_hash",
+      "upstream_hash_dependencies": [
+        "checkpoint_hash",
+        "recovery_resume_receipt_hash",
+        "side_effect_ledger_hash"
+      ],
+      "invalidation_scope": [
+        "STALE_ARTIFACTS_IDENTIFIED_BY_CHECKPOINT_RECONCILIATION"
+      ],
+      "resume_policy": "Coordinator activates only the target allowed by the recovery receipt; unchanged upstream stages are not rerun.",
+      "compensation_action": "Remain in the exact waiting, reconciliation or restart-required state; do not repeat side effects.",
+      "governance_route_refs": [
+        "R01",
+        "R21",
+        "R33"
+      ]
+    }
+  ],
+  "deferred_route_scope": [
+    "R04",
+    "R05",
+    "R06",
+    "R07",
+    "R08",
+    "R09",
+    "R13",
+    "R20",
+    "R22",
+    "R23",
+    "R24",
+    "R25",
+    "R26",
+    "R27",
+    "R28",
+    "R29",
+    "R31",
+    "R32",
+    "R34",
+    "R35",
+    "R36",
+    "R37",
+    "R38",
+    "R39",
+    "R40",
+    "R41"
+  ]
+}

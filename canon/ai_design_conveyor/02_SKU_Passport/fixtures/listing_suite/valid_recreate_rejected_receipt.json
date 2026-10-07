@@ -1,0 +1,25 @@
+{
+  "schema_version": "1.0",
+  "receipt_id": "LS-PSP-RECEIPT-FIXTURE-RECREATE-REJECTED-001",
+  "request_id": "LS-PSP-REQ-FIXTURE-RECREATE-001",
+  "request_sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+  "requested_action": "RECREATE_PASSPORT",
+  "sku_id": "SKU-FIXTURE-001",
+  "result": "RECREATE_REJECTED",
+  "passport_before": {
+    "passport_id": "PSP-FIXTURE-001",
+    "version": "7",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "passport_after": null,
+  "accepted_source_count": 1,
+  "rejected_source_count": 0,
+  "duplicate_count": 0,
+  "change_event_ids": [],
+  "question_ids": [],
+  "conflict_ids": [],
+  "user_message_code": "STALE_PASSPORT_INPUT",
+  "external_side_effects_executed": 0,
+  "publication_authority": "NOT_GRANTED",
+  "evaluated_at": "2026-10-04T12:06:00Z"
+}

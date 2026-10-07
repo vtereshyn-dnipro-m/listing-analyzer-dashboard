@@ -1,0 +1,26 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema_version","legal_hold_receipt_id","hold_id","archive_receipt_ref","archive_manifest_sha256","sku_id","passport_id","action","actor_id","actor_authority","reason","acted_at","previous_receipt_ref","status"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "legal_hold_receipt_id":{"type":"string","pattern":"^LS-LEGAL-HOLD-[A-Z0-9._-]+$"},
+    "hold_id":{"type":"string","minLength":1},
+    "archive_receipt_ref":{"type":"string","minLength":1},
+    "archive_manifest_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "sku_id":{"type":"string","minLength":1},
+    "passport_id":{"type":"string","minLength":1},
+    "action":{"enum":["APPLY","RELEASE"]},
+    "actor_id":{"type":"string","minLength":1},
+    "actor_authority":{"enum":["PASSPORT_ADMIN","LEGAL_OWNER","AUDIT_OWNER"]},
+    "reason":{"type":"string","minLength":1},
+    "acted_at":{"type":"string","format":"date-time"},
+    "previous_receipt_ref":{"type":["string","null"]},
+    "status":{"enum":["LEGAL_HOLD_ACTIVE","LEGAL_HOLD_RELEASED"]}
+  },
+  "allOf":[
+    {"if":{"properties":{"action":{"const":"APPLY"}},"required":["action"]},"then":{"properties":{"status":{"const":"LEGAL_HOLD_ACTIVE"},"previous_receipt_ref":{"const":null}}}},
+    {"if":{"properties":{"action":{"const":"RELEASE"}},"required":["action"]},"then":{"properties":{"status":{"const":"LEGAL_HOLD_RELEASED"},"previous_receipt_ref":{"type":"string","minLength":1}}}}
+  ]
+}

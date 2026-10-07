@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0",
+  "receipt_id": "PSP-RECREATE-FIXTURE-ROLLBACK-001",
+  "operation_id": "OP-FIXTURE-RECREATE-ROLLBACK-001",
+  "idempotency_key": "FIXTURE-RECREATE-ROLLBACK-0001",
+  "sku_id": "SKU-FIXTURE-001",
+  "state": "RECREATE_FAILED",
+  "old_passport": {
+    "passport_id": "PSP-FIXTURE-001",
+    "passport_lineage_id": "LINEAGE-FIXTURE-001",
+    "version": "7",
+    "path": "C:/product/SKU-FIXTURE-001/passport.json",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "lifecycle_status": "ACTIVE"
+  },
+  "new_passport": null,
+  "archive_receipt": {
+    "ref": "PSP-ARCHIVE-FIXTURE-ROLLBACK-001",
+    "sha256": "4444444444444444444444444444444444444444444444444444444444444444"
+  },
+  "lock_id": "LOCK-SKU-FIXTURE-001",
+  "optimistic_lock_status": "PASS",
+  "canonical_pointer_count": 1,
+  "downstream_invalidation_status": "NOT_STARTED",
+  "rollback_status": "COMPLETED",
+  "publication_authority": "NOT_GRANTED",
+  "committed_at": null
+}

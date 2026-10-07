@@ -1,0 +1,19 @@
+{
+  "schema_version":"1.0",
+  "intake_receipt_id":"LS-INTAKE-RECEIPT-FIXTURE-PARTIAL-001",
+  "snapshot_id":"LS-SNAPSHOT-FIXTURE-PARTIAL-001",
+  "actor_id":"USER-FIXTURE-001",
+  "sku_id":"SKU-FIXTURE-001",
+  "selection_root":"C:/input/selected-folder",
+  "policy":{"policy_id":"LS-INTAKE-POLICY-FIXTURE-001","policy_version":"1.0-fixture","policy_sha256":"6666666666666666666666666666666666666666666666666666666666666666"},
+  "frozen_at":"2026-10-04T12:20:00Z",
+  "object_count":2,
+  "accepted_source_count":1,
+  "rejected_source_count":1,
+  "duplicate_count":0,
+  "submission_status":"PARTIAL_REQUIRES_CONFIRMATION",
+  "objects":[
+    {"source_artifact_id":"SRC-INTAKE-001","original_locator":"C:/input/selected-folder/manual.pdf","archived_locator":"C:/product/SKU-FIXTURE-001/артефакти/2026-10-04/manual.pdf","detected_mime_type":"application/pdf","size_bytes":1000,"sha256":"8888888888888888888888888888888888888888888888888888888888888888","access_result":"ACCEPTED","reason_code":null,"duplicate_of":null},
+    {"source_artifact_id":"SRC-INTAKE-002","original_locator":"C:/input/selected-folder/secret.bin","archived_locator":null,"detected_mime_type":"application/octet-stream","size_bytes":2000,"sha256":null,"access_result":"UNSUPPORTED","reason_code":"TYPE_NOT_ALLOWED","duplicate_of":null}
+  ]
+}

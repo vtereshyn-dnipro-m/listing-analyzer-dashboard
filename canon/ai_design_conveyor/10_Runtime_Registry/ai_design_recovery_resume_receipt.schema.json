@@ -1,0 +1,12 @@
+{
+  "$schema":"http://json-schema.org/draft-07/schema#","$id":"ai_design_recovery_resume_receipt.schema.json","type":"object","additionalProperties":false,
+  "required":["schema_version","receipt_id","run_id","sku","checkpoint_id","resume_disposition","run_state","reason_codes","target_owner_role","target_node_id","repeat_provider_call_authorized","usage_reset","publication_authority","evaluated_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},"receipt_id":{"type":"string","minLength":1},"run_id":{"type":"string","minLength":1},"sku":{"type":"string","minLength":1},"checkpoint_id":{"type":"string","minLength":1},
+    "resume_disposition":{"enum":["RESUME_FROM_CHECKPOINT","RESUME_AFTER_HUMAN_DECISION","RESUME_AFTER_BUDGET_UPDATE","RECONCILIATION_REQUIRED","TARGETED_REENTRY","FULL_RESTART_REQUIRED","WAITING_HUMAN_DECISION","WAITING_BUDGET_DECISION"]},
+    "run_state":{"enum":["RESUME_READY","WAITING_RECONCILIATION","WAITING_HUMAN_DECISION","WAITING_BUDGET_DECISION","RESTART_REQUIRED"]},
+    "reason_codes":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "target_owner_role":{"type":["string","null"]},"target_node_id":{"type":["string","null"]},
+    "repeat_provider_call_authorized":{"const":false},"usage_reset":{"const":false},"publication_authority":{"const":"NOT_GRANTED"},"evaluated_at":{"type":"string","format":"date-time"}
+  }
+}

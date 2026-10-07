@@ -1,0 +1,24 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://dnipro-m.local/ai-design/image_collection_asset_review_receipt.schema.json",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","receipt_id","standard_version","reviewer_id","reviewer_role","collection_id","sku_id","product_version","passport_binding","manifest_binding","report_binding","asset_reviews","collection_verdict","publication_authority","reviewed_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},"receipt_id":{"type":"string","pattern":"^ICAR-[A-Z0-9][A-Z0-9._-]+$"},"standard_version":{"const":"1.0"},
+    "reviewer_id":{"type":"string","minLength":1},"reviewer_role":{"enum":["REVIEWER","SKEPTIC"]},"collection_id":{"type":"string","minLength":1},"sku_id":{"type":"string","minLength":1},"product_version":{"type":"string","minLength":1},
+    "passport_binding":{"$ref":"#/$defs/binding"},"manifest_binding":{"$ref":"#/$defs/binding"},"report_binding":{"$ref":"#/$defs/binding"},
+    "asset_reviews":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/asset_review"}},
+    "collection_verdict":{"enum":["READY_FOR_HUMAN_DECISION","REWORK_NEEDED","REVIEW_INCOMPLETE"]},
+    "publication_authority":{"const":"NOT_GRANTED"},"reviewed_at":{"type":"string","format":"date-time"}
+  },
+  "$defs":{
+    "sha":{"type":"string","pattern":"^[A-Fa-f0-9]{64}$"},
+    "binding":{"type":"object","additionalProperties":false,"required":["id","path","sha256"],"properties":{"id":{"type":"string","minLength":1},"path":{"type":"string","minLength":1},"sha256":{"$ref":"#/$defs/sha"}}},
+    "criterion":{"type":"object","additionalProperties":false,"required":["criterion_id","applicability","result","reason_code","evidence_refs","observed_fact","impact","remediability","remediation_owner","allowed_action","recheck_condition"],"properties":{
+      "criterion_id":{"enum":["ASSET_OPENED_AND_INSPECTED","FILE_IDENTITY_AND_INTEGRITY","SKU_AND_VERSION_MATCH","PROVENANCE_AND_LINEAGE","METADATA_ACCURACY","TARGET_AND_USE_CASE_FIT","EVIDENCE_RELATIONSHIP","TECHNICAL_QUALITY","PRIVACY_AND_PERSONAL_DATA","THIRD_PARTY_MARKS","RIGHTS_AND_DOWNSTREAM_USE","REVIEW_PACKAGE_COMPLETENESS"]},
+      "applicability":{"enum":["APPLICABLE","NOT_APPLICABLE"]},"result":{"enum":["PASS","FAIL","NOT_VERIFIED","NOT_APPLICABLE"]},"reason_code":{"type":["string","null"],"pattern":"^[A-Z][A-Z0-9_]+$"},"evidence_refs":{"type":"array","items":{"type":"string","minLength":1}},"observed_fact":{"type":"string","minLength":1},"impact":{"enum":["NONE","LOCAL_ASSET","USE_RESTRICTION","IDENTITY_OR_TRUTH","REVIEW_PROCESS"]},"remediability":{"enum":["NOT_APPLICABLE","FIXABLE_BY_COLLECTOR","EXTERNAL_DECISION_REQUIRED","NOT_FIXABLE"]},"remediation_owner":{"enum":["NONE","IMAGE_COLLECTOR","REVIEWER","SKEPTIC","SKU_PASSPORT_OWNER","RIGHTS_OWNER","MEDIA_COLLECTION_OWNER"]},"allowed_action":{"enum":["NONE","PATCH_METADATA","REEXPORT_ASSET","RECROP_ASSET","RESTORE_OR_REPLACE_FILE","UPDATE_LINEAGE","TARGETED_SOURCE_RECOVERY","RERUN_REVIEW","REQUEST_IDENTITY_DECISION","REQUEST_RIGHTS_DECISION","EXCLUDE_ASSET"]},"recheck_condition":{"type":"string","minLength":1}
+    }},
+    "use_verdicts":{"type":"object","additionalProperties":false,"required":["analysis","internal_reference","production_input","publication"],"properties":{"analysis":{"enum":["ALLOWED","LIMITED","BLOCKED","NOT_REQUESTED"]},"internal_reference":{"enum":["ALLOWED","LIMITED","BLOCKED","NOT_REQUESTED"]},"production_input":{"enum":["ALLOWED","LIMITED","BLOCKED","NOT_REQUESTED"]},"publication":{"enum":["LIMITED","BLOCKED","NOT_REQUESTED"]}}},
+    "asset_review":{"type":"object","additionalProperties":false,"required":["asset_id","asset_path","file_sha256","media_type","target_id","inspection_status","criteria","downstream_use_verdicts","asset_verdict"],"properties":{"asset_id":{"type":"string","minLength":1},"asset_path":{"type":"string","minLength":1},"file_sha256":{"$ref":"#/$defs/sha"},"media_type":{"enum":["IMAGE","VIDEO"]},"target_id":{"type":"string","minLength":1},"inspection_status":{"enum":["FULLY_INSPECTED","NOT_REVIEWED"]},"criteria":{"type":"array","minItems":12,"maxItems":12,"items":{"$ref":"#/$defs/criterion"}},"downstream_use_verdicts":{"$ref":"#/$defs/use_verdicts"},"asset_verdict":{"enum":["KEEP","REWORK","QUARANTINE","REJECT","NOT_REVIEWED"]}}}
+  }
+}

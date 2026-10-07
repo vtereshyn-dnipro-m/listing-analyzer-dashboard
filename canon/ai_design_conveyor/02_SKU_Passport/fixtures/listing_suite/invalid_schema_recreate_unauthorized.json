@@ -1,0 +1,52 @@
+{
+  "schema_version": "1.0",
+  "request_id": "LS-PSP-REQ-FIXTURE-UNAUTHORIZED",
+  "requested_action": "RECREATE_PASSPORT",
+  "actor_id": "USER-FIXTURE-001",
+  "actor_authority": "DATA_CONTRIBUTOR",
+  "requested_at": "2026-10-04T12:05:00Z",
+  "sku_id": "SKU-FIXTURE-001",
+  "product_version": "V1",
+  "current_passport": {
+    "passport_id": "PSP-FIXTURE-001",
+    "passport_lineage_id": "LINEAGE-FIXTURE-001",
+    "version": "7",
+    "path": "C:/product/SKU-FIXTURE-001/passport.json",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "source_inventory": [
+    {
+      "source_artifact_id": "SRC-FIXTURE-002",
+      "type": "DOCX",
+      "original_locator": "C:/input/rebuild-source.docx",
+      "archived_locator": "C:/product/SKU-FIXTURE-001/артефакти/2026-10-04/rebuild-source.docx",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "access_result": "ACCEPTED",
+      "duplicate_of": null
+    }
+  ],
+  "scope": "complete passport recreation",
+  "user_context": null,
+  "recreate_reason": "Controlled negative fixture",
+  "confirmations": [
+    {
+      "confirmation_id": "CONFIRM-FIXTURE-INTENT-002",
+      "recreate_request_id": "LS-PSP-REQ-FIXTURE-UNAUTHORIZED",
+      "confirmation_type": "RECREATE_INTENT_CONFIRMED",
+      "actor_id": "USER-FIXTURE-001",
+      "confirmed_at": "2026-10-04T12:01:00Z",
+      "passport_version": "7",
+      "passport_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "confirmation_id": "CONFIRM-FIXTURE-SNAPSHOT-002",
+      "recreate_request_id": "LS-PSP-REQ-FIXTURE-UNAUTHORIZED",
+      "confirmation_type": "RECREATE_SNAPSHOT_CONFIRMED",
+      "actor_id": "USER-FIXTURE-001",
+      "confirmed_at": "2026-10-04T12:02:00Z",
+      "passport_version": "7",
+      "passport_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "idempotency_key": "FIXTURE-UNAUTHORIZED-0001"
+}

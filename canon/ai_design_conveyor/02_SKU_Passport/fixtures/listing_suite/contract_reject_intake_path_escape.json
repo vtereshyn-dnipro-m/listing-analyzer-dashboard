@@ -1,0 +1,18 @@
+{
+  "schema_version":"1.0",
+  "intake_receipt_id":"LS-INTAKE-RECEIPT-FIXTURE-ESCAPE-001",
+  "snapshot_id":"LS-SNAPSHOT-FIXTURE-ESCAPE-001",
+  "actor_id":"USER-FIXTURE-001",
+  "sku_id":"SKU-FIXTURE-001",
+  "selection_root":"C:/input/selected-folder",
+  "policy":{"policy_id":"LS-INTAKE-POLICY-FIXTURE-001","policy_version":"1.0-fixture","policy_sha256":"6666666666666666666666666666666666666666666666666666666666666666"},
+  "frozen_at":"2026-10-04T12:22:00Z",
+  "object_count":1,
+  "accepted_source_count":1,
+  "rejected_source_count":0,
+  "duplicate_count":0,
+  "submission_status":"READY_TO_SUBMIT",
+  "objects":[
+    {"source_artifact_id":"SRC-INTAKE-ESCAPE","original_locator":"C:/outside/not-selected/manual.pdf","archived_locator":"C:/product/SKU-FIXTURE-001/артефакти/2026-10-04/manual.pdf","detected_mime_type":"application/pdf","size_bytes":1000,"sha256":"9999999999999999999999999999999999999999999999999999999999999999","access_result":"ACCEPTED","reason_code":null,"duplicate_of":null}
+  ]
+}

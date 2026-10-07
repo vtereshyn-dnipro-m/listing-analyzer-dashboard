@@ -1,0 +1,18 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","profile_id","profile_version","effective_at","retention_period_days","archive_read_roles","review_owner_id","legal_hold_authorities","configured_by","approved_by","profile_sha256"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "profile_id":{"type":"string","pattern":"^LS-RETENTION-PROFILE-[A-Z0-9._-]+$"},
+    "profile_version":{"type":"string","minLength":1},
+    "effective_at":{"type":"string","format":"date-time"},
+    "retention_period_days":{"type":"integer","minimum":1},
+    "archive_read_roles":{"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["PRODUCT_OWNER","PASSPORT_ADMIN","AUDITOR"]}},
+    "review_owner_id":{"type":"string","minLength":1},
+    "legal_hold_authorities":{"type":"array","minItems":1,"uniqueItems":true,"items":{"enum":["PASSPORT_ADMIN","LEGAL_OWNER","AUDIT_OWNER"]}},
+    "configured_by":{"type":"string","minLength":1},
+    "approved_by":{"type":"string","minLength":1},
+    "profile_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}
+  }
+}

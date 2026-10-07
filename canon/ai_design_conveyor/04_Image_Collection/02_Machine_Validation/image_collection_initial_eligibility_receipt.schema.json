@@ -1,0 +1,26 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","receipt_id","sku_id","passport","passport_exists","identity_match","readback_pass","single_canonical_passport","active_block_allows_media","existing_media_snapshot_ref","verdict","reason_code","collection_created","evaluated_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "receipt_id":{"type":"string","pattern":"^IMAGE-COLLECTION-ELIGIBILITY-[A-Z0-9._-]+$"},
+    "sku_id":{"type":"string","minLength":1},
+    "passport":{"oneOf":[{"type":"null"},{"$ref":"#/$defs/passport"}]},
+    "passport_exists":{"type":"boolean"},
+    "identity_match":{"type":"boolean"},
+    "readback_pass":{"type":"boolean"},
+    "single_canonical_passport":{"type":"boolean"},
+    "active_block_allows_media":{"type":"boolean"},
+    "existing_media_snapshot_ref":{"type":["string","null"]},
+    "verdict":{"enum":["AVAILABLE","BLOCKED"]},
+    "reason_code":{"enum":["INITIAL_COLLECTION_AVAILABLE","SKU_PASSPORT_REQUIRED","PASSPORT_READBACK_REQUIRED","SKU_IDENTITY_MISMATCH","MULTIPLE_CANONICAL_PASSPORTS","ACTIVE_BLOCK_PROHIBITS_MEDIA","EXISTING_MEDIA_SNAPSHOT_REQUIRED","STALE_PASSPORT_BINDING"]},
+    "collection_created":{"const":false},
+    "evaluated_at":{"type":"string","format":"date-time"}
+  },
+  "allOf":[
+    {"if":{"properties":{"verdict":{"const":"AVAILABLE"}},"required":["verdict"]},"then":{"properties":{"passport":{"type":"object"},"passport_exists":{"const":true},"identity_match":{"const":true},"readback_pass":{"const":true},"single_canonical_passport":{"const":true},"active_block_allows_media":{"const":true},"existing_media_snapshot_ref":{"type":"string","minLength":1},"reason_code":{"const":"INITIAL_COLLECTION_AVAILABLE"}}}},
+    {"if":{"properties":{"passport_exists":{"const":false}},"required":["passport_exists"]},"then":{"properties":{"passport":{"const":null},"verdict":{"const":"BLOCKED"},"reason_code":{"const":"SKU_PASSPORT_REQUIRED"}}}}
+  ],
+  "$defs":{"passport":{"type":"object","additionalProperties":false,"required":["passport_id","version","state","path","sha256"],"properties":{"passport_id":{"type":"string","minLength":1},"version":{"type":"string","minLength":1},"state":{"enum":["NOT_READY","BLOCKED","READY_WITH_LIMITATIONS","READY"]},"path":{"type":"string","minLength":1},"sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}}}}
+}

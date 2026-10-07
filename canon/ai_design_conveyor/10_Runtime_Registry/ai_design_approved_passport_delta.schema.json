@@ -1,0 +1,24 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "ai_design_approved_passport_delta.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","delta_id","profile","run_id","edge_id","sku_id","product_version","base_passport","approval_binding","change_event_id","changes","full_rewrite_authorized","out_of_scope_mutation_authorized","status","created_at"],
+  "properties": {
+    "schema_version": {"const":"1.0"},
+    "delta_id": {"type":"string","pattern":"^PASSPORTDELTA-[A-Z0-9._-]+$"},
+    "profile": {"const":"APPROVED_CANDIDATE_DELTA_V1"},
+    "run_id": {"type":"string","minLength":1},
+    "edge_id": {"const":"E070_APPLY_APPROVED_PASSPORT_DELTA"},
+    "sku_id": {"type":"string","minLength":1},
+    "product_version": {"type":"string","minLength":1},
+    "base_passport": {"type":"object","additionalProperties":false,"required":["logical_passport_id","path","version","sha256","registry_status"],"properties":{"logical_passport_id":{"type":"string","minLength":1},"path":{"type":"string","minLength":1},"version":{"type":"string","minLength":1},"sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"registry_status":{"const":"CURRENT"}}},
+    "approval_binding": {"type":"object","additionalProperties":false,"required":["approval_id","approval_ref","approval_sha256","status","owner","approved_at"],"properties":{"approval_id":{"type":"string","minLength":1},"approval_ref":{"type":"string","minLength":1},"approval_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"status":{"const":"APPROVED"},"owner":{"type":"string","minLength":1},"approved_at":{"type":"string","format":"date-time"}}},
+    "change_event_id": {"type":"string","minLength":1},
+    "changes": {"type":"array","minItems":1,"items":{"type":"object","additionalProperties":false,"required":["change_id","target_section","field_path","operation","old_value_sha256","new_value_json","new_value_sha256","evidence_refs","fact_status","approved"],"properties":{"change_id":{"type":"string","pattern":"^CHG-[A-Z0-9._-]+$"},"target_section":{"type":"string","minLength":1},"field_path":{"type":"string","minLength":1},"operation":{"enum":["SET","APPEND_ROW","UPDATE_ROW","REMOVE_ROW"]},"old_value_sha256":{"type":["string","null"],"pattern":"^[a-f0-9]{64}$"},"new_value_json":{"type":"string","minLength":1},"new_value_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"evidence_refs":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}},"fact_status":{"enum":["CONFIRMED","PROPOSED","UNVERIFIED"]},"approved":{"const":true}}}},
+    "full_rewrite_authorized": {"const":false},
+    "out_of_scope_mutation_authorized": {"const":false},
+    "status": {"const":"APPROVED_FOR_WRITEBACK"},
+    "created_at": {"type":"string","format":"date-time"}
+  }
+}

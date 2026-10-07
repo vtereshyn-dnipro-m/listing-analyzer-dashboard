@@ -1,0 +1,168 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dnipro-m.local/ai-design/ai_design_run_state.schema.json",
+  "title": "AI Design Run State",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","run_id","execution_mode","lifecycle_state","launch_control","product_identity","pinned_graph","pinned_product_truth","node_state","edge_state","artifacts","evidence_gaps","conflicts","blockers","approvals","budgets","side_effect_ledger","receipt_refs","transition_history","latest_checkpoint","resume_cursor","terminal","created_at","updated_at"],
+  "properties": {
+    "schema_version": {"const": "1.0"},
+    "run_id": {"type": "string", "pattern": "^RUN-[A-Z0-9][A-Z0-9_-]+$"},
+    "execution_mode": {"enum": ["GRAPH_SPEC_ONLY","GRAPH_SHADOW_RUN","CONTROLLED_RUNTIME","PRODUCTION_RUNTIME"]},
+    "lifecycle_state": {"enum": ["RUN_ACTIVE","WAITING_RECEIVER_ACCEPTANCE","WAITING_HUMAN_DECISION","RUN_REWORK","RUN_BLOCKED","RUN_COMPLETED"]},
+    "launch_control": {"type":"object","additionalProperties":false,"required":["launch_control_id","delivery_route","review_mode","mode","human_review_checkpoint","terminal_target","authority_ref","authorized_at"],"properties":{"launch_control_id":{"type":"string","pattern":"^LC-[A-Za-z0-9._-]+$"},"delivery_route":{"enum":["INTERNAL_PIPELINE","EXTERNAL_DELIVERY"]},"review_mode":{"enum":["AUTO_CONTINUE","HUMAN_REVIEW_REQUIRED"]},"mode":{"enum":["CONTENT_TZ_ONLY","END_TO_END_GENERATION"]},"human_review_checkpoint":{"enum":["REQUIRED","SKIP"]},"terminal_target":{"enum":["CONTENT_TZ_READY","READY_CONTENT_PACKAGE"]},"authority_ref":{"type":"string","minLength":1},"authorized_at":{"type":"string","format":"date-time"}}},
+    "product_identity": {"$ref": "#/$defs/productIdentity"},
+    "pinned_graph": {"$ref": "#/$defs/pinnedGraph"},
+    "pinned_product_truth": {"$ref": "#/$defs/pinnedArtifact"},
+    "node_state": {"$ref": "#/$defs/nodeState"},
+    "edge_state": {"$ref": "#/$defs/edgeState"},
+    "artifacts": {"type": "array", "items": {"$ref": "#/$defs/artifact"}},
+    "evidence_gaps": {"type": "array", "items": {"$ref": "#/$defs/issue"}},
+    "conflicts": {"type": "array", "items": {"$ref": "#/$defs/issue"}},
+    "blockers": {"type": "array", "items": {"$ref": "#/$defs/blocker"}},
+    "approvals": {"type": "array", "items": {"$ref": "#/$defs/approval"}},
+    "budgets": {"$ref": "#/$defs/budgets"},
+    "side_effect_ledger": {"type": "array", "items": {"$ref": "#/$defs/sideEffect"}},
+    "receipt_refs": {"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "transition_history": {"type":"array","items":{"$ref":"#/$defs/transitionEvent"}},
+    "latest_checkpoint": {"oneOf": [{"type": "null"},{"$ref": "#/$defs/checkpoint"}]},
+    "resume_cursor": {"oneOf": [{"type": "null"},{"$ref": "#/$defs/resumeCursor"}]},
+    "terminal": {"$ref": "#/$defs/terminal"},
+    "created_at": {"type": "string", "format": "date-time"},
+    "updated_at": {"type": "string", "format": "date-time"}
+  },
+  "$defs": {
+    "sha256": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+    "nodeId": {"type": "string", "pattern": "^N[0-9]{3}_[A-Z0-9_]+$"},
+    "edgeId": {"type": "string", "pattern": "^E[0-9]{3}_[A-Z0-9_]+$"},
+    "productIdentity": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sku","model","variant","market","channel","locales","product_root"],
+      "properties": {
+        "sku": {"type": "string", "minLength": 1},
+        "model": {"type": "string", "minLength": 1},
+        "variant": {"type": ["string","null"]},
+        "market": {"type": "string", "minLength": 1},
+        "channel": {"type": "string", "minLength": 1},
+        "locales": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 2}},
+        "product_root": {"type": "string", "pattern": "^[A-Za-z]:\\\\.+"}
+      }
+    },
+    "versionPin": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path","version","sha256"],
+      "properties": {"path":{"type":"string","minLength":1},"version":{"type":"string","minLength":1},"sha256":{"$ref":"#/$defs/sha256"}}
+    },
+    "pinnedGraph": {
+      "type": "object", "additionalProperties": false,
+      "required": ["graph_version","graph_contract","node_registry","edge_registry","governance_mapping"],
+      "properties": {
+        "graph_version": {"type": "string", "minLength": 1},
+        "graph_contract": {"$ref": "#/$defs/versionPin"},
+        "node_registry": {"$ref": "#/$defs/versionPin"},
+        "edge_registry": {"$ref": "#/$defs/versionPin"},
+        "governance_mapping": {"$ref": "#/$defs/versionPin"}
+      }
+    },
+    "pinnedArtifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["artifact_id","path","version","sha256","status"],
+      "properties": {
+        "artifact_id": {"type":"string","minLength":1}, "path":{"type":"string","minLength":1}, "version":{"type":"string","minLength":1}, "sha256":{"$ref":"#/$defs/sha256"},
+        "status":{"enum":["NOT_READY","BLOCKED","READY_WITH_LIMITATIONS","READY"]}
+      }
+    },
+    "nodeState": {
+      "type":"object", "additionalProperties":false,
+      "required":["current_node_id","completed_node_ids","active_node_ids","pending_node_ids","blocked_node_ids","not_applicable_node_ids"],
+      "properties": {
+        "current_node_id":{"oneOf":[{"type":"null"},{"$ref":"#/$defs/nodeId"}]},
+        "completed_node_ids":{"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/nodeId"}},
+        "active_node_ids":{"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/nodeId"}},
+        "pending_node_ids":{"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/nodeId"}},
+        "blocked_node_ids":{"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/nodeId"}},
+        "not_applicable_node_ids":{"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/nodeId"}}
+      }
+    },
+    "edgeState": {
+      "type":"object", "additionalProperties":false,
+      "required":["applied_edge_ids","available_edge_ids","rejected_edge_ids","unevaluated_edge_ids"],
+      "properties": {
+        "applied_edge_ids":{"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/edgeId"}},
+        "available_edge_ids":{"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/edgeId"}},
+        "rejected_edge_ids":{"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/edgeId"}},
+        "unevaluated_edge_ids":{"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/edgeId"}}
+      }
+    },
+    "artifact": {
+      "type":"object", "additionalProperties":false,
+      "required":["artifact_id","artifact_version","artifact_type","role","path","sha256","creator_node_id","creator_run_id","creator_invocation_id","parent_artifact_ids","source_evidence_bindings","status","verification_status","created_at","supersedes_artifact_id"],
+      "properties": {
+        "artifact_id":{"type":"string","minLength":1}, "artifact_version":{"type":"string","minLength":1}, "artifact_type":{"type":"string","minLength":1}, "role":{"type":"string","minLength":1}, "path":{"type":"string","minLength":1}, "sha256":{"$ref":"#/$defs/sha256"},
+        "creator_node_id":{"$ref":"#/$defs/nodeId"}, "creator_run_id":{"type":"string","minLength":1}, "creator_invocation_id":{"type":["string","null"]},
+        "parent_artifact_ids":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}}, "source_evidence_bindings":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+        "status":{"type":"string","pattern":"^[A-Z][A-Z0-9_]+$"}, "verification_status":{"enum":["NOT_VERIFIED","PASS","FAIL","PARTIAL","NOT_APPLICABLE"]}, "created_at":{"type":"string","format":"date-time"}, "supersedes_artifact_id":{"type":["string","null"]}
+      }
+    },
+    "issue": {
+      "type":"object", "additionalProperties":false,
+      "required":["issue_id","issue_type","description","owner","evidence_refs","affected_node_ids","status"],
+      "properties": {"issue_id":{"type":"string","minLength":1},"issue_type":{"type":"string","pattern":"^[A-Z][A-Z0-9_]+$"},"description":{"type":"string","minLength":1},"owner":{"type":"string","minLength":1},"evidence_refs":{"type":"array","items":{"type":"string","minLength":1}},"affected_node_ids":{"type":"array","items":{"$ref":"#/$defs/nodeId"}},"status":{"enum":["OPEN","RESOLVED","ACCEPTED_LIMITATION"]}}
+    },
+    "blocker": {
+      "type":"object", "additionalProperties":false,
+      "required":["blocker_id","code","owner","evidence_refs","affected_node_ids","affected_edge_ids","allowed_recovery_edge_ids","status"],
+      "properties": {"blocker_id":{"type":"string","minLength":1},"code":{"enum":["NODE_NOT_REGISTERED","EDGE_NOT_REGISTERED","GRAPH_VERSION_MISMATCH","GUARD_UNRESOLVED","REQUIRED_PAYLOAD_INVALID","REQUIRED_RECEIPT_MISSING","RECEIVER_NOT_ACCEPTED","UPSTREAM_ARTIFACT_STALE","SIDE_EFFECT_AUTHORITY_MISSING","IDEMPOTENCY_UNPROVEN","CHECKPOINT_INVALID","UNROUTABLE_CASE","LOOP_BUDGET_EXHAUSTED"]},"owner":{"type":"string","minLength":1},"evidence_refs":{"type":"array","minItems":1,"items":{"type":"string","minLength":1}},"affected_node_ids":{"type":"array","items":{"$ref":"#/$defs/nodeId"}},"affected_edge_ids":{"type":"array","items":{"$ref":"#/$defs/edgeId"}},"allowed_recovery_edge_ids":{"type":"array","items":{"$ref":"#/$defs/edgeId"}},"status":{"enum":["OPEN","RESOLVED"]}}
+    },
+    "approval": {
+      "type":"object", "additionalProperties":false,
+      "required":["approval_id","approval_type","owner","scope","decision","decided_at","expires_at","evidence_ref"],
+      "properties": {"approval_id":{"type":"string","minLength":1},"approval_type":{"type":"string","pattern":"^[A-Z][A-Z0-9_]+$"},"owner":{"type":"string","minLength":1},"scope":{"type":"string","minLength":1},"decision":{"enum":["APPROVED","REJECTED","REVOKED"]},"decided_at":{"type":"string","format":"date-time"},"expires_at":{"type":["string","null"],"format":"date-time"},"evidence_ref":{"type":"string","minLength":1}}
+    },
+    "budgets": {
+      "type":"object", "additionalProperties":false,
+      "required":["retry","round","cost","time"],
+      "properties": {
+        "retry":{"type":"object","additionalProperties":false,"required":["used","maximum"],"properties":{"used":{"type":"integer","minimum":0},"maximum":{"type":"integer","minimum":0}}},
+        "round":{"type":"object","additionalProperties":false,"required":["used","maximum"],"properties":{"used":{"type":"integer","minimum":0},"maximum":{"type":"integer","minimum":0}}},
+        "cost":{"type":"object","additionalProperties":false,"required":["currency","approved","spent"],"properties":{"currency":{"type":"string","pattern":"^[A-Z]{3}$"},"approved":{"type":"number","minimum":0},"spent":{"type":"number","minimum":0}}},
+        "time":{"type":"object","additionalProperties":false,"required":["started_at","deadline_at"],"properties":{"started_at":{"type":"string","format":"date-time"},"deadline_at":{"type":["string","null"],"format":"date-time"}}}
+      }
+    },
+    "sideEffect": {
+      "type":"object", "additionalProperties":false,
+      "required":["side_effect_id","node_id","edge_id","effect_type","authority_ref","idempotency_key","external_invocation_id","status","started_at","terminal_receipt_ref","reconciliation_status"],
+      "properties": {"side_effect_id":{"type":"string","minLength":1},"node_id":{"$ref":"#/$defs/nodeId"},"edge_id":{"$ref":"#/$defs/edgeId"},"effect_type":{"type":"string","pattern":"^[A-Z][A-Z0-9_]+$"},"authority_ref":{"type":"string","minLength":1},"idempotency_key":{"type":"string","minLength":1},"external_invocation_id":{"type":["string","null"]},"status":{"enum":["PLANNED","STARTED","SUCCEEDED","FAILED","UNKNOWN"]},"started_at":{"type":"string","format":"date-time"},"terminal_receipt_ref":{"type":["string","null"]},"reconciliation_status":{"enum":["NOT_REQUIRED","PENDING","RECONCILED_SUCCESS","RECONCILED_FAILURE","UNRESOLVED"]}}
+    },
+    "transitionEvent": {
+      "type":"object", "additionalProperties":false,
+      "required":["transition_id","decision_id","edge_id","source_node_id","target_node_id","input_state_sha256","decision_sha256","receipt_ref","applied_at"],
+      "properties": {
+        "transition_id":{"type":"string","pattern":"^TRANSITION-[A-Z0-9][A-Z0-9_-]+$"},
+        "decision_id":{"type":"string","pattern":"^ROUTE-[A-Z0-9][A-Z0-9_-]+$"},
+        "edge_id":{"$ref":"#/$defs/edgeId"},
+        "source_node_id":{"$ref":"#/$defs/nodeId"},
+        "target_node_id":{"$ref":"#/$defs/nodeId"},
+        "input_state_sha256":{"$ref":"#/$defs/sha256"},
+        "decision_sha256":{"$ref":"#/$defs/sha256"},
+        "receipt_ref":{"type":"string","minLength":1},
+        "applied_at":{"type":"string","format":"date-time"}
+      }
+    },
+    "checkpoint": {
+      "type":"object", "additionalProperties":false,
+      "required":["checkpoint_id","state_sha256","artifact_binding_sha256","side_effect_ledger_sha256","created_at","created_by_node_id","receipt_ref"],
+      "properties": {"checkpoint_id":{"type":"string","minLength":1},"state_sha256":{"$ref":"#/$defs/sha256"},"artifact_binding_sha256":{"$ref":"#/$defs/sha256"},"side_effect_ledger_sha256":{"$ref":"#/$defs/sha256"},"created_at":{"type":"string","format":"date-time"},"created_by_node_id":{"$ref":"#/$defs/nodeId"},"receipt_ref":{"type":"string","minLength":1}}
+    },
+    "resumeCursor": {
+      "type":"object", "additionalProperties":false,
+      "required":["checkpoint_id","resume_node_id","allowed_resume_edge_ids","reconciliation_required"],
+      "properties": {"checkpoint_id":{"type":"string","minLength":1},"resume_node_id":{"$ref":"#/$defs/nodeId"},"allowed_resume_edge_ids":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/edgeId"}},"reconciliation_required":{"type":"boolean"}}
+    },
+    "terminal": {
+      "type":"object", "additionalProperties":false,
+      "required":["is_terminal","status","terminal_receipt_ref"],
+      "properties": {"is_terminal":{"type":"boolean"},"status":{"enum":["NOT_TERMINAL","COMPLETED","CANCELLED","FAILED_EXHAUSTED"]},"terminal_receipt_ref":{"type":["string","null"]}}
+    }
+  }
+}
