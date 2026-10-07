@@ -140,6 +140,12 @@ pd.read_sql = fake_sql
 
 import services.localization as loc                     # noqa: E402
 from streamlit.testing.v1 import AppTest                # noqa: E402
+
+
+def loc_inputs(at) -> list:
+    """Поля строк перевода. Не все text_input страницы: на «Контенте» рядом
+    живёт область «Паспорт SKU» со своим полем поиска."""
+    return [w for w in at.text_input if str(w.key or "").startswith("loc-txt-")]
 import streamlit as st                                  # noqa: E402
 
 
@@ -273,8 +279,11 @@ at.session_state["loc-lang"] = "es"
 at.run()
 _md = " ".join(str(m.value) for m in at.markdown)
 _counters = re.findall(r">(\d+ / (?:\d+|—)(?: ⚠)?)<", _md)
+# поля строк перевода — по ключу: на той же странице живёт область
+# «Паспорт SKU» со своим полем поиска
+_rows_in = [w for w in at.text_input if str(w.key or "").startswith("loc-txt-")]
 check(f"у каждой строки счётчик «длина / предел» ({len(_counters)})",
-      len(_counters) == len(at.text_input) and len(_counters) > 0)
+      len(_counters) == len(_rows_in) and len(_counters) > 0)
 check("непомещающийся перевод помечен", any("⚠" in c for c in _counters))
 check("строка с превышением подсвечена целиком",
       _md.count("background:#FDF3D8") == 1)
@@ -303,7 +312,7 @@ check(f"кнопка товара выше строк перевода ({_ids[:3
           (i for i, k in enumerate(_ids) if str(k).startswith("loc-txt-")),
           default=10 ** 6))
 check("и в подписи названо число строк",
-      _retry is not None and str(len(at.text_input)) in str(_retry.label))
+      _retry is not None and str(len(_rows_in)) in str(_retry.label))
 
 # --- 5б. пробный заход виден на экране
 # Четыре товара не должны выглядеть как весь файл: по такому списку
@@ -531,7 +540,7 @@ check("отказ превью назван отказом — плашкой с
           for w in at.warning))
 check("и у слайда коротко сказано, что картинки нет",
       any("картинки макета нет" in str(c.value) for c in at.caption))
-check("а строки перевода остались на месте", len(at.text_input) > 0)
+check("а строки перевода остались на месте", len(loc_inputs(at)) > 0)
 # в списке у строки миниатюра молчит (удобство), но причина названа
 # ОДНОЙ строкой над списком — иначе пустая колонка выглядела как
 # «картинок не бывает» (27.09, после перехода на токен design@)
@@ -697,8 +706,8 @@ at.run()
 # до всех остальных, иначе они падают каскадом и причина теряется.
 check(f"редактор не падает на непереведённых строках "
       f"({[str(e.value)[:60] for e in at.exception]})", not at.exception)
-check(f"строк перевода на экране ({len(at.text_input)})", len(at.text_input) == 2)
-at.text_input[0].set_value("Carga rápida USB-C").run()
+check(f"строк перевода на экране ({len(loc_inputs(at))})", len(loc_inputs(at)) == 2)
+loc_inputs(at)[0].set_value("Carga rápida USB-C").run()
 check(f"правка ушла в базу сразу ({SAVED})",
       SAVED and SAVED[0][3] == "Carga rápida USB-C")
 check("и записана по МЕСТУ слоя, а не по id узла",
@@ -738,7 +747,7 @@ at.session_state["loc-product"] = 7
 at.session_state["loc-lang"] = "es"
 at.run()
 check("непереведённый язык показывает строки, а не «слоёв нет»",
-      len(at.text_input) == 2)
+      len(loc_inputs(at)) == 2)
 check("и исходник на месте — переводить есть что",
       any("USB-C Charging" in str(m.value) for m in at.markdown))
 check("плашки «слоёв нет» при этом нет",
@@ -748,7 +757,7 @@ check("плашки «слоёв нет» при этом нет",
 # правка по такому языку обязана СОЗДАТЬ строку, а не потеряться:
 # UPDATE несуществующей строки молча не делает ничего
 SAVED.clear()
-at.text_input[0].set_value("Carga USB-C").run()
+loc_inputs(at)[0].set_value("Carga USB-C").run()
 check(f"правка по новому языку ушла в базу ({SAVED})",
       SAVED and SAVED[0][2] == "es" and SAVED[0][3] == "Carga USB-C")
 MODE["layers"] = None
@@ -773,7 +782,7 @@ check("у модуля A+ свой блок с именем фрейма из Fi
       any("A+ десктоп 1" in h and "carousel 3.1" in h for h in _heads))
 check("и он идёт после слайда, а не перед ним",
       [("A+" in h) for h in _heads] == [False, True])
-check("строка модуля переводится как остальные", len(at.text_input) == 3)
+check("строка модуля переводится как остальные", len(loc_inputs(at)) == 3)
 # дальше проверки смотрят на экран без A+ — возвращаем его
 MODE["layers"] = NO_TRANSLATION
 st.cache_data.clear()
@@ -802,8 +811,8 @@ check("перевод модели тоже вставляет, а не толь
       "INSERT INTO figma_layers" in _sm)
 
 # --- 7б². служебные строки не мешают работе
-check(f"в таблице только переводимые строки ({len(at.text_input)})",
-      len(at.text_input) == 2)
+check(f"в таблице только переводимые строки ({len(loc_inputs(at))})",
+      len(loc_inputs(at)) == 2)
 check("служебные свёрнуты и посчитаны",
       any("Перевод не нужен: 1" in str(e.label) for e in at.get("expander")))
 check("и сказано, почему их не переводят",
