@@ -193,6 +193,18 @@ def _columns_of(sql: str) -> list[str]:
     return [c.strip().split()[-1] for c in head.split(",")]
 
 
+@st.cache_data(ttl=60, show_spinner=False)
+def known_artifacts(sku: str) -> dict[str, str]:
+    """SHA уже зарегистрированных материалов SKU → их ID: точный повтор
+    новой редакции не создаёт (политика приёма, п. 8). Сбой чтения — пусто:
+    тогда повтор будет пойман при регистрации, а не здесь."""
+    df, err = safe_read("""SELECT source_artifact_id, sha256 FROM passport_source_artifacts
+                            WHERE sku_id = %(s)s AND sha256 IS NOT NULL""", {"s": sku})
+    if err or df.empty or "sha256" not in df.columns:
+        return {}
+    return {txt(r["sha256"]): txt(r["source_artifact_id"]) for _, r in df.iterrows()}
+
+
 # ---------------------------------------------------------------- оси статуса
 def _for_sku(df: pd.DataFrame, sku: str) -> pd.DataFrame:
     if df is None or df.empty or "sku_id" not in df.columns:
