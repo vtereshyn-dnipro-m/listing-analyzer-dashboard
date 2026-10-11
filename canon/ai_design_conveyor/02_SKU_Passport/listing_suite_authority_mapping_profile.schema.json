@@ -1,0 +1,28 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","profile_id","profile_version","effective_at","binding_status","issuer_allowlist","role_permissions","idp_bindings","configured_by","approved_by","profile_sha256"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "profile_id":{"type":"string","pattern":"^LS-AUTHORITY-PROFILE-[A-Z0-9._-]+$"},
+    "profile_version":{"type":"string","minLength":1},
+    "effective_at":{"type":"string","format":"date-time"},
+    "binding_status":{"enum":["BINDING_REQUIRED","BOUND"]},
+    "issuer_allowlist":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "role_permissions":{"type":"array","minItems":7,"maxItems":7,"items":{"$ref":"#/$defs/role"}},
+    "idp_bindings":{"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/binding"}},
+    "configured_by":{"type":"string","minLength":1},
+    "approved_by":{"type":"string","minLength":1},
+    "profile_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}
+  },
+  "allOf":[
+    {"if":{"properties":{"binding_status":{"const":"BINDING_REQUIRED"}},"required":["binding_status"]},"then":{"properties":{"issuer_allowlist":{"maxItems":0},"idp_bindings":{"maxItems":0}}}},
+    {"if":{"properties":{"binding_status":{"const":"BOUND"}},"required":["binding_status"]},"then":{"properties":{"issuer_allowlist":{"minItems":1},"idp_bindings":{"minItems":1}}}}
+  ],
+  "$defs":{
+    "canonicalRole":{"enum":["DATA_CONTRIBUTOR","PRODUCT_OWNER","PRODUCT_OWNER_WITH_RECREATE_AUTHORITY","PASSPORT_ADMIN","AUDITOR","LEGAL_OWNER","AUDIT_OWNER"]},
+    "action":{"enum":["SUBMIT_SOURCE_EVIDENCE_DELTA","READ_OWN_REQUEST_STATUS","READ_ACTIVE_PASSPORT","RECREATE_PASSPORT","RESTORE_ARCHIVED_PASSPORT","READ_ARCHIVE","REVIEW_ARCHIVE","APPLY_LEGAL_HOLD","RELEASE_LEGAL_HOLD","RECOVERY_ADMIN"]},
+    "role":{"type":"object","additionalProperties":false,"required":["canonical_role","allowed_actions","scope_rule"],"properties":{"canonical_role":{"$ref":"#/$defs/canonicalRole"},"allowed_actions":{"type":"array","minItems":1,"uniqueItems":true,"items":{"$ref":"#/$defs/action"}},"scope_rule":{"enum":["ASSIGNED_SKU_ONLY","AUTHORIZED_SKU_SCOPE","ADMINISTRATIVE_SCOPE","HOLD_SCOPE_ONLY"]}}},
+    "binding":{"type":"object","additionalProperties":false,"required":["issuer","claim_name","claim_value","canonical_role","sku_scope_source"],"properties":{"issuer":{"type":"string","minLength":1},"claim_name":{"type":"string","minLength":1},"claim_value":{"type":"string","minLength":1},"canonical_role":{"$ref":"#/$defs/canonicalRole"},"sku_scope_source":{"type":"string","minLength":1}}}
+  }
+}

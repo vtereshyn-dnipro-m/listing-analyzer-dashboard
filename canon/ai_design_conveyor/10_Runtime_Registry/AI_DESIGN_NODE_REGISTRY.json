@@ -1,0 +1,2184 @@
+{
+  "registry_id": "AI_DESIGN_NODE_REGISTRY",
+  "registry_version": "3.2",
+  "graph_contract_ref": "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_EXECUTION_GRAPH_CONTRACT.md",
+  "execution_mode": "GRAPH_SPEC_ONLY",
+  "nodes": [
+    {
+      "node_id": "N010_RUN_INITIALIZATION",
+      "node_version": "1.0",
+      "node_class": "CHECKPOINT_NODE",
+      "readiness": "SHADOW_READY",
+      "owner_role": "AI Design Coordinator",
+      "bounded_responsibility": "Create run identity, pin graph version and exact product scope, and persist the initial checkpoint.",
+      "prohibited_actions": [
+        "Do not infer missing SKU or variant",
+        "Do not start downstream work before identity is pinned"
+      ],
+      "input_schema_refs": [],
+      "output_schema_refs": [],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_EXECUTION_GRAPH_CONTRACT.md",
+        "AI Design Conveyor/09_Shared_Contracts/CONTEXT_ASSEMBLY_CONTRACT.md",
+        "AI Design Conveyor/09_Shared_Contracts/AGENT_SESSION_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "GLOBAL_PIPELINE_ROUTE",
+        "PIPELINE_REGISTRY"
+      ],
+      "required_artifact_types": [
+        "RUN_STATE",
+        "INITIAL_CHECKPOINT"
+      ],
+      "allowed_tools": [
+        "LOCAL_STATE_STORE",
+        "SHA256"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "One run_id per exact initialization request; repeat returns the existing initial checkpoint.",
+      "timeout_policy": "No autonomous waiting; unresolved identity becomes blocked.",
+      "retry_policy": "Retry only after corrected identity input.",
+      "success_verdicts": [
+        "RUN_CREATED"
+      ],
+      "block_verdicts": [
+        "PRODUCT_IDENTITY_UNRESOLVED",
+        "GRAPH_VERSION_MISMATCH"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_run_state.schema.json",
+      "checkpoint_policy": "Mandatory initial checkpoint before any agent node."
+    },
+    {
+      "node_id": "N020_PASSPORT_COORDINATION",
+      "node_version": "1.0",
+      "node_class": "AGENT_NODE",
+      "readiness": "SHADOW_READY",
+      "owner_role": "SKU Passport Coordinator",
+      "bounded_responsibility": "Select and record only the route allowed by 00A for the exact SKU Passport stage.",
+      "prohibited_actions": [
+        "Do not perform another agent's work",
+        "Do not accept a package on behalf of the receiver",
+        "Do not route a file outside 00A"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/02_SKU_Passport/00A_Контракт_передач_Паспорта_SKU.md"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/02_SKU_Passport/00_Агент_координатор_конвейера_Паспорта_SKU.md",
+        "AI Design Conveyor/02_SKU_Passport/01_Конвейер_заполнения_Паспорта_SKU.md"
+      ],
+      "component_bindings": [
+        "SKU_PASSPORT_PIPELINE"
+      ],
+      "required_artifact_types": [
+        "PASSPORT_ROUTE_DECISION",
+        "HANDOFF_RECEIPT"
+      ],
+      "allowed_tools": [
+        "LOCAL_FILE_READ",
+        "HASH_VALIDATION"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "Same stage and pinned inputs return the same route decision.",
+      "timeout_policy": "Stop when required contract input or owner decision is absent.",
+      "retry_policy": "Re-enter after an accepted receiver receipt or corrected package.",
+      "success_verdicts": [
+        "ROUTE_SELECTED",
+        "HANDOFF_ACCEPTED"
+      ],
+      "block_verdicts": [
+        "BLOCKED",
+        "RECEIVER_NOT_ACCEPTED",
+        "PACKAGE_OUTSIDE_REGISTRY"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "checkpoint_policy": "Checkpoint every accepted handoff and route decision."
+    },
+    {
+      "node_id": "N030_PASSPORT_COLLECTION",
+      "node_version": "1.0",
+      "node_class": "AGENT_NODE",
+      "readiness": "SHADOW_READY",
+      "owner_role": "SKU Passport Collector and Editor",
+      "bounded_responsibility": "Collect and systematize maximal product evidence into the single canonical Passport candidate.",
+      "prohibited_actions": [
+        "Do not invent Product Truth",
+        "Do not create a second Passport",
+        "Do not self-approve disputed facts"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/02_SKU_Passport/02C_Контракт_выхода_агента_собирателя.md"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/02_SKU_Passport/02C_Контракт_выхода_агента_собирателя.md"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/02_SKU_Passport/02_Агент_собиратель_Паспорта_SKU.md",
+        "AI Design Conveyor/02_SKU_Passport/02A_Системный_промпт_агента_собирателя_Паспорта_SKU.md"
+      ],
+      "component_bindings": [
+        "SKU_PASSPORT_PIPELINE"
+      ],
+      "required_artifact_types": [
+        "SKU_PASSPORT",
+        "SOURCE_MANIFEST",
+        "COLLECTOR_OUTPUT_PACKAGE"
+      ],
+      "allowed_tools": [
+        "LOCAL_FILE_READ",
+        "WEB_RESEARCH",
+        "DOCUMENT_EDITOR",
+        "HASH_VALIDATION"
+      ],
+      "side_effect_class": "CANONICAL_WRITE",
+      "idempotency_policy": "Write only a new Passport version bound to base version and change event.",
+      "timeout_policy": "Return a bounded gap state when evidence cannot be obtained.",
+      "retry_policy": "Delta-only update after new evidence or approved answer.",
+      "success_verdicts": [
+        "COLLECTOR_PACKAGE_READY",
+        "PASSPORT_DELTA_APPLIED"
+      ],
+      "block_verdicts": [
+        "PRODUCT_IDENTITY_CONFLICT",
+        "SOURCE_EVIDENCE_INSUFFICIENT",
+        "CANONICAL_WRITE_BLOCKED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/02_SKU_Passport/02C_Контракт_выхода_агента_собирателя.md",
+      "checkpoint_policy": "Checkpoint source manifest before write and read back changed sections after write."
+    },
+    {
+      "node_id": "N040_PASSPORT_PACKAGE_VALIDATION",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Passport Package Validator",
+      "bounded_responsibility": "Validate Passport package structure, registered files, metadata and response coverage without semantic approval.",
+      "prohibited_actions": [
+        "Do not approve Product Truth",
+        "Do not create missing evidence"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/02_SKU_Passport/02C_Контракт_выхода_агента_собирателя.md"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/02_SKU_Passport/tools/README.md"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/02_SKU_Passport/tools/README.md"
+      ],
+      "component_bindings": [
+        "SKU_PASSPORT_PIPELINE"
+      ],
+      "required_artifact_types": [
+        "COLLECTOR_OUTPUT_PACKAGE",
+        "VALIDATION_RECEIPT"
+      ],
+      "allowed_tools": [
+        "passport_package_check.js",
+        "handoff_integrity_check.js",
+        "response_coverage_check.js"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Same input hashes produce the same validation result.",
+      "timeout_policy": "Fail closed on unreadable or incomplete package.",
+      "retry_policy": "Rerun only after package hash changes.",
+      "success_verdicts": [
+        "PACKAGE_STRUCTURE_PASS"
+      ],
+      "block_verdicts": [
+        "PACKAGE_STRUCTURE_FAIL",
+        "HANDOFF_INTEGRITY_FAIL"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_validator_input_acceptance_receipt.schema.json",
+      "checkpoint_policy": "Persist validator version, input hashes and terminal output."
+    },
+    {
+      "node_id": "N050_PASSPORT_AUDIT",
+      "node_version": "1.0",
+      "node_class": "AGENT_NODE",
+      "readiness": "SHADOW_READY",
+      "owner_role": "SKU Passport Auditor",
+      "bounded_responsibility": "Independently identify material content, source and contradiction gaps in the accepted Collector package.",
+      "prohibited_actions": [
+        "Do not edit the Passport",
+        "Do not create intake gates outside the contract",
+        "Do not block content for optional compliance documents"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/02_SKU_Passport/00A_Контракт_передач_Паспорта_SKU.md"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/02_SKU_Passport/04_Шаблон_пакета_пробелов_Паспорта_SKU.md"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/02_SKU_Passport/03_Агент_аудитор_качества_Паспорта_SKU.md"
+      ],
+      "component_bindings": [
+        "SKU_PASSPORT_PIPELINE"
+      ],
+      "required_artifact_types": [
+        "PASSPORT_AUDIT_REPORT",
+        "GAP_PACKAGE"
+      ],
+      "allowed_tools": [
+        "LOCAL_FILE_READ",
+        "SOURCE_READBACK",
+        "HASH_VALIDATION"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "Audit is bound to one exact Passport and source-manifest hash set.",
+      "timeout_policy": "Return bounded NV/GAP rather than fabricate evidence.",
+      "retry_policy": "Only by user request or changed Passport/evidence package.",
+      "success_verdicts": [
+        "AUDIT_ACCEPTED",
+        "AUDIT_ACCEPTED_WITH_GAPS"
+      ],
+      "block_verdicts": [
+        "AUDIT_INPUT_REJECTED",
+        "MATERIAL_CONFLICT_FOUND"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/02_SKU_Passport/04_Шаблон_пакета_пробелов_Паспорта_SKU.md",
+      "checkpoint_policy": "Persist exact audited paths and hashes."
+    },
+    {
+      "node_id": "N060_PASSPORT_GAP_VERIFICATION",
+      "node_version": "1.0",
+      "node_class": "AGENT_NODE",
+      "readiness": "HUMAN_CONTROLLED",
+      "owner_role": "SKU Passport Verifier Interviewer",
+      "bounded_responsibility": "Obtain targeted answers or evidence for registered gaps and return an approved candidate delta.",
+      "prohibited_actions": [
+        "Do not edit the Passport",
+        "Do not close a gap without evidence",
+        "Do not run automatically after every edit"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/02_SKU_Passport/06E_MVP_Реестр_вопросов_и_ответов.md"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/02_SKU_Passport/06C_MVP_Форма_результата.md"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/02_SKU_Passport/06_MVP_Агент_верификатор_интервьюер.md",
+        "AI Design Conveyor/02_SKU_Passport/06A_MVP_Системный_промпт.md"
+      ],
+      "component_bindings": [
+        "SKU_PASSPORT_PIPELINE"
+      ],
+      "required_artifact_types": [
+        "GAP_PACKAGE",
+        "ANSWER_EVIDENCE_PACKAGE",
+        "CANDIDATE_DELTA"
+      ],
+      "allowed_tools": [
+        "DOCUMENT_FORM",
+        "LOCAL_FILE_READ",
+        "HASH_VALIDATION"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "Stable question IDs and answer/source/evidence IDs prevent duplicate closure.",
+      "timeout_policy": "Wait only through explicit human-return workflow; no implicit approval.",
+      "retry_policy": "Repeat only by user request or returned evidence event.",
+      "success_verdicts": [
+        "CANDIDATE_UPDATE_APPROVED",
+        "NO_REQUIRED_UPDATE"
+      ],
+      "block_verdicts": [
+        "ANSWER_EVIDENCE_INSUFFICIENT",
+        "OWNER_RESPONSE_REQUIRED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/02_SKU_Passport/06C_MVP_Форма_результата.md",
+      "checkpoint_policy": "Persist question lifecycle and returned-source hashes."
+    },
+    {
+      "node_id": "N070_PASSPORT_DELTA_WRITEBACK",
+      "node_version": "1.0",
+      "node_class": "AGENT_NODE",
+      "readiness": "SHADOW_READY",
+      "owner_role": "SKU Passport Collector and Editor",
+      "bounded_responsibility": "Apply only an approved candidate or media delta to the same canonical Passport and verify the write.",
+      "prohibited_actions": [
+        "Do not apply unapproved candidate values",
+        "Do not launch Auditor or Verifier automatically",
+        "Do not overwrite base-version history"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/02_SKU_Passport/00A_Контракт_передач_Паспорта_SKU.md",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_approved_passport_delta.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_passport_media_delta.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/02_SKU_Passport/00A_Контракт_передач_Паспорта_SKU.md",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_passport_write_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/02_SKU_Passport/02_Агент_собиратель_Паспорта_SKU.md"
+      ],
+      "component_bindings": [
+        "SKU_PASSPORT_PIPELINE"
+      ],
+      "required_artifact_types": [
+        "APPROVED_DELTA",
+        "PASSPORT_MEDIA_DELTA",
+        "SKU_PASSPORT",
+        "PASSPORT_WRITE_RECEIPT"
+      ],
+      "allowed_tools": [
+        "DOCUMENT_EDITOR",
+        "HASH_VALIDATION",
+        "READBACK"
+      ],
+      "side_effect_class": "CANONICAL_WRITE",
+      "idempotency_policy": "Change event and base version prevent applying the same delta twice.",
+      "timeout_policy": "Block on locked document or changed base hash.",
+      "retry_policy": "Retry after lock release or explicit rebase.",
+      "success_verdicts": [
+        "PASSPORT_DELTA_APPLIED"
+      ],
+      "block_verdicts": [
+        "BASE_VERSION_MISMATCH",
+        "CANONICAL_WRITE_BLOCKED",
+        "DELTA_NOT_APPROVED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_passport_write_receipt.schema.json",
+      "checkpoint_policy": "Mandatory pre-write base hash and post-write section read-back."
+    },
+    {
+      "node_id": "N080_IMAGE_COLLECTION_AUTHORIZATION",
+      "node_version": "1.0",
+      "node_class": "HUMAN_DECISION_NODE",
+      "readiness": "HUMAN_CONTROLLED",
+      "owner_role": "Media Collection Request Owner",
+      "bounded_responsibility": "Confirm exact SKU, collection scope, requested sources and product artifact root before internet collection.",
+      "prohibited_actions": [
+        "Do not approve publication",
+        "Do not change Product Truth",
+        "Do not authorize unrelated external writes"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_media_collection_request.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_media_collection_authorization_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/04_Image_Collection/00_README.md"
+      ],
+      "component_bindings": [
+        "IMAGE_COLLECTOR"
+      ],
+      "required_artifact_types": [
+        "MEDIA_COLLECTION_REQUEST"
+      ],
+      "allowed_tools": [
+        "HUMAN_DECISION_INTERFACE"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Decision is scoped to one collection_id and exact request hash.",
+      "timeout_policy": "Remain waiting without interpreting silence as approval.",
+      "retry_policy": "Resubmit only when request scope changes.",
+      "success_verdicts": [
+        "MEDIA_COLLECTION_AUTHORIZED"
+      ],
+      "block_verdicts": [
+        "MEDIA_COLLECTION_NOT_AUTHORIZED",
+        "COLLECTION_SCOPE_UNRESOLVED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_media_collection_authorization_receipt.schema.json",
+      "checkpoint_policy": "Persist owner, scope, time and request hash."
+    },
+    {
+      "node_id": "N090_IMAGE_COLLECTION_EXECUTION",
+      "node_version": "1.4",
+      "node_class": "AGENT_NODE",
+      "readiness": "SHADOW_READY",
+      "owner_role": "Image Collector Agent",
+      "bounded_responsibility": "Discover internet media by public model name, collect obtainable content and comments, and register obtained and unobtainable sources.",
+      "prohibited_actions": [
+        "Do not create new marketing content",
+        "Do not search only by internal SKU",
+        "Do not hide inaccessible sources"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/04_Image_Collection/00_Product_Requirements/Image_Collector_Agent_Specification_v1.7.md",
+        "AI Design Conveyor/04_Image_Collection/00_Product_Requirements/Image_Collection_Collection_Model_Contract_v1.0.md",
+        "AI Design Conveyor/04_Image_Collection/00_Product_Requirements/Image_Collection_Passport_Boundary_Contract_v1.0.md",
+        "AI Design Conveyor/04_Image_Collection/00_Product_Requirements/Image_Collection_UI_State_and_Human_Action_Contract_v1.0.md",
+        "AI Design Conveyor/04_Image_Collection/00_Product_Requirements/Image_Collection_Listing_Suite_Binding_and_Result_Contract_v1.0.md",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/existing_media_snapshot.schema.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/media_collection_start_request.schema.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/media_intake_classification_receipt.schema.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collection_initial_eligibility_receipt.schema.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collection_user_action_request.schema.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/listing_suite_start_media_collection_request.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collector_manifest_schema.v0.5.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collection_asset_review_receipt.schema.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collection_review_aggregation_receipt.schema.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collection_ui_state_receipt.schema.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collection_user_action_receipt.schema.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/listing_suite_start_media_collection_receipt.schema.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collection_ui_result_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/04_Image_Collection/01_Agent_Instructions/Image_Collector_Agent_Instructions_v1.9.md"
+      ],
+      "component_bindings": [
+        "IMAGE_COLLECTOR"
+      ],
+      "required_artifact_types": [
+        "MEDIA_COLLECTION",
+        "IMAGE_COLLECTOR_MANIFEST",
+        "PASSPORT_MEDIA_DELTA"
+      ],
+      "allowed_tools": [
+        "WEB_SEARCH",
+        "BROWSER",
+        "yt-dlp",
+        "ffmpeg",
+        "ffprobe",
+        "DAVINCI_RESOLVE",
+        "HASH_VALIDATION"
+      ],
+      "side_effect_class": "EXTERNAL_READ",
+      "idempotency_policy": "Source URL, download attempt and content hash are stable; recovery is source-ID delta only.",
+      "timeout_policy": "Record source-level access reason and continue eligible discovery surfaces.",
+      "retry_policy": "Delta retry only for named unresolved source IDs.",
+      "success_verdicts": [
+        "READY_FOR_HUMAN_REVIEW",
+        "PASSPORT_UPDATE_PENDING"
+      ],
+      "block_verdicts": [
+        "PRODUCT_IDENTITY_CONFLICT",
+        "COLLECTION_SCOPE_INCOMPLETE",
+        "ACCESS_RESOLUTION_REQUIRED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collector_manifest_schema.v0.5.json",
+      "checkpoint_policy": "Checkpoint after each immutable source record and before media processing."
+    },
+    {
+      "node_id": "N100_IMAGE_COLLECTION_REVIEW",
+      "node_version": "1.0",
+      "node_class": "AGENT_NODE",
+      "readiness": "SHADOW_READY",
+      "owner_role": "Image Collector Reviewer and Skeptic",
+      "bounded_responsibility": "Independently review discovery coverage, lineage, product identity and collection limitations before human acceptance.",
+      "prohibited_actions": [
+        "Do not edit collected originals",
+        "Do not mark inaccessible content as collected",
+        "Do not approve publication rights"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collector_manifest_schema.v0.5.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collector_manifest_schema.v0.5.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collection_asset_review_receipt.schema.json",
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collection_review_aggregation_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_image_collection_review_remediation_request.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/04_Image_Collection/01_Agent_Instructions/Image_Collector_Reviewer_Agent_Instructions_v0.7.md",
+        "AI Design Conveyor/04_Image_Collection/01_Agent_Instructions/Image_Collector_Skeptic_Agent_Instructions_v0.7.md"
+      ],
+      "component_bindings": [
+        "IMAGE_COLLECTOR"
+      ],
+      "required_artifact_types": [
+        "IMAGE_COLLECTOR_MANIFEST",
+        "COLLECTION_REVIEW_RECEIPT",
+        "REVIEW_AGGREGATION_RESULT",
+        "IMAGE_COLLECTION_REVIEW_REMEDIATION_REQUEST"
+      ],
+      "allowed_tools": [
+        "LOCAL_FILE_READ",
+        "MEDIA_INSPECTION",
+        "HASH_VALIDATION"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Review is bound to one manifest and collection-root hash set.",
+      "timeout_policy": "Return explicit limitation instead of indefinite review.",
+      "retry_policy": "Review only changed source IDs plus affected aggregate checks.",
+      "success_verdicts": [
+        "COLLECTION_REVIEW_ACCEPTED",
+        "COLLECTION_REVIEW_ACCEPTED_WITH_LIMITATIONS"
+      ],
+      "block_verdicts": [
+        "COLLECTION_REWORK_REQUIRED",
+        "PRODUCT_IDENTITY_MISMATCH"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "checkpoint_policy": "Persist reviewed manifest hash and exact source scope."
+    },
+    {
+      "node_id": "N110_IMAGE_COLLECTION_VALIDATION",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Image Collector Manifest Validator",
+      "bounded_responsibility": "Validate manifest v0.5 structure and fail-closed collection invariants.",
+      "prohibited_actions": [
+        "Do not judge creative quality",
+        "Do not infer missing media"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/image_collector_manifest_schema.v0.5.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/04_Image_Collection/02_Machine_Validation/validate_manifest_contract.ps1",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_image_collection_manifest_rework_request.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/04_Image_Collection/00_README.md"
+      ],
+      "component_bindings": [
+        "IMAGE_COLLECTOR"
+      ],
+      "required_artifact_types": [
+        "IMAGE_COLLECTOR_MANIFEST",
+        "MANIFEST_VALIDATION_RECEIPT",
+        "IMAGE_COLLECTION_MANIFEST_REWORK_REQUEST"
+      ],
+      "allowed_tools": [
+        "validate_manifest_contract.ps1",
+        "test_manifest_contract.ps1"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Same schema, validator and manifest hashes produce the same verdict.",
+      "timeout_policy": "Fail closed on parser or schema error.",
+      "retry_policy": "Rerun only after manifest or validator change.",
+      "success_verdicts": [
+        "MANIFEST_CONTRACT_PASS"
+      ],
+      "block_verdicts": [
+        "MANIFEST_CONTRACT_FAIL"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_image_collection_validator_input_receipt.schema.json",
+      "checkpoint_policy": "Persist schema, validator and manifest hashes."
+    },
+    {
+      "node_id": "N120_CONTENT_TZ_AUTHORIZATION",
+      "node_version": "1.0",
+      "node_class": "HUMAN_DECISION_NODE",
+      "readiness": "HUMAN_CONTROLLED",
+      "owner_role": "Content Task Owner",
+      "bounded_responsibility": "Authorize the on-request Content TZ scope, marketplace, locale, deliverables and readiness target.",
+      "prohibited_actions": [
+        "Do not approve generated outputs",
+        "Do not authorize publication",
+        "Do not change Product Truth"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/03_Content_TZ/05_Routing/Content_TZ_Agent_On_Request_Contract.md",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_launch_control.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_request_authorization_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_scenario_control_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/03_Content_TZ/05_Routing/Content_TZ_Agent_On_Request_Contract.md"
+      ],
+      "component_bindings": [
+        "CONTENT_TZ_AGENT"
+      ],
+      "required_artifact_types": [
+        "CONTENT_TZ_REQUEST",
+        "CONTENT_TZ_REQUEST_AUTHORIZATION_RECEIPT",
+        "CONTENT_TZ_SCENARIO_CONTROL_RECEIPT"
+      ],
+      "allowed_tools": [
+        "HUMAN_DECISION_INTERFACE"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Approval is bound to exact request and Passport hashes.",
+      "timeout_policy": "Remain waiting; silence is not approval.",
+      "retry_policy": "Resubmit only after scope or inputs change.",
+      "success_verdicts": [
+        "CONTENT_TZ_REQUEST_ACCEPTED"
+      ],
+      "block_verdicts": [
+        "STOP_AWAIT_USER_REQUEST",
+        "CONTENT_SCOPE_UNRESOLVED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_request_authorization_receipt.schema.json",
+      "checkpoint_policy": "Persist owner, exact scope and pinned Passport hash."
+    },
+    {
+      "node_id": "N130_CONTENT_TZ_AUTHORING",
+      "node_version": "1.1",
+      "node_class": "AGENT_NODE",
+      "readiness": "SHADOW_READY",
+      "owner_role": "Content TZ Agent",
+      "bounded_responsibility": "Create an executable channel- and locale-specific Content TZ from accepted Product Truth and standards.",
+      "prohibited_actions": [
+        "Do not invent product facts",
+        "Do not generate media",
+        "Do not self-approve the TZ"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/input_intake_schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_scenario_control_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_targeted_content_tz_amendment_request.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/tz_output_schema.json",
+        "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/expected_deliverables_manifest_schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_expected_deliverables_self_check_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/03_Content_TZ/02_Agent_Instructions/Content_TZ_Agent_Instructions.md"
+      ],
+      "component_bindings": [
+        "CONTENT_TZ_AGENT",
+        "MARKETING_BOOK_ACTIVE_STANDARDS",
+        "SHARED_MEDIA_CONTRACTS"
+      ],
+      "required_artifact_types": [
+        "CONTENT_TZ_SCENARIO_CONTROL_RECEIPT",
+        "CONTENT_TZ",
+        "VALUE_SYNTHESIS",
+        "VISUAL_PRODUCTION_PLAN",
+        "EXPECTED_DELIVERABLES_DRAFT",
+        "CONTENT_TZ_EXPECTED_DELIVERABLES_SELF_CHECK_RECEIPT"
+      ],
+      "allowed_tools": [
+        "LOCAL_FILE_READ",
+        "STRUCTURED_DOCUMENT_WRITE",
+        "SCHEMA_VALIDATION",
+        "Test-ExpectedDeliverablesManifest.ps1",
+        "Test-AIDesignContentTZExpectedDeliverablesSelfCheck.ps1"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "Output version is bound to exact request, Passport and standards baseline hashes.",
+      "timeout_policy": "Return input blocker instead of filling material gaps by assumption.",
+      "retry_policy": "Targeted rework only for classified TZ defects.",
+      "success_verdicts": [
+        "CONTENT_TZ_DRAFT_READY",
+        "CONTENT_TZ_READY_FOR_REVIEW",
+        "SELF_CHECK_PASS"
+      ],
+      "block_verdicts": [
+        "INPUT_BLOCKED",
+        "PRODUCT_TRUTH_GAP",
+        "CHANNEL_REQUIREMENT_UNRESOLVED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/tz_output_schema.json",
+      "checkpoint_policy": "Checkpoint accepted inputs and each approved TZ version."
+    },
+    {
+      "node_id": "N140_CONTENT_TZ_VALIDATION",
+      "node_version": "1.1",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Content TZ Validator",
+      "bounded_responsibility": "Independently validate Content TZ, Expected Deliverables Draft, their cross-artifact parity, module routing and required marketplace fields.",
+      "prohibited_actions": [
+        "Do not repair the TZ",
+        "Do not approve creative judgment",
+        "Do not generate expected deliverables from outputs"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/tz_output_schema.json",
+        "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/expected_deliverables_manifest_schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_expected_deliverables_self_check_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_validator_input_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/03_Content_TZ/07_QA_Tools/README.md",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_targeted_content_tz_amendment_closure_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/03_Content_TZ/07_QA_Tools/README.md"
+      ],
+      "component_bindings": [
+        "CONTENT_TZ_AGENT",
+        "SHARED_MEDIA_CONTRACTS"
+      ],
+      "required_artifact_types": [
+        "CONTENT_TZ",
+        "EXPECTED_DELIVERABLES_DRAFT",
+        "CONTENT_TZ_EXPECTED_DELIVERABLES_SELF_CHECK_RECEIPT",
+        "CONTENT_TZ_VALIDATOR_INPUT_RECEIPT",
+        "CONTENT_TZ_VALIDATION_RECEIPT",
+        "CONTENT_TZ_PACKAGE_VALIDATION_RECEIPT"
+      ],
+      "allowed_tools": [
+        "validate_json_schema.py",
+        "validate_visual_production_semantics.py",
+        "test_content_tz_module_routing.ps1"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Same TZ, schemas and validator hashes produce the same structural result.",
+      "timeout_policy": "Fail closed on unavailable dependency or parser error.",
+      "retry_policy": "Rerun only after TZ or validator change.",
+      "success_verdicts": [
+        "CONTENT_TZ_VALIDATION_PASS",
+        "CONTENT_TZ_PACKAGE_VALIDATION_PASS"
+      ],
+      "block_verdicts": [
+        "CONTENT_TZ_VALIDATION_FAIL",
+        "CONTENT_TZ_SEMANTIC_GAP"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_validator_input_receipt.schema.json",
+      "checkpoint_policy": "Persist exact TZ, schema and validator hashes."
+    },
+    {
+      "node_id": "N145_CONTENT_TZ_HUMAN_REVIEW",
+      "node_version": "1.1",
+      "node_class": "HUMAN_DECISION_NODE",
+      "readiness": "HUMAN_CONTROLLED",
+      "owner_role": "Content Task Owner",
+      "bounded_responsibility": "Review accepted Content TZ and either accept unchanged, submit a new editable revision for revalidation, return exact changes to the agent or cancel the run.",
+      "prohibited_actions": [
+        "Do not alter Product Truth",
+        "Do not silently change deliverable scope",
+        "Do not authorize publication"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_launch_control.schema.json",
+        "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/tz_output_schema.json",
+        "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/expected_deliverables_manifest_schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_expected_deliverables_self_check_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_human_review_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/03_Content_TZ/05_Routing/Content_TZ_Agent_On_Request_Contract.md"
+      ],
+      "component_bindings": [
+        "CONTENT_TZ_AGENT"
+      ],
+      "required_artifact_types": [
+        "CONTENT_TZ",
+        "EXPECTED_DELIVERABLES_DRAFT",
+        "CONTENT_TZ_PACKAGE_VALIDATION_RECEIPT",
+        "CONTENT_TZ_HUMAN_REVIEW_RECEIPT"
+      ],
+      "allowed_tools": [
+        "HUMAN_DECISION_INTERFACE",
+        "STRUCTURED_DOCUMENT_WRITE",
+        "LOCAL_STATE_STORE"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "Decision is bound to exact Content TZ, Expected Deliverables Draft, package-validation hashes and launch-control ID.",
+      "timeout_policy": "Remain WAITING_HUMAN_DECISION; silence is not acceptance.",
+      "retry_policy": "Resubmit after a new Content TZ version or explicit review decision.",
+      "success_verdicts": [
+        "ACCEPT_WITHOUT_CHANGES",
+        "EDIT_SUBMITTED",
+        "RETURN_TO_AGENT",
+        "CANCEL"
+      ],
+      "block_verdicts": [
+        "WAITING_HUMAN_DECISION"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_human_review_receipt.schema.json",
+      "checkpoint_policy": "Persist reviewed and resulting revision hashes, changed fields, requested changes, reviewer and decision time."
+    },
+    {
+      "node_id": "N146_CONTENT_TZ_REVIEW_CANCELLATION",
+      "node_version": "1.1",
+      "node_class": "CHECKPOINT_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "AI Design Coordinator",
+      "bounded_responsibility": "Close the current Content TZ run after an explicit owner CANCEL decision.",
+      "prohibited_actions": [
+        "Do not start Prompt Agent",
+        "Do not call provider",
+        "Do not treat cancellation as publication approval"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_human_review_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_human_review_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_CONTENT_TZ_HUMAN_REVIEW_AND_EDIT_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "CONTENT_TZ_AGENT"
+      ],
+      "required_artifact_types": [
+        "CONTENT_TZ_HUMAN_REVIEW_RECEIPT"
+      ],
+      "allowed_tools": [
+        "LOCAL_STATE_STORE",
+        "HASH_VALIDATION"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "One cancellation checkpoint per exact review receipt hash.",
+      "timeout_policy": "STOP as CANCELLED; no automatic resume.",
+      "retry_policy": "No retry; a future content request creates a new run.",
+      "success_verdicts": [
+        "CONTENT_TZ_RUN_CANCELLED"
+      ],
+      "block_verdicts": [
+        "CANCELLATION_CHECKPOINT_FAIL"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_tz_human_review_receipt.schema.json",
+      "checkpoint_policy": "Persist terminal CANCELLED status and exact owner decision receipt."
+    },
+    {
+      "node_id": "N147_EXTERNAL_CONTENT_TZ_EXPORT",
+      "node_version": "2.0",
+      "node_class": "AGENT_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "AI Design Coordinator",
+      "bounded_responsibility": "Create and verify an editable external Content TZ export package bound to the canonical validated Content TZ.",
+      "prohibited_actions": [
+        "Do not start Prompt Agent",
+        "Do not call provider",
+        "Do not send the export externally",
+        "Do not convert export readiness into publication approval"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_launch_control.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_external_content_tz_delivery_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_external_content_tz_delivery_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_EXTERNAL_CONTENT_TZ_EXPORT_AND_DELIVERY_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "CONTENT_TZ_AGENT"
+      ],
+      "required_artifact_types": [
+        "CONTENT_TZ",
+        "CONTENT_TZ_EDITABLE_EXPORT",
+        "CONTENT_TZ_EXPORT_MANIFEST"
+      ],
+      "allowed_tools": [
+        "LOCAL_STATE_STORE",
+        "HASH_VALIDATION",
+        "STRUCTURED_DOCUMENT_WRITE"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "One export package per canonical Content TZ hash, format, locale and export version.",
+      "timeout_policy": "STOP and return EXTERNAL_TZ_EXPORT_FAIL when local export or hash verification cannot complete.",
+      "retry_policy": "Retry once only after classified local export failure; never recreate canonical Content TZ.",
+      "success_verdicts": [
+        "EXTERNAL_TZ_EXPORT_READY"
+      ],
+      "block_verdicts": [
+        "EXTERNAL_TZ_EXPORT_FAIL"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_external_content_tz_delivery_receipt.schema.json",
+      "checkpoint_policy": "Persist canonical, export and export-manifest hashes; no production resume cursor."
+    },
+    {
+      "node_id": "N149_EXTERNAL_CONTENT_TZ_DELIVERY",
+      "node_version": "1.0",
+      "node_class": "EXTERNAL_ACTION_NODE",
+      "readiness": "HUMAN_CONTROLLED",
+      "owner_role": "Content Task Owner",
+      "bounded_responsibility": "Perform exact authorized external delivery or expose a local handoff package, then close the run.",
+      "prohibited_actions": [
+        "Do not modify canonical or export content",
+        "Do not authorize generation",
+        "Do not authorize publication",
+        "Do not resume this run into production"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_external_content_tz_delivery_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_external_content_tz_delivery_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_EXTERNAL_CONTENT_TZ_EXPORT_AND_DELIVERY_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "CONTENT_TZ_AGENT"
+      ],
+      "required_artifact_types": [
+        "CONTENT_TZ",
+        "CONTENT_TZ_EDITABLE_EXPORT",
+        "CONTENT_TZ_EXPORT_MANIFEST",
+        "CONTENT_TZ_DELIVERY_RECEIPT"
+      ],
+      "allowed_tools": [
+        "HUMAN_DECISION_INTERFACE",
+        "LOCAL_STATE_STORE",
+        "AUTHORIZED_DELIVERY_ADAPTER"
+      ],
+      "side_effect_class": "EXTERNAL_WRITE",
+      "idempotency_policy": "One delivery disposition per exact export hash, recipient, method and authority ref.",
+      "timeout_policy": "WAIT for explicit delivery authority; silence is not authorization.",
+      "retry_policy": "Retry external delivery only after reconciliation proves no prior delivery; local handoff is idempotent.",
+      "success_verdicts": [
+        "DELIVERED",
+        "LOCAL_HANDOFF_READY"
+      ],
+      "block_verdicts": [
+        "DELIVERY_BLOCKED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_external_content_tz_delivery_receipt.schema.json",
+      "checkpoint_policy": "Persist terminal delivery disposition and exact external receipt when applicable."
+    },
+    {
+      "node_id": "N150_EXPECTED_DELIVERABLES_FREEZE",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Expected Deliverables Manifest Controller",
+      "bounded_responsibility": "Freeze the complete expected deliverable set before Prompt Agent handoff.",
+      "prohibited_actions": [
+        "Do not infer expectations from produced files",
+        "Do not silently rename, merge, split or remove expected assets"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/expected_deliverables_manifest_schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_expected_deliverables_freeze_input_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/03_Content_TZ/07_QA_Tools/Test-ExpectedDeliverablesManifest.ps1"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/03_Content_TZ/02_Agent_Instructions/Content_TZ_Agent_Instructions.md"
+      ],
+      "component_bindings": [
+        "CONTENT_TZ_AGENT"
+      ],
+      "required_artifact_types": [
+        "EXPECTED_DELIVERABLES_DRAFT",
+        "EXPECTED_DELIVERABLES_FREEZE_INPUT_RECEIPT",
+        "EXPECTED_DELIVERABLES_MANIFEST"
+      ],
+      "allowed_tools": [
+        "Test-ExpectedDeliverablesManifest.ps1",
+        "Test-ExpectedDeliverablesManifestSemanticRegression.ps1"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "One frozen manifest version per accepted Content TZ hash.",
+      "timeout_policy": "Block when mandatory expected fields remain unresolved.",
+      "retry_policy": "Create a new manifest version only through approved TZ change.",
+      "success_verdicts": [
+        "EXPECTED_DELIVERABLES_MANIFEST_FROZEN"
+      ],
+      "block_verdicts": [
+        "EXPECTED_DELIVERABLES_MANIFEST_FAIL",
+        "EXPECTED_DELIVERABLES_UNRESOLVED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_expected_deliverables_freeze_input_receipt.schema.json",
+      "checkpoint_policy": "Persist Content TZ hash, manifest hash and freeze event."
+    },
+    {
+      "node_id": "N155_CONTENT_TZ_EXECUTION_INPUT_ROUTING",
+      "node_version": "1.0",
+      "node_class": "AGENT_NODE",
+      "readiness": "SHADOW_READY",
+      "owner_role": "Content TZ Agent",
+      "bounded_responsibility": "Transform the frozen expected deliverable set, Product Truth and available media registry into complete generation-input routes for Prompt Agent.",
+      "prohibited_actions": [
+        "Do not change frozen deliverable scope",
+        "Do not generate media",
+        "Do not perform legal or publication clearance",
+        "Do not let Prompt Agent select source semantics"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/03_Content_TZ/04_JSON_Schemas/expected_deliverables_manifest_schema.json",
+        "AI Design Conveyor/09_Shared_Contracts/Runtime/media_generation_assessment/media_generation_assessment.schema.json",
+        "AI Design Conveyor/09_Shared_Contracts/Runtime/target_source_route/target_source_route_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_execution_input_routing_receipt.schema.json",
+        "AI Design Conveyor/09_Shared_Contracts/Runtime/media_generation_assessment/media_generation_assessment.schema.json",
+        "AI Design Conveyor/09_Shared_Contracts/Runtime/target_source_route/target_source_route_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/03_Content_TZ/02_Agent_Instructions/Content_TZ_Agent_Instructions.md"
+      ],
+      "component_bindings": [
+        "CONTENT_TZ_AGENT",
+        "SHARED_MEDIA_CONTRACTS"
+      ],
+      "required_artifact_types": [
+        "SEMANTIC_SCOPE_FROZEN",
+        "EXPECTED_DELIVERABLES_MANIFEST",
+        "PRODUCT_TRUTH",
+        "MEDIA_GENERATION_ASSESSMENTS",
+        "TARGET_SOURCE_ROUTE_RECEIPTS",
+        "EXECUTION_INPUT_ROUTING_RECEIPT"
+      ],
+      "allowed_tools": [
+        "LOCAL_FILE_READ",
+        "MEDIA_INSPECTION",
+        "Test-MediaGenerationAssessment.ps1",
+        "Test-TargetSourceRoute.ps1"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "Outputs are bound to exact Content TZ, expected manifest, Product Truth and media-registry hashes.",
+      "timeout_policy": "Return a classified Content TZ blocker; do not request human approval for ordinary source routing.",
+      "retry_policy": "Bounded reroute only for affected expected_asset_id after classified input or route defect.",
+      "success_verdicts": [
+        "EXECUTION_INPUTS_READY"
+      ],
+      "block_verdicts": [
+        "PRODUCT_TRUTH_INSUFFICIENT",
+        "TARGET_DESCRIPTION_INSUFFICIENT",
+        "USEFUL_SIGNAL_UNCLASSIFIED",
+        "PRODUCT_TRUTH_CONFLICT_NOT_ISOLATED",
+        "REGISTRY_ENRICHMENT_REQUIRED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_execution_input_routing_receipt.schema.json",
+      "checkpoint_policy": "Persist semantic-scope hash, expected-manifest hash, Product Truth hash, assessment hashes, route hashes and EXECUTION_INPUTS_FROZEN event."
+    },
+    {
+      "node_id": "N158_AGENT_RUNTIME_RESOLUTION",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "AI Design Runtime Resolver",
+      "bounded_responsibility": "Resolve the registered Prompt Agent package, installed skill, version parity, active adapter, callable entrypoint and admissible handoff before compilation.",
+      "prohibited_actions": [
+        "Do not compile prompts",
+        "Do not call a generation provider",
+        "Do not treat file presence as callability",
+        "Do not retry resolution more than once"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_prompt_input_acceptance_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_agent_runtime_resolution_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_agent_runtime_resolution_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_EXECUTION_GRAPH_CONTRACT.md",
+        "AI Design Conveyor/05_Prompt_Compilation/SKILL.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "IMAGE_VIDEO_PROMPT_AGENT"
+      ],
+      "required_artifact_types": [
+        "PROMPT_INPUT_ACCEPTANCE_RECEIPT",
+        "AGENT_RUNTIME_RESOLUTION_RECEIPT"
+      ],
+      "allowed_tools": [
+        "Resolve-AIDesignAgentRuntime.ps1",
+        "Test-AIDesignAgentRuntimeResolution.ps1",
+        "Test-AgentPackage.ps1"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Resolution is bound to canonical and installed skill hashes, registry versions, adapter entrypoint and input receipt hash.",
+      "timeout_policy": "Return AGENT_RUNTIME_BLOCKED after one failed reload/re-resolve attempt.",
+      "retry_policy": "Exactly one E184 reload/re-resolve is allowed; preserve upstream execution inputs.",
+      "success_verdicts": [
+        "AGENT_RESOLVED_READY"
+      ],
+      "block_verdicts": [
+        "AGENT_RELOAD_REQUIRED",
+        "AGENT_VERSION_MISMATCH",
+        "AGENT_ADAPTER_UNAVAILABLE",
+        "AGENT_INPUT_NOT_ADMISSIBLE",
+        "AGENT_RUNTIME_BLOCKED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_agent_runtime_resolution_receipt.schema.json",
+      "checkpoint_policy": "Persist package paths/hashes, registry and adapter status, reload count and resolution verdict."
+    },
+    {
+      "node_id": "N160_PROMPT_PACKAGE_COMPILATION",
+      "node_version": "1.0",
+      "node_class": "AGENT_NODE",
+      "readiness": "SHADOW_READY",
+      "owner_role": "Image Video Prompt Agent",
+      "bounded_responsibility": "Compile one accepted Content TZ into traceable provider-ready prompt packages without changing strategy or Product Truth.",
+      "prohibited_actions": [
+        "Do not generate media",
+        "Do not change approved TZ semantics",
+        "Do not invent provider capability"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/05_Prompt_Compilation/schemas/prompt_agent_input.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/05_Prompt_Compilation/schemas/prompt_package.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/05_Prompt_Compilation/SKILL.md",
+        "AI Design Conveyor/05_Prompt_Compilation/references/OPERATING_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "IMAGE_VIDEO_PROMPT_AGENT",
+        "CREATIVE_REFERENCE_LIBRARY",
+        "SHARED_MEDIA_CONTRACTS"
+      ],
+      "required_artifact_types": [
+        "PROMPT_PACKAGE",
+        "REFERENCE_MANIFEST",
+        "SEMANTIC_COMPILATION_RECEIPT"
+      ],
+      "allowed_tools": [
+        "LOCAL_FILE_READ",
+        "MEDIA_INSPECTION",
+        "PROMPT_PACKAGE_VALIDATORS"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "Package identity is bound to exact Content TZ, reference and capability-registry hashes.",
+      "timeout_policy": "Return INPUT_BLOCKED when a valid provider-visible compilation cannot be produced.",
+      "retry_policy": "Targeted correction only for classified compilation defect.",
+      "success_verdicts": [
+        "READY_FOR_GENERATION_REVIEW"
+      ],
+      "block_verdicts": [
+        "INPUT_BLOCKED",
+        "VIDEO_ROUTE_BLOCKED",
+        "REFERENCE_SET_INSUFFICIENT"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/05_Prompt_Compilation/schemas/prompt_package.schema.json",
+      "checkpoint_policy": "Persist exact TZ, references, capability snapshot and package hashes."
+    },
+    {
+      "node_id": "N170_PROMPT_PACKAGE_VALIDATION",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Prompt Package Validator",
+      "bounded_responsibility": "Validate prompt input, output schema, atomic semantic coverage and shared-contract regressions.",
+      "prohibited_actions": [
+        "Do not edit prompts",
+        "Do not call a provider",
+        "Do not convert validation PASS into generation approval"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/05_Prompt_Compilation/schemas/prompt_package.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_prompt_package_validator_input_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/05_Prompt_Compilation/VALIDATION_RECEIPT.md"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/05_Prompt_Compilation/README.md"
+      ],
+      "component_bindings": [
+        "IMAGE_VIDEO_PROMPT_AGENT",
+        "SHARED_MEDIA_CONTRACTS"
+      ],
+      "required_artifact_types": [
+        "PROMPT_PACKAGE_FAMILY",
+        "PROMPT_PACKAGE_VALIDATOR_INPUT_RECEIPT",
+        "PROMPT_VALIDATION_RECEIPT"
+      ],
+      "allowed_tools": [
+        "Test-PromptAgentInput.ps1",
+        "Test-PromptPackage.ps1",
+        "PROMPT_REGRESSION_SUITE"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Same package, schemas and validator hashes produce the same result.",
+      "timeout_policy": "Fail closed on parser, schema or dependency error.",
+      "retry_policy": "Rerun only after package or validator change.",
+      "success_verdicts": [
+        "PROMPT_PACKAGE_VALIDATION_PASS"
+      ],
+      "block_verdicts": [
+        "PROMPT_PACKAGE_VALIDATION_FAIL",
+        "SEMANTIC_COMPILATION_FAIL"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_prompt_package_validator_input_receipt.schema.json",
+      "checkpoint_policy": "Persist package and validator hashes."
+    },
+    {
+      "node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "AI Creator Preflight",
+      "bounded_responsibility": "Validate one asset run input, provider capability, sealed execution record and authorized cost boundary before a provider call.",
+      "prohibited_actions": [
+        "Do not call provider",
+        "Do not change prompt",
+        "Do not infer access or credentials"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/06_Content_Production/schemas/ai_creator_run_input.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_batch_preflight_input_acceptance_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/06_Content_Production/schemas/ai_creator_execution_record.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/06_Content_Production/instruction.md",
+        "AI Design Conveyor/06_Content_Production/output_contract.md"
+      ],
+      "component_bindings": [
+        "AI_CREATOR",
+        "CREATIVE_REFERENCE_LIBRARY",
+        "SHARED_MEDIA_CONTRACTS"
+      ],
+      "required_artifact_types": [
+        "AI_CREATOR_RUN_INPUT",
+        "SEALED_EXECUTION_RECORD"
+      ],
+      "allowed_tools": [
+        "Test-AICreatorRunInput.ps1",
+        "Test-SealedExecutionRecord.ps1"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Preflight is deterministic for one run input and capability snapshot.",
+      "timeout_policy": "Fail closed on missing provider, approval, credential or cost evidence.",
+      "retry_policy": "Rerun after corrected input or capability state.",
+      "success_verdicts": [
+        "SEALED_EXECUTION_GATE_PASS"
+      ],
+      "block_verdicts": [
+        "INPUT_BLOCKED",
+        "CAPABILITY_BLOCKED",
+        "COST_AUTHORITY_MISSING"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/06_Content_Production/schemas/ai_creator_execution_record.schema.json",
+      "checkpoint_policy": "Mandatory checkpoint immediately before provider invocation."
+    },
+    {
+      "node_id": "N185_PROVIDER_EXECUTION_AUTHORITY_GATE",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Provider Execution Authority Gate",
+      "bounded_responsibility": "Evaluate run-scoped provider execution policy, provider/model allowlist, credentials and remaining call/cost limits before each one-asset invocation.",
+      "prohibited_actions": [
+        "Do not call provider",
+        "Do not mutate prompts or upstream artifacts",
+        "Do not infer credentials, price or authority",
+        "Do not grant publication authority"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_execution_policy.schema.json",
+        "AI Design Conveyor/06_Content_Production/schemas/ai_creator_execution_record.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_execution_authority_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_PROVIDER_EXECUTION_AUTHORITY_CONTRACT.md",
+        "AI Design Conveyor/06_Content_Production/instruction.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "AI_CREATOR"
+      ],
+      "required_artifact_types": [
+        "PROVIDER_EXECUTION_POLICY",
+        "SEALED_EXECUTION_RECORD",
+        "PROVIDER_EXECUTION_AUTHORITY_RECEIPT"
+      ],
+      "allowed_tools": [
+        "Test-AIDesignProviderExecutionAuthority.ps1"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Same policy hash, sealed asset hash, provider/model, ledger counters and estimated cost produce the same verdict.",
+      "timeout_policy": "Fail closed when authority, credentials, capability, price estimate or ledger is missing.",
+      "retry_policy": "Re-evaluate after a new or corrected bounded authority policy without rerunning unchanged Passport, Content TZ or Prompt Package stages.",
+      "success_verdicts": [
+        "PROVIDER_EXECUTION_AUTHORIZED"
+      ],
+      "block_verdicts": [
+        "WAITING_PROVIDER_AUTHORITY",
+        "DRY_RUN_NO_PROVIDER_CALL",
+        "PROVIDER_ACCESS_BLOCKED",
+        "PROVIDER_CAPABILITY_BLOCKED",
+        "COST_LIMIT_REACHED",
+        "CALL_LIMIT_REACHED",
+        "POLICY_SCOPE_MISMATCH",
+        "AUTHORITY_EXPIRED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_execution_authority_receipt.schema.json",
+      "checkpoint_policy": "Record one authority receipt before every provider invocation; retain policy hash and current ledger counters."
+    },
+    {
+      "node_id": "N186_PRODUCTION_BATCH_BUDGET_GATE",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Production Batch Budget Gate",
+      "bounded_responsibility": "Evaluate the immutable run budget and current usage before each new provider side effect.",
+      "prohibited_actions": [
+        "Do not call provider",
+        "Do not alter the budget or reset usage",
+        "Do not spend the untouchable buffer",
+        "Do not grant publication authority"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_production_batch_budget_request.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_production_batch_budget_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_PRODUCTION_BATCH_BUDGET_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "AI_CREATOR"
+      ],
+      "required_artifact_types": [
+        "PRODUCTION_BATCH_BUDGET_REQUEST",
+        "PRODUCTION_BATCH_BUDGET_RECEIPT"
+      ],
+      "allowed_tools": [
+        "Resolve-AIDesignProductionBatchBudget.ps1",
+        "Test-AIDesignProductionBatchBudget.ps1"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Same budget version, run fingerprint, counters and next-call estimate produce the same verdict.",
+      "timeout_policy": "Fail closed when cost or quota cannot be bounded by an approved call-count cap.",
+      "retry_policy": "Re-evaluate after terminal invocation reconciliation or a versioned budget authority update; never reset usage.",
+      "success_verdicts": [
+        "BUDGET_HEALTHY",
+        "BUDGET_TIGHT"
+      ],
+      "block_verdicts": [
+        "BUDGET_EXHAUSTED",
+        "BUDGET_INPUT_INVALID"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_production_batch_budget_receipt.schema.json",
+      "checkpoint_policy": "Persist one budget receipt before every new provider invocation and retain all counters and budget version."
+    },
+    {
+      "node_id": "N187_PROVIDER_ADAPTER_RESOLUTION",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Provider Runtime Adapter Resolver",
+      "bounded_responsibility": "Resolve one exact callable provider adapter for one authorized asset from policy, host capability, credentials, operation and reference requirements.",
+      "prohibited_actions": [
+        "Do not call provider",
+        "Do not read or persist credential secrets",
+        "Do not mutate prompt, parameters or references",
+        "Do not substitute video with animated still",
+        "Do not grant publication authority"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_adapter_resolution_request.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_execution_authority_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_adapter_resolution_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_PROVIDER_RUNTIME_ADAPTER_CONTRACT.md",
+        "AI Design Conveyor/06_Content_Production/instruction.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "AI_CREATOR"
+      ],
+      "required_artifact_types": [
+        "PROVIDER_ADAPTER_RESOLUTION_REQUEST",
+        "PROVIDER_ADAPTER_RESOLUTION_RECEIPT",
+        "HOST_CAPABILITY_SNAPSHOT"
+      ],
+      "allowed_tools": [
+        "Resolve-AIDesignProviderAdapter.ps1",
+        "Test-AIDesignProviderAdapterResolution.ps1"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Same registry, policy, authority, sealed input and host capability hashes produce the same resolution.",
+      "timeout_policy": "Fail closed when entrypoint, credentials, capability or pricing is unavailable.",
+      "retry_policy": "Re-resolve after a fresh host capability snapshot or registry update; do not rerun upstream content stages.",
+      "success_verdicts": [
+        "ADAPTER_RESOLVED_READY"
+      ],
+      "block_verdicts": [
+        "ADAPTER_NOT_REGISTERED",
+        "ADAPTER_ENTRYPOINT_UNAVAILABLE",
+        "PROVIDER_CREDENTIALS_UNAVAILABLE",
+        "PROVIDER_PRICE_UNRESOLVED",
+        "PROVIDER_MODEL_NOT_ALLOWED",
+        "REFERENCE_MODE_UNSUPPORTED",
+        "VIDEO_ADAPTER_UNAVAILABLE",
+        "OUTPUT_ROOT_MISMATCH"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_adapter_resolution_receipt.schema.json",
+      "checkpoint_policy": "Persist exact adapter ID/version, entrypoint, registry hash and zero-side-effect receipt before provider execution."
+    },
+    {
+      "node_id": "N188_PROVIDER_ADMISSION_GATE",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Provider Admission Gate",
+      "bounded_responsibility": "Select one-time commissioning or admitted bounded production for the exact adapter fingerprint.",
+      "prohibited_actions": [
+        "Do not call provider",
+        "Do not self-admit without real output and QA receipt",
+        "Do not widen provider authority",
+        "Do not grant publication authority"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_adapter_resolution_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_PROVIDER_FINGERPRINT_CATALOG.json",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_PROVIDER_ADMISSION_STATE.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_admission_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_PROVIDER_ADMISSION_AND_PRODUCTION_BATCH_CONTRACT.md",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_PROVIDER_ADMISSION_REVALIDATION_AND_REACTIVATION_CONTRACT.md",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_PROVIDER_ADMISSION_REFRESH_READINESS_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "AI_CREATOR"
+      ],
+      "required_artifact_types": [
+        "PROVIDER_ADAPTER_RESOLUTION_RECEIPT",
+        "PROVIDER_ADMISSION_RECEIPT"
+      ],
+      "allowed_tools": [
+        "Resolve-AIDesignProviderAdmission.ps1"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Exact fingerprint and admission registry hash produce the same admission verdict.",
+      "timeout_policy": "Fail closed when admission evidence or registry binding is unavailable.",
+      "retry_policy": "Re-evaluate after valid commissioning evidence or admission registry update.",
+      "success_verdicts": [
+        "COMMISSIONING_CALL_AUTHORIZED",
+        "PRODUCTION_ADMITTED"
+      ],
+      "block_verdicts": [
+        "ADMISSION_REVALIDATION_REQUIRED",
+        "ADMISSION_SUSPENDED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_admission_receipt.schema.json",
+      "checkpoint_policy": "Persist execution profile, fingerprint and commissioning/production limits before call."
+    },
+    {
+      "node_id": "N189_EXECUTION_LEASE_AND_IDEMPOTENCY_GATE",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Execution Lease and Idempotency Gate",
+      "bounded_responsibility": "Acquire an exclusive exact-asset operation lease, return an existing terminal result idempotently, or require reconciliation before provider execution.",
+      "prohibited_actions": [
+        "Do not call provider",
+        "Do not widen execution authority",
+        "Do not overwrite an existing canonical version",
+        "Do not treat expired lease as proof of no provider call",
+        "Do not grant publication authority"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_execution_lease_request.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_execution_lease_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_EXECUTION_LEASE_AND_IDEMPOTENCY_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "AI_CREATOR"
+      ],
+      "required_artifact_types": [
+        "SEALED_EXECUTION_RECORD",
+        "EXECUTION_LEASE_RECEIPT",
+        "SIDE_EFFECT_LEDGER"
+      ],
+      "allowed_tools": [
+        "Resolve-AIDesignExecutionLease.ps1",
+        "Test-AIDesignExecutionLease.ps1"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "One exact run, asset, operation, fingerprint and sealed record binding has at most one active owner and one provider invocation.",
+      "timeout_policy": "Expired lease after provider acceptance requires reconciliation; no automatic takeover.",
+      "retry_policy": "Re-acquire only after NOT_STARTED is proven or return the existing terminal result.",
+      "success_verdicts": [
+        "LEASE_ACQUIRED",
+        "IDEMPOTENT_RESULT_EXISTS",
+        "LEASE_RELEASED"
+      ],
+      "block_verdicts": [
+        "LEASE_ALREADY_HELD",
+        "LEASE_EXPIRED_RECONCILIATION_REQUIRED",
+        "LEASE_CONFLICT"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_execution_lease_receipt.schema.json",
+      "checkpoint_policy": "Persist lease owner, binding, expiry, invocation state and atomic commit receipt."
+    },
+    {
+      "node_id": "N190_AI_CREATOR_PROVIDER_EXECUTION",
+      "node_version": "1.0",
+      "node_class": "EXTERNAL_ACTION_NODE",
+      "readiness": "HUMAN_CONTROLLED",
+      "owner_role": "AI Creator Production Executor",
+      "bounded_responsibility": "Execute exactly one approved provider call for one asset and persist returned output and terminal execution receipt.",
+      "prohibited_actions": [
+        "Do not edit the prompt",
+        "Do not execute a batch",
+        "Do not publish",
+        "Do not call provider without sealed preflight"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/06_Content_Production/schemas/ai_creator_execution_record.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_single_provider_invocation_acceptance_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/06_Content_Production/schemas/ai_creator_execution_receipt.schema.json",
+        "AI Design Conveyor/06_Content_Production/schemas/ai_creator_run_result.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/06_Content_Production/runtime_prompt.md",
+        "AI Design Conveyor/06_Content_Production/instruction.md"
+      ],
+      "component_bindings": [
+        "AI_CREATOR",
+        "CREATIVE_REFERENCE_LIBRARY"
+      ],
+      "required_artifact_types": [
+        "SEALED_EXECUTION_RECORD",
+        "SINGLE_PROVIDER_INVOCATION_ACCEPTANCE_RECEIPT",
+        "PROVIDER_OUTPUT",
+        "EXECUTION_RECEIPT",
+        "RUN_RESULT"
+      ],
+      "allowed_tools": [
+        "ALLOWLISTED_PROVIDER_ADAPTER"
+      ],
+      "side_effect_class": "COST_BEARING_ACTION",
+      "idempotency_policy": "One internal_invocation_id equals one asset and one provider call; reconcile before any retry.",
+      "timeout_policy": "Unknown provider outcome requires reconciliation, not immediate retry.",
+      "retry_policy": "Only within approved max_attempts, cost_limit and same prompt hash after classified technical failure.",
+      "success_verdicts": [
+        "OUTPUT_SAVED",
+        "PILOT_READY_FOR_QA"
+      ],
+      "block_verdicts": [
+        "GENERATION_FAILED",
+        "CAPABILITY_BLOCKED",
+        "UNTRACKED_PROVIDER_CALL"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/06_Content_Production/schemas/ai_creator_execution_receipt.schema.json",
+      "checkpoint_policy": "Sealed pre-call checkpoint and terminal reconciliation receipt are mandatory."
+    },
+    {
+      "node_id": "N200_AI_CREATOR_OUTPUT_RECORDING",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "AI Creator Output Manifest Controller",
+      "bounded_responsibility": "Validate saved files, hashes, invocation lineage and one-asset output manifest after execution.",
+      "prohibited_actions": [
+        "Do not judge visual quality",
+        "Do not create missing provider output",
+        "Do not mark publication ready"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/06_Content_Production/schemas/ai_creator_execution_receipt.schema.json",
+        "AI Design Conveyor/06_Content_Production/schemas/ai_creator_run_result.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_provider_output_recording_acceptance_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/06_Content_Production/schemas/ai_creator_output_manifest.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/06_Content_Production/output_contract.md"
+      ],
+      "component_bindings": [
+        "AI_CREATOR",
+        "SHARED_MEDIA_CONTRACTS"
+      ],
+      "required_artifact_types": [
+        "PROVIDER_OUTPUT",
+        "EXECUTION_RECEIPT",
+        "RUN_RESULT",
+        "PROVIDER_OUTPUT_RECORDING_ACCEPTANCE_RECEIPT",
+        "AI_CREATOR_OUTPUT_MANIFEST"
+      ],
+      "allowed_tools": [
+        "New-AICreatorOutputManifest.ps1",
+        "Test-AICreatorRunResult.ps1",
+        "Test-SealedExecutionRecord.ps1"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "Manifest is derived from immutable execution receipt and actual file hashes.",
+      "timeout_policy": "Fail closed on missing or unreadable output.",
+      "retry_policy": "Rebuild manifest only; never repeat provider call from this node.",
+      "success_verdicts": [
+        "OUTPUT_MANIFEST_PASS",
+        "READY_FOR_QA"
+      ],
+      "block_verdicts": [
+        "OUTPUT_FILE_MISSING",
+        "EXECUTION_LINEAGE_FAIL",
+        "OUTPUT_MANIFEST_FAIL"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/06_Content_Production/schemas/ai_creator_output_manifest.schema.json",
+      "checkpoint_policy": "Persist final file hashes and reverse trace to Prompt Package and Content TZ."
+    },
+    {
+      "node_id": "N210_DETERMINISTIC_FINISHING",
+      "node_version": "1.0",
+      "node_class": "EXTERNAL_ACTION_NODE",
+      "readiness": "HUMAN_CONTROLLED",
+      "owner_role": "Production Finishing Operator",
+      "bounded_responsibility": "Apply approved deterministic overlays, compositing, localization, color, audio and export operations without altering protected Product Truth.",
+      "prohibited_actions": [
+        "Do not invent product geometry or text",
+        "Do not use finishing as generation",
+        "Do not publish"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_deterministic_finishing_plan.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_finishing_input_acceptance_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_finishing_rework_acceptance_receipt.schema.json",
+        "AI Design Conveyor/04_Image_Collection/Creative_Reference_Library/PRODUCTION_TOOL_REGISTRY.md"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/09_Shared_Contracts/Runtime/execution_evidence/execution_evidence_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/04_Image_Collection/Creative_Reference_Library/PRODUCTION_TOOL_REGISTRY.md",
+        "AI Design Conveyor/01_Governance/Marketing_Book/06_Production_and_Learning/03_AI_Design_Content_Creation_Pipeline.md"
+      ],
+      "component_bindings": [
+        "CREATIVE_REFERENCE_LIBRARY",
+        "GLOBAL_PIPELINE_ROUTE",
+        "SHARED_MEDIA_CONTRACTS"
+      ],
+      "required_artifact_types": [
+        "BASE_VISUAL",
+        "FINISHING_PLAN",
+        "FINISHING_REWORK_ACCEPTANCE_RECEIPT",
+        "FINAL_EXPORT",
+        "EXECUTION_EVIDENCE_RECEIPT"
+      ],
+      "allowed_tools": [
+        "DAVINCI_RESOLVE",
+        "ALLOWLISTED_IMAGE_EDITOR",
+        "HASH_VALIDATION"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "Finishing recipe, inputs and tool version define a reproducible export identity.",
+      "timeout_policy": "Block when required overlay, font, locale copy or tool capability is missing.",
+      "retry_policy": "Rerender only after classified finishing defect or input change.",
+      "success_verdicts": [
+        "FINAL_EXPORT_READY_FOR_QA"
+      ],
+      "block_verdicts": [
+        "FINISHING_INPUT_BLOCKED",
+        "LOCALIZATION_STAGE_MISSING",
+        "EXECUTION_EVIDENCE_MISSING"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/09_Shared_Contracts/Runtime/execution_evidence/execution_evidence_receipt.schema.json",
+      "checkpoint_policy": "Persist project/timeline ID, operations, input/output hashes and export preset."
+    },
+    {
+      "node_id": "N220_CONTENT_OUTPUT_QA",
+      "node_version": "1.1",
+      "node_class": "AGENT_NODE",
+      "readiness": "SHADOW_READY",
+      "owner_role": "Content Standard Auditor",
+      "bounded_responsibility": "Independently inspect each actual final image or video and return factual content QA findings and set completeness.",
+      "prohibited_actions": [
+        "Do not edit creator output",
+        "Do not approve publication",
+        "Do not infer unseen evidence"
+      ],
+      "input_schema_refs": [
+        "Маркетинг Бук/PRODUCTION_HANDOFF/02_Agents/01_Content_Audit_Skills/content-standard-auditor/references/contracts/audit_output_contract_v0.8-production-feedback.json"
+      ],
+      "output_schema_refs": [
+        "Маркетинг Бук/PRODUCTION_HANDOFF/02_Agents/01_Content_Audit_Skills/content-standard-auditor/references/contracts/audit_output_contract_v0.8-production-feedback.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_output_qa_inspection_exception_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "Маркетинг Бук/PRODUCTION_HANDOFF/02_Agents/01_Content_Audit_Skills/content-standard-auditor/SKILL.md",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_CONTENT_OUTPUT_QA_INSPECTION_EXIT_POLICY.md"
+      ],
+      "component_bindings": [
+        "CONTENT_OUTPUT_QA",
+        "MARKETING_BOOK_ACTIVE_STANDARDS",
+        "SHARED_MEDIA_CONTRACTS"
+      ],
+      "required_artifact_types": [
+        "FINAL_MEDIA_OUTPUT",
+        "CONTENT_QA_RECEIPT",
+        "SET_COMPLETENESS_RECEIPT"
+      ],
+      "allowed_tools": [
+        "MEDIA_VIEWER",
+        "VIDEO_FRAME_INSPECTION",
+        "LOCAL_FILE_READ",
+        "AUDIT_VALIDATOR"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "QA verdict is bound to exact final-export hashes, Content TZ and expected manifest.",
+      "timeout_policy": "STOP PASS evaluation; emit an inspection-exception receipt and ESCALATE input/evidence blockers to N224. Silence is not completion.",
+      "retry_policy": "RETRY only a transient technical inspection failure through bounded E263 with new attempt evidence and termination-budget allowance; RETURN input defects through N224; exhausted retry becomes FAILED_EXHAUSTED.",
+      "success_verdicts": [
+        "QA_PASS",
+        "QA_PASS_WITH_LIMITATIONS"
+      ],
+      "block_verdicts": [
+        "QA_REWORK",
+        "QA_REJECT",
+        "EXPECTED_DELIVERABLE_MISSING"
+      ],
+      "terminal_receipt_schema": "Маркетинг Бук/PRODUCTION_HANDOFF/02_Agents/01_Content_Audit_Skills/content-standard-auditor/references/contracts/audit_output_contract_v0.8-production-feedback.json",
+      "checkpoint_policy": "Persist inspected output hashes, locators, standard versions and factual verdicts."
+    },
+    {
+      "node_id": "N221_CONTENT_OUTPUT_QA_POLICY_GATE",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Content Output QA Policy Gate",
+      "bounded_responsibility": "Apply critical non-averaging asset QA and full-package completeness policy to inspected outputs.",
+      "prohibited_actions": [
+        "Do not inspect unseen media",
+        "Do not override QA evidence",
+        "Do not execute provider calls",
+        "Do not grant publication authority"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_output_qa_request.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_package_qa_request.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_output_qa_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_package_qa_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_CONTENT_OUTPUT_QA_POLICY_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "CONTENT_OUTPUT_QA"
+      ],
+      "required_artifact_types": [
+        "CONTENT_QA_EVIDENCE",
+        "CONTENT_QA_RECEIPT",
+        "CONTENT_PACKAGE_QA_RECEIPT"
+      ],
+      "allowed_tools": [
+        "Resolve-AIDesignContentOutputQA.ps1"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Exact output hashes, QA facts, standard version and expected manifest produce the same verdict.",
+      "timeout_policy": "Return QA_INCONCLUSIVE or CONTENT_PACKAGE_INCOMPLETE; never infer PASS.",
+      "retry_policy": "Re-evaluate only affected asset and package dependencies after evidence or output changes.",
+      "success_verdicts": [
+        "PASS",
+        "PASS_WITH_FINISHING_REQUIRED",
+        "CONTENT_PACKAGE_QA_PASS"
+      ],
+      "block_verdicts": [
+        "ASSET_REWORK_REQUIRED",
+        "QA_INCONCLUSIVE",
+        "CONTENT_PACKAGE_INCOMPLETE",
+        "CONTENT_PACKAGE_REWORK_REQUIRED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_content_output_qa_receipt.schema.json",
+      "checkpoint_policy": "Persist five group results, critical gate, confidence, finishing plan and package completeness."
+    },
+    {
+      "node_id": "N223_DEFECT_SCOPE_CLASSIFICATION_GATE",
+      "node_version": "1.1",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Defect Scope Classifier",
+      "bounded_responsibility": "Classify a QA defect into asset, affected dependency scope, upstream rework or batch circuit breaker.",
+      "prohibited_actions": [
+        "Do not perform provider calls",
+        "Do not change QA findings",
+        "Do not edit Product Truth or Content TZ",
+        "Do not authorize publication"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_request.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_final_content_correction_request.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_targeted_content_tz_amendment_request.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_DEFECT_SCOPE_AND_CIRCUIT_BREAKER_CONTRACT.md",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_HUMAN_FINAL_CONTENT_ACCEPTANCE_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "CONTENT_OUTPUT_QA",
+        "AI_CREATOR"
+      ],
+      "required_artifact_types": [
+        "CONTENT_QA_RECEIPT",
+        "DEFECT_SCOPE_CLASSIFICATION_RECEIPT",
+        "TARGETED_CONTENT_TZ_AMENDMENT_REQUEST",
+        "FINAL_CONTENT_CORRECTION_REQUEST"
+      ],
+      "allowed_tools": [
+        "Resolve-AIDesignDefectScope.ps1"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Exact QA hash, dependency bindings, defect history and runtime signals produce the same verdict.",
+      "timeout_policy": "Fail closed to BATCH_CIRCUIT_BREAKER_OPEN when critical facts are unresolved.",
+      "retry_policy": "Re-evaluate only after QA evidence, dependency binding or incident resolution changes.",
+      "success_verdicts": [
+        "ASSET_REWORK_REQUIRED",
+        "AFFECTED_SCOPE_BLOCKED",
+        "UPSTREAM_REWORK_REQUIRED",
+        "NO_DEFECT_CONTINUE"
+      ],
+      "block_verdicts": [
+        "BATCH_CIRCUIT_BREAKER_OPEN"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+      "checkpoint_policy": "Persist exact blocked and continuable asset scopes plus reason codes."
+    },
+    {
+      "node_id": "N224_DEFECT_ESCALATION_DECISION",
+      "node_version": "1.0",
+      "node_class": "HUMAN_DECISION_NODE",
+      "readiness": "HUMAN_CONTROLLED",
+      "owner_role": "Content Defect Resolution Owner",
+      "bounded_responsibility": "Resolve a finishing blocker or open circuit breaker without waiving failed QA or silently repeating the same defect route.",
+      "prohibited_actions": [
+        "Do not waive failed QA",
+        "Do not authorize publication",
+        "Do not repeat E245 for the same defect fingerprint",
+        "Do not alter Product Truth"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_finishing_rework_acceptance_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_defect_scope_classification_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_output_qa_inspection_exception_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_run_closeout_exception_package.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_FINISHING_REWORK_ACCEPTANCE_CONTRACT.md",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_DEFECT_SCOPE_AND_CIRCUIT_BREAKER_CONTRACT.md",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_CONTENT_OUTPUT_QA_INSPECTION_EXIT_POLICY.md",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_RUN_CLOSEOUT_EXIT_POLICY.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "CONTENT_OUTPUT_QA"
+      ],
+      "required_artifact_types": [
+        "DEFECT_ESCALATION_PACKAGE",
+        "OWNER_ROUTE_DECISION"
+      ],
+      "allowed_tools": [
+        "HUMAN_DECISION_INTERFACE"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Decision is bound to exact defect fingerprint, evidence hashes, affected asset scope and prior attempts.",
+      "timeout_policy": "Remain blocked; silence is not approval and does not reopen E245.",
+      "retry_policy": "Reconsider only after a new evidence hash, corrected upstream input or explicit scope decision.",
+      "success_verdicts": [
+        "ROUTE_UPSTREAM",
+        "EXCLUDE_ASSET_WITH_AUTHORITY",
+        "RESUME_AFTER_NEW_EVIDENCE"
+      ],
+      "block_verdicts": [
+        "CIRCUIT_BREAKER_REMAINS_OPEN",
+        "OWNER_DECISION_PENDING"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+      "checkpoint_policy": "Persist fingerprint, attempt history, blocked scope, owner and route decision."
+    },
+    {
+      "node_id": "N225_AUTOMATED_BATCH_CONTINUE_GATE",
+      "node_version": "1.0",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Automated Production Batch Gate",
+      "bounded_responsibility": "Continue one exact next asset after automatic QA PASS while admission and bounded limits remain valid.",
+      "prohibited_actions": [
+        "Do not waive failed QA",
+        "Do not continue after unknown provider outcome",
+        "Do not add unregistered assets",
+        "Do not bypass configured human checkpoint",
+        "Do not authorize publication"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_automated_batch_continue_request.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_automated_batch_continue_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_PROVIDER_ADMISSION_AND_PRODUCTION_BATCH_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "AI_CREATOR",
+        "CONTENT_OUTPUT_QA"
+      ],
+      "required_artifact_types": [
+        "CONTENT_QA_RECEIPT",
+        "PROVIDER_ADMISSION_RECEIPT",
+        "AUTOMATED_BATCH_CONTINUE_RECEIPT"
+      ],
+      "allowed_tools": [
+        "Resolve-AIDesignAutomatedBatchContinue.ps1"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Exact QA hash, remaining set, admission fingerprint and limit counters produce the same verdict.",
+      "timeout_policy": "Open circuit breaker on unresolved input.",
+      "retry_policy": "Re-evaluate only after the blocking evidence or owner checkpoint changes.",
+      "success_verdicts": [
+        "AUTO_BATCH_CONTINUE",
+        "BATCH_COMPLETE_READY_FOR_RELEASE_REVIEW"
+      ],
+      "block_verdicts": [
+        "BATCH_CIRCUIT_BREAKER_OPEN",
+        "HUMAN_REVIEW_REQUIRED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_automated_batch_continue_receipt.schema.json",
+      "checkpoint_policy": "Persist exact completed asset, remaining set, next asset and all circuit-breaker checks."
+    },
+    {
+      "node_id": "N230_BATCH_CONTINUE_DECISION",
+      "node_version": "1.0",
+      "node_class": "HUMAN_DECISION_NODE",
+      "readiness": "HUMAN_CONTROLLED",
+      "owner_role": "AI Creator Batch Owner",
+      "bounded_responsibility": "Decide whether exact remaining asset IDs may proceed after immutable pilot QA PASS.",
+      "prohibited_actions": [
+        "Do not waive failed QA",
+        "Do not add unregistered assets",
+        "Do not authorize publication"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_batch_continue_request.schema.json",
+        "AI Design Conveyor/06_Content_Production/schemas/ai_creator_run_result.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_batch_continue_decision_receipt.schema.json",
+        "AI Design Conveyor/06_Content_Production/output_contract.md"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/06_Content_Production/instruction.md"
+      ],
+      "component_bindings": [
+        "AI_CREATOR",
+        "CONTENT_OUTPUT_QA"
+      ],
+      "required_artifact_types": [
+        "PILOT_QA_RECEIPT",
+        "BATCH_CONTINUE_RECEIPT"
+      ],
+      "allowed_tools": [
+        "HUMAN_DECISION_INTERFACE"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Decision binds exact pilot hash and explicit remaining asset IDs.",
+      "timeout_policy": "Batch remains stopped while decision is absent.",
+      "retry_policy": "New decision required after pilot or remaining-set change.",
+      "success_verdicts": [
+        "CONTINUE_BATCH"
+      ],
+      "block_verdicts": [
+        "BATCH_STOPPED",
+        "PILOT_REWORK_REQUIRED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_batch_continue_decision_receipt.schema.json",
+      "checkpoint_policy": "Persist owner, time, pilot hash and allowed remaining IDs."
+    },
+    {
+      "node_id": "N235_RUN_CLOSEOUT_GATE",
+      "node_version": "1.1",
+      "node_class": "DETERMINISTIC_GATE_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Run Closeout Gate",
+      "bounded_responsibility": "Reconcile the final deliverables manifest, files, QA, lineage, leases, provider invocations, budget and checkpoint before production completion.",
+      "prohibited_actions": [
+        "Do not mark an incomplete expected set DONE",
+        "Do not discard QA-passed partial assets",
+        "Do not close with active lease or unresolved invocation",
+        "Do not grant release or publication authority"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_final_deliverables_manifest.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_content_package_qa_receipt.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_run_closeout_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_run_closeout_exception_package.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_RUN_CLOSEOUT_CONTRACT.md",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_RUN_CLOSEOUT_EXIT_POLICY.md"
+      ],
+      "component_bindings": [
+        "PIPELINE_REGISTRY",
+        "CONTENT_OUTPUT_QA"
+      ],
+      "required_artifact_types": [
+        "FINAL_DELIVERABLES_MANIFEST",
+        "RUN_CLOSEOUT_RECEIPT",
+        "CONTENT_PACKAGE_QA_RECEIPT",
+        "SIDE_EFFECT_LEDGER"
+      ],
+      "allowed_tools": [
+        "Resolve-AIDesignRunCloseout.ps1",
+        "Test-AIDesignRunCloseout.ps1"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "Same exact final manifest and reconciled ledgers produce the same immutable closeout verdict.",
+      "timeout_policy": "STOP closeout and ESCALATE unresolved blockers through E287 to N224; never infer completion or waive stale QA.",
+      "retry_policy": "RETRY through bounded E288 only after a changed evidence fingerprint, new evidence and termination-budget allowance; zero progress or exhaustion becomes FAILED_EXHAUSTED.",
+      "success_verdicts": [
+        "PRODUCTION_COMPLETE",
+        "COMPLETE_WITH_APPROVED_EXCLUSIONS"
+      ],
+      "block_verdicts": [
+        "PARTIAL_OUTPUT_BLOCKED",
+        "CLOSEOUT_RECONCILIATION_REQUIRED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_run_closeout_receipt.schema.json",
+      "checkpoint_policy": "Persist immutable final manifest binding and exact closeout receipt before human final content acceptance."
+    },
+    {
+      "node_id": "N240_HUMAN_RELEASE_DECISION",
+      "node_version": "2.0",
+      "node_class": "HUMAN_DECISION_NODE",
+      "readiness": "HUMAN_CONTROLLED",
+      "owner_role": "Human Final Content Reviewer",
+      "bounded_responsibility": "Personally review the exact QA-passed final image/video set and accept it for human-controlled use, request a documented correction, or reject the current revision.",
+      "prohibited_actions": [
+        "Do not modify artifacts",
+        "Do not infer marketplace upload authority",
+        "Do not approve commercial spend",
+        "Do not place final content on HOLD",
+        "Do not choose the correction agent instead of N223"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_human_final_content_acceptance_request.schema.json",
+        "AI Design Conveyor/01_Governance/Marketing_Book/06_Production_and_Learning/03_AI_Design_Content_Creation_Pipeline.md"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_human_final_content_decision_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_final_content_correction_request.schema.json",
+        "AI Design Conveyor/01_Governance/Marketing_Book/06_Production_and_Learning/03_AI_Design_Content_Creation_Pipeline.md"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_HUMAN_FINAL_CONTENT_ACCEPTANCE_CONTRACT.md",
+        "AI Design Conveyor/01_Governance/Marketing_Book/06_Production_and_Learning/03_AI_Design_Content_Creation_Pipeline.md"
+      ],
+      "component_bindings": [
+        "GLOBAL_PIPELINE_ROUTE",
+        "CONTENT_OUTPUT_QA"
+      ],
+      "required_artifact_types": [
+        "QA_PASSED_PACKAGE",
+        "HUMAN_FINAL_CONTENT_DECISION_RECEIPT",
+        "FINAL_CONTENT_CORRECTION_REQUEST"
+      ],
+      "allowed_tools": [
+        "HUMAN_DECISION_INTERFACE"
+      ],
+      "side_effect_class": "READ_ONLY",
+      "idempotency_policy": "Decision is bound to exact output-package hashes, channel, market and policy scope; the same revision decision is immutable.",
+      "timeout_policy": "WAIT in WAITING_HUMAN_FINAL_ACCEPTANCE; absence of response is not HOLD, acceptance, upload or publication authority.",
+      "retry_policy": "RETURN through E291 to N223 only with a valid correction request; re-review only after affected-scope correction, QA and closeout create a new revision.",
+      "success_verdicts": [
+        "ACCEPT_FINAL_CONTENT",
+        "REJECT_CURRENT_REVISION"
+      ],
+      "block_verdicts": [
+        "REQUEST_CORRECTION"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_human_final_content_decision_receipt.schema.json",
+      "checkpoint_policy": "Persist reviewer, exact package/asset hashes, decision and correction request when applicable; no platform action is performed."
+    },
+    {
+      "node_id": "N250_TRANSITION_REENTRY_CHECKPOINT",
+      "node_version": "2.0",
+      "node_class": "CHECKPOINT_NODE",
+      "readiness": "VALIDATOR_READY",
+      "owner_role": "Recovery and Resume Gate",
+      "bounded_responsibility": "Persist exact checkpoints and select a safe resume, reconciliation, targeted re-entry or full-restart disposition without repeating side effects.",
+      "prohibited_actions": [
+        "Do not repeat provider or external side effects",
+        "Do not reset usage counters",
+        "Do not change SKU, Product Truth or graph version silently",
+        "Do not grant provider, spend, release or publication authority"
+      ],
+      "input_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_run_state.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_checkpoint_acceptance_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_recovery_resume_request.schema.json"
+      ],
+      "output_schema_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_checkpoint_acceptance_receipt.schema.json",
+        "AI Design Conveyor/10_Runtime_Registry/ai_design_recovery_resume_receipt.schema.json"
+      ],
+      "canonical_instruction_refs": [
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_CHECKPOINT_ACCEPTANCE_CONTRACT.md",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_RECOVERY_AND_RESUME_CONTRACT.md",
+        "AI Design Conveyor/10_Runtime_Registry/AI_DESIGN_EXECUTION_GRAPH_CONTRACT.md"
+      ],
+      "component_bindings": [
+        "GLOBAL_PIPELINE_ROUTE",
+        "PIPELINE_REGISTRY"
+      ],
+      "required_artifact_types": [
+        "RUN_STATE",
+        "CHECKPOINT",
+        "SIDE_EFFECT_LEDGER",
+        "RECOVERY_RESUME_RECEIPT"
+      ],
+      "allowed_tools": [
+        "Resolve-AIDesignRecoveryResume.ps1",
+        "Test-AIDesignRecoveryResume.ps1",
+        "HASH_VALIDATION",
+        "PROVIDER_RECONCILIATION"
+      ],
+      "side_effect_class": "LOCAL_REVERSIBLE_WRITE",
+      "idempotency_policy": "Checkpoint ID and state hash are immutable; same exact recovery inputs produce the same disposition and never repeat a side effect.",
+      "timeout_policy": "Remain in the exact waiting or reconciliation state when external state cannot be proven.",
+      "retry_policy": "Re-evaluate only changed human, budget, graph, artifact or provider reconciliation evidence; preserve usage and accepted artifacts.",
+      "success_verdicts": [
+        "CHECKPOINT_VALID",
+        "RESUME_FROM_CHECKPOINT",
+        "RESUME_AFTER_HUMAN_DECISION",
+        "RESUME_AFTER_BUDGET_UPDATE",
+        "TARGETED_REENTRY"
+      ],
+      "block_verdicts": [
+        "CHECKPOINT_INVALID",
+        "RECONCILIATION_REQUIRED",
+        "WAITING_HUMAN_DECISION",
+        "WAITING_BUDGET_DECISION",
+        "FULL_RESTART_REQUIRED"
+      ],
+      "terminal_receipt_schema": "AI Design Conveyor/10_Runtime_Registry/ai_design_recovery_resume_receipt.schema.json",
+      "checkpoint_policy": "Persist exact state and select resume only after run, SKU, graph, artifacts and side effects are reconciled."
+    }
+  ],
+  "dependency_only_components": [
+    {
+      "component_id": "MARKETING_BOOK_ACTIVE_STANDARDS",
+      "reason": "Normative dependency used by authoring and QA nodes; standards are not executable actions."
+    },
+    {
+      "component_id": "CREATIVE_REFERENCE_LIBRARY",
+      "reason": "Template and capability-routing dependency used by Prompt Agent, AI Creator and Finishing nodes."
+    },
+    {
+      "component_id": "SHARED_MEDIA_CONTRACTS",
+      "reason": "Cross-agent schemas and deterministic validators; individual contracts are dependencies of multiple nodes."
+    }
+  ]
+}

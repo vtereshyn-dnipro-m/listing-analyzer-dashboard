@@ -1,0 +1,17 @@
+{
+  "$schema":"http://json-schema.org/draft-07/schema#","$id":"ai_design_passport_write_receipt.schema.json","type":"object","additionalProperties":false,
+  "required":["schema_version","receipt_id","profile","run_id","edge_id","source_node_id","target_node_id","delta_binding","logical_passport_id","base_passport","output_passport","prior_version_archive","applied_change_checks","unchanged_scope_check","readback_status","single_logical_passport_status","registry_update","write_status","verdict","rejection_reasons","applied_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},"receipt_id":{"type":"string","pattern":"^PASSPORTWRITE-[A-Z0-9._-]+$"},"profile":{"const":"APPROVED_DELTA_TO_SINGLE_LOGICAL_PASSPORT_V1"},"run_id":{"type":"string","minLength":1},"edge_id":{"const":"E080_RETURN_WRITTEN_PASSPORT_TO_COORDINATOR"},"source_node_id":{"const":"N070_PASSPORT_DELTA_WRITEBACK"},"target_node_id":{"const":"N020_PASSPORT_COORDINATION"},
+    "delta_binding":{"type":"object","additionalProperties":false,"required":["delta_id","delta_ref","delta_sha256","base_passport_sha256","status"],"properties":{"delta_id":{"type":"string","minLength":1},"delta_ref":{"type":"string","minLength":1},"delta_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"base_passport_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"status":{"const":"PASS"}}},
+    "logical_passport_id":{"type":"string","minLength":1},
+    "base_passport":{"$ref":"#/definitions/passportRef"},"output_passport":{"$ref":"#/definitions/passportRef"},
+    "prior_version_archive":{"type":"object","additionalProperties":false,"required":["path","sha256","status"],"properties":{"path":{"type":"string","minLength":1},"sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"status":{"const":"PRESERVED"}}},
+    "applied_change_checks":{"type":"array","minItems":1,"items":{"type":"object","additionalProperties":false,"required":["change_id","field_path","expected_new_value_sha256","observed_new_value_sha256","status"],"properties":{"change_id":{"type":"string","minLength":1},"field_path":{"type":"string","minLength":1},"expected_new_value_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"observed_new_value_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"status":{"const":"PASS"}}}},
+    "unchanged_scope_check":{"type":"object","additionalProperties":false,"required":["before_sha256","after_sha256","status"],"properties":{"before_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"after_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"status":{"const":"PASS"}}},
+    "readback_status":{"const":"PASS"},"single_logical_passport_status":{"const":"PASS"},
+    "registry_update":{"type":"object","additionalProperties":false,"required":["old_version_status","new_version_status"],"properties":{"old_version_status":{"const":"OLD"},"new_version_status":{"const":"CURRENT"}}},
+    "write_status":{"enum":["APPLIED","IDEMPOTENT_ALREADY_APPLIED"]},"verdict":{"enum":["ACCEPTED","REJECTED"]},"rejection_reasons":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},"applied_at":{"type":"string","format":"date-time"}
+  },
+  "definitions":{"passportRef":{"type":"object","additionalProperties":false,"required":["path","version","sha256"],"properties":{"path":{"type":"string","minLength":1},"version":{"type":"string","minLength":1},"sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}}}}
+}

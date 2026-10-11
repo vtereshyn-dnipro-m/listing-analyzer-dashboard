@@ -1,0 +1,29 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema_version","activation_receipt_id","deployment_id","environment","feature_flag","action","from_state","to_state","result","actor_id","approved_by","deployment_manifest_ref","deployment_manifest_sha256","test_receipt_refs","executed_at","publication_authority"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "activation_receipt_id":{"type":"string","pattern":"^LS-FLAG-RECEIPT-[A-Z0-9._-]+$"},
+    "deployment_id":{"type":"string","minLength":1},
+    "environment":{"enum":["DEV","TEST","STAGING","PRODUCTION"]},
+    "feature_flag":{"enum":["listing_suite.source_evidence_delta","listing_suite.folder_snapshot_v1","listing_suite.passport_recreate","listing_suite.passport_restore"]},
+    "action":{"enum":["ENABLE","DISABLE","ROLLBACK"]},
+    "from_state":{"enum":["OFF","ON"]},
+    "to_state":{"enum":["OFF","ON"]},
+    "result":{"enum":["ACTIVATED","REJECTED","DISABLED","ROLLED_BACK"]},
+    "actor_id":{"type":"string","minLength":1},
+    "approved_by":{"type":"string","minLength":1},
+    "deployment_manifest_ref":{"type":"string","minLength":1},
+    "deployment_manifest_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "test_receipt_refs":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "executed_at":{"type":"string","format":"date-time"},
+    "publication_authority":{"const":"NOT_GRANTED"}
+  },
+  "allOf":[
+    {"if":{"properties":{"action":{"const":"ENABLE"},"result":{"const":"ACTIVATED"}},"required":["action","result"]},"then":{"properties":{"from_state":{"const":"OFF"},"to_state":{"const":"ON"},"test_receipt_refs":{"minItems":1}}}},
+    {"if":{"properties":{"action":{"enum":["DISABLE","ROLLBACK"]}},"required":["action"]},"then":{"properties":{"from_state":{"const":"ON"},"to_state":{"const":"OFF"}}}},
+    {"if":{"properties":{"result":{"const":"REJECTED"}},"required":["result"]},"then":{"properties":{"to_state":{"const":"OFF"}}}}
+  ]
+}

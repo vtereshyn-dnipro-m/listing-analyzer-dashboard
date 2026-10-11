@@ -1,0 +1,1305 @@
+{
+ "snapshot_of": "AI Design Conveyor",
+ "source_archive": "AI Design Conveyor.zip",
+ "source_archive_sha256": "25c10792652396cac10fe4652749c7e0618e4d9fcc658cbaf5392d3e744fbdb6",
+ "built_at": "2026-10-07T12:27:21+00:00",
+ "rule": "byte copy, never edited; newest version only, except SHA-addressed parents",
+ "files": [
+  {
+   "path": "01_Governance/Marketing_Book/02_Visual_System/02_Structural_Template_Registry.md",
+   "sha256": "12497030c43421830a9256d04e67b4c05de6f13cb6c82950fe9884a6d6b10903",
+   "bytes": 5585,
+   "version": null
+  },
+  {
+   "path": "01_Governance/Marketing_Book/03_Content_System/01_Messaging_and_Copy_Standards.md",
+   "sha256": "403d56ae87c1b0dc3f2eca4f73096b75335f19f45f875222935889116950a625",
+   "bytes": 22455,
+   "version": null
+  },
+  {
+   "path": "01_Governance/Marketing_Book/03_Content_System/03_Value_Story_and_Visual_Journey_Standards.md",
+   "sha256": "6b5aea1541e549a99de99bda70dbdffe7b66c7143e5e194e6907838a0090f3b2",
+   "bytes": 37885,
+   "version": null
+  },
+  {
+   "path": "01_Governance/Marketing_Book/03_Content_System/07_Design_Reality_Validation_Standard.md",
+   "sha256": "02894d2ada10822153f295a78e2c23c2d331d19ff96572f163a147d52066eec2",
+   "bytes": 25294,
+   "version": null
+  },
+  {
+   "path": "01_Governance/Marketing_Book/06_Production_and_Learning/01_Briefs_Experiments_and_Winner_Library.md",
+   "sha256": "c75337a8877d281557cdca55e384e6830de0ea209ec9309d3f327c68145b0cb5",
+   "bytes": 31674,
+   "version": null
+  },
+  {
+   "path": "01_Governance/Marketing_Book/06_Production_and_Learning/03_AI_Design_Content_Creation_Pipeline.md",
+   "sha256": "e8f92f0e3bc44709f82e678bec2039ffba24a3587838695253a42c752766848b",
+   "bytes": 308032,
+   "version": null
+  },
+  {
+   "path": "01_Governance/Marketing_Book/06_Production_and_Learning/AI_DESIGN_EXECUTION_GRAPH_CONTRACT.md",
+   "sha256": "5f62236ad6310bed78d7a532b89c85641dc8c88c3e7fd5c032fd8cda9711f977",
+   "bytes": 12880,
+   "version": "0.1"
+  },
+  {
+   "path": "02_SKU_Passport/00A_Контракт_передач_Паспорта_SKU.md",
+   "sha256": "2542a2053a3dbea36852197df469f5d46c0f479c6e9d7737ae0ebc6a695d4f10",
+   "bytes": 55338,
+   "version": "2.13"
+  },
+  {
+   "path": "02_SKU_Passport/00B_PRODUCT_MEDIA_SEMANTIC_REGISTRY.md",
+   "sha256": "c81c75d0588e099285989076c2ec7579ec9c02f04795d48f7409d08cf5515200",
+   "bytes": 7257,
+   "version": "1.1"
+  },
+  {
+   "path": "02_SKU_Passport/00_Агент_координатор_конвейера_Паспорта_SKU.md",
+   "sha256": "20863c0d6f473f4fb6075a04be59c914c888daac2459b32a723c5b72544b4589",
+   "bytes": 34178,
+   "version": "2.9"
+  },
+  {
+   "path": "02_SKU_Passport/01_Конвейер_заполнения_Паспорта_SKU.md",
+   "sha256": "e4587788d2c8bbdb9f45a5a74434151b00fac9effcea7d21c782724fc99855a1",
+   "bytes": 63271,
+   "version": "01-mvp-pilot.16"
+  },
+  {
+   "path": "02_SKU_Passport/02A_Системный_промпт_агента_собирателя_Паспорта_SKU.md",
+   "sha256": "f353601733fcf05d105206f1dba7a0ea3c4d5b027131bdbc3716111e4bbda5bd",
+   "bytes": 16459,
+   "version": "24"
+  },
+  {
+   "path": "02_SKU_Passport/02B_Шаблон_запуска_агента_собирателя.md",
+   "sha256": "7b719d3fba102dcbef3a5b869bafce2f5064c640933c3596e56851f2834a14be",
+   "bytes": 28982,
+   "version": "21"
+  },
+  {
+   "path": "02_SKU_Passport/02C_Контракт_выхода_агента_собирателя.md",
+   "sha256": "5141d3864a386cae7fedeb8d0cb39a1da8dff7e8720f313f8d3c7cb3ea76289d",
+   "bytes": 53810,
+   "version": "23"
+  },
+  {
+   "path": "02_SKU_Passport/02_Агент_собиратель_Паспорта_SKU.md",
+   "sha256": "04adf0494f4f28beb33dce16f0ced8ef7a3cd36d395c777586cd095a5fa3c56d",
+   "bytes": 52029,
+   "version": "24"
+  },
+  {
+   "path": "02_SKU_Passport/03_Агент_аудитор_качества_Паспорта_SKU.md",
+   "sha256": "7c0e50db7e26a91bbe3672e6c8865001758ce5b8d92783847fcbc9529b31a88f",
+   "bytes": 30744,
+   "version": "20"
+  },
+  {
+   "path": "02_SKU_Passport/04_Шаблон_пакета_пробелов_Паспорта_SKU.md",
+   "sha256": "39ca8b6dc003630621f5da8d489131d244d4a753eb6a97853d34a9588e602d1a",
+   "bytes": 3267,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/06A_MVP_Системный_промпт.md",
+   "sha256": "97f91d40ee8b21fa02e60a309a5ae8229a163cb6a5b1f2d8d8b7181d479d3223",
+   "bytes": 7296,
+   "version": "MVP-10"
+  },
+  {
+   "path": "02_SKU_Passport/06B_MVP_Шаблон_запуска.md",
+   "sha256": "d313a1cda7ca4575b435738b2e755d2e7f2b777cc4481c8e5561dbf9ec83170d",
+   "bytes": 15708,
+   "version": "MVP-13"
+  },
+  {
+   "path": "02_SKU_Passport/06C_MVP_Форма_результата.md",
+   "sha256": "90bd7cb77710def593cd764362edf27784e410453aefda0ae29dcb8fb4f802b4",
+   "bytes": 10609,
+   "version": "MVP-11"
+  },
+  {
+   "path": "02_SKU_Passport/06D_MVP_Сценарии_приёмки.md",
+   "sha256": "882b178d5070e1a6704d2e62b4f28c96cc0d9a3e0f9d259218a421f8dd32a610",
+   "bytes": 30274,
+   "version": "MVP-12"
+  },
+  {
+   "path": "02_SKU_Passport/06E_MVP_Реестр_вопросов_и_ответов.md",
+   "sha256": "b9e62c476119d79771f2ff23ff9a2bea22c98e410efc993ee788f34a945e232a",
+   "bytes": 76107,
+   "version": "MVP-14"
+  },
+  {
+   "path": "02_SKU_Passport/06F_MVP_Negative_Fixtures.md",
+   "sha256": "84866588ce3c5920568123432240332265bb645c858295643abc1a468963cdf0",
+   "bytes": 9535,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/06F_MVP_Negative_Fixtures_v1.1.md",
+   "sha256": "30384d86774450cb3bf12e78e45348da42ba111b091e5dcbcc61a0848f9fdb92",
+   "bytes": 6332,
+   "version": "1.1"
+  },
+  {
+   "path": "02_SKU_Passport/06F_MVP_Negative_Fixtures_v1.2.md",
+   "sha256": "82bdb002e596cf96fb20c14423fabfd70e883c33e70b478b8d66cdb85218124d",
+   "bytes": 5395,
+   "version": "1.2"
+  },
+  {
+   "path": "02_SKU_Passport/06F_MVP_Negative_Fixtures_v1.3.md",
+   "sha256": "d17e69ed5dab2729aaac47ccacc8bcdf8db884a1f1e5f7d27a12bdb3567cde4a",
+   "bytes": 4657,
+   "version": "1.3"
+  },
+  {
+   "path": "02_SKU_Passport/06_MVP_Агент_верификатор_интервьюер.md",
+   "sha256": "ba5a4aac8e2fd020956815ff7b0c518e37f1fa8e2ac50b2b57852a765ae7165e",
+   "bytes": 24672,
+   "version": "MVP-12"
+  },
+  {
+   "path": "02_SKU_Passport/07A_MVP_DHR-203BCV_Активные_вопросы.md",
+   "sha256": "a39a579a2ca376b952c7ee45aa64a37456bf9d6a6e1baed8e199ae60cf646ef7",
+   "bytes": 4235,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/07B_MVP_DHR-203BCV_Тест_возвращённых_ответов.md",
+   "sha256": "750bb734f52a5b5f51da512c95e2913146c451ccd1618bac169bae447545c75f",
+   "bytes": 5350,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/07_MVP_Пилот_DHR-203BCV_Run001.md",
+   "sha256": "8bf3dfd4de616581fda361063ac64009b680e7291a14e83734a30ad0b242335b",
+   "bytes": 22297,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/08_Сравнение_качества_вопросов_агентов.md",
+   "sha256": "7a4afa7ea8da291356ed8666167627c5d83bf2b8d03747ef63aa5450e9a4cb63",
+   "bytes": 6174,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/2026-09-26__ADOPTION_ROADMAP_FROM_TODAYS_MATERIALS.md",
+   "sha256": "7a0eb53491f9c8b08fc22be0b539b51df9bf8c5685e4adf629e8cd477ad089d2",
+   "bytes": 35466,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/CHANGELOG.md",
+   "sha256": "c6fc49dfca764b69e443d39d203cae3b5de24575703cdc5fe2652772d6a31180",
+   "bytes": 77854,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/LS-CFG-001_002_Decision_Receipt.md",
+   "sha256": "b0a1242f0434b7e81815cc9be7754ef27ad320fa45844ea2099c296ea483800e",
+   "bytes": 1378,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/LS-CFG-003_004_Decision_Receipt.md",
+   "sha256": "4d0529bcc3a24e21f7960e05a306ab3b4e4a6eef6dbf1ff50672b34cd038029e",
+   "bytes": 2151,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/LS-CFG-005_Authority_Matrix_Decision_Receipt.md",
+   "sha256": "08c75afa276a01c7513a6e45ef835737acd0b990bdd1bd5151bac86190f29480",
+   "bytes": 1759,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/LS-CFG-006_Localization_Decision_Receipt.md",
+   "sha256": "bc6693e05fbe0570d8437fa934b6dc147fa235099f26dc3c7b3f26cec53949d0",
+   "bytes": 1216,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Archive_Retention_Policy.md",
+   "sha256": "a92098186a2674b3ee49d0593c77f9f64128ac3d89787e2018dc400ca9ed46cd",
+   "bytes": 5309,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Archive_Retention_Profile_v1.0.json",
+   "sha256": "099a6e7a564a640c83357a6d5fa1293912d7c15b31d1b3b78765c6b58b703b1a",
+   "bytes": 554,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Authority_Mapping_Contract.md",
+   "sha256": "7e4c0edfc9e24f3548a5f3f5fd47f76bb9b26cb245307b145e95efde23433d21",
+   "bytes": 5304,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Authority_Profile_v1.0.json",
+   "sha256": "b09c1c8c9d02442cbcab79a169c1c1009e4fc36c69d60a33ebc6bf48949366b6",
+   "bytes": 1760,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Configuration_Decision_Register.md",
+   "sha256": "e31a5719f0f4dd2b08ba9d3a32d9b3b2dad8ef6406535ce927e195cfeb3e6d36",
+   "bytes": 3386,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Developer_Delivery_Package.md",
+   "sha256": "04facfb11fb4cacbe162399c9d07bceb5f2a846ff288f8eb4007877fe148cc0c",
+   "bytes": 12500,
+   "version": "1.2"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Implementation_Handoff.md",
+   "sha256": "e8449b9d7677e0a5d9852aa0a5355dc7da2b3087ffc61823cd355dd7e61dd607",
+   "bytes": 14524,
+   "version": "1.2"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Integration_Contract.md",
+   "sha256": "5fe48f269e640432c7d38656f4b554be0af648b57f403b581fde5e18b80fca16",
+   "bytes": 8930,
+   "version": "1.2"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Locale_Profile_v1.0.json",
+   "sha256": "1ebf90649385ee7c1ec1813f45750f439a8d7cb5e31247a8b943a7e92752129a",
+   "bytes": 491,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Localization_Contract.md",
+   "sha256": "cd0f71de39816228d3bc1a4cc0fc9f449ca51f330a6df31293338701153cd72f",
+   "bytes": 3616,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Message_Catalog_v1.0.json",
+   "sha256": "3f01c5efbbb412d9e61ab9830898395569a37e49a8e634f9a7fc3d65b68932e4",
+   "bytes": 9148,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Source_Intake_Policy.md",
+   "sha256": "ca931e3caa2914a06883437bb2164813183b172e910583541c3506d9bae23546",
+   "bytes": 5206,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_Source_Intake_Profile_v1.0.json",
+   "sha256": "0830c7caed44ab9adea68913bae2899bc57cfffeac0fc56b9da5c7d5ee9dc7f6",
+   "bytes": 1067,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_UI_Message_Mapping.md",
+   "sha256": "847026e943dd4b4933b8d60b29ad9783a2694d1d428cdad00d0190e38286d476",
+   "bytes": 6038,
+   "version": "1.1"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_ТЗ_Контент_Паспорт_SKU.md",
+   "sha256": "ddebfa8912eba18894ba24bee0cde5acf463866a556d79507bbe8d257a9848e7",
+   "bytes": 114617,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_ТЗ_Синтез_Паспорт_SKU_v01.md",
+   "sha256": "4f32f265973e961998d356bab1f7aceeae60f7cbbdd6fb1e4db5348960ac8690",
+   "bytes": 81816,
+   "version": "02"
+  },
+  {
+   "path": "02_SKU_Passport/Listing_Suite_ТЗ_Синтез_Паспорт_SKU_Интерфейс_v01.md",
+   "sha256": "fdb717c482fae58ce200ad189faed25ae1794b91e928da363a29af849a3bd7dc",
+   "bytes": 37844,
+   "version": "01"
+  },
+  {
+   "path": "02_SKU_Passport/README.md",
+   "sha256": "5a3ef564d38a95bc55b50a28a75b0c69cd276a8bf28fde67b49c03f0295cf666",
+   "bytes": 33413,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/Test-ListingSuitePassportCreationContracts.ps1",
+   "sha256": "2de365a22502cdd5a92eac084f7f754c2364d94810cecc292272361fed337393",
+   "bytes": 22738,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/README.md",
+   "sha256": "22ae243ca8443c5c589076810063976dc76ae6a12785512a9d0cb3930547b1a2",
+   "bytes": 2519,
+   "version": "2.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/contract_reject_intake_count_mismatch.json",
+   "sha256": "c805d492cbb8eaccd4f55c11ab6ca08c18217b0ad63188fa1ea0ce6e9a98cc8e",
+   "bytes": 1010,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/contract_reject_intake_path_escape.json",
+   "sha256": "4dc680400b2fde20117753df6ff6bdd010cd1953153609b5b676c6353225cb0a",
+   "bytes": 1012,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/contract_reject_restore_reactivate_archived_id.json",
+   "sha256": "708c0d5aca311dce11ae1c22955cd08ef189f7cd4a7905889f42c73ec85589bf",
+   "bytes": 1694,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/contract_reject_stale_snapshot.json",
+   "sha256": "fd4f32fbb7e1cf389065a33d38f0ebd6c955025b18750f520493929540467b3e",
+   "bytes": 1148,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/fixture_manifest.json",
+   "sha256": "e36299bf32c4f0184f9a5ebe852987a7555ad0d60e9cbf69d5349742f6e21749",
+   "bytes": 10338,
+   "version": "2.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/invalid_authority_profile_unknown_role.json",
+   "sha256": "3b6604e8c1b2a05f687db5e02f3fafc4c547e547b13ed7231d77371fa0319d30",
+   "bytes": 1346,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/invalid_deployment_manifest_flag_on_without_tests.json",
+   "sha256": "b2f6c881e9541c50186227c8c55a411cdcc7af910dd06b6864ed642c196ef32a",
+   "bytes": 861,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/invalid_feature_activation_without_tests.json",
+   "sha256": "c9d8d3758371813dba7bf2d2f228d9a2f6a20b0e3acfe4c8f5a1d3cfc2f88e02",
+   "bytes": 607,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/invalid_intake_profile_missing_limits.json",
+   "sha256": "5ee478910b7d9ce2f287e5675c80fef02b3d891e415ac3d163dbb29a23f039e7",
+   "bytes": 505,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/invalid_recreate_duplicate_confirmation_types.json",
+   "sha256": "5032545165c717c0cd7bc3e4803d6b6defd470c8b30e17d1a68d302ef0804839",
+   "bytes": 1647,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/invalid_retention_profile_zero_days.json",
+   "sha256": "742168fb03286a80e23dd990bf4c38eb4b700fe98f4d35b1f56c8ecab6d8098a",
+   "bytes": 460,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/invalid_schema_recreate_one_confirmation.json",
+   "sha256": "f302d5f4665b9f1df4c23528a4673aa36d0587cb18394b5851bba4e35a0673ac",
+   "bytes": 1577,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/invalid_schema_recreate_unauthorized.json",
+   "sha256": "113813df433b58dcd7f015e606c3e4f871077cd643cfddac1734aca5c69757c6",
+   "bytes": 1981,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/invalid_status_query_multiple_identifiers.json",
+   "sha256": "8ad31b4969f99afc4690fdf9f99ca1182cddfc2d5425b56b407811a73ecee924",
+   "bytes": 253,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/invalid_transaction_committed_with_rollback.json",
+   "sha256": "90cc379776f77117172a0a65a254b1c466bc8e8f79641003a3e9a1fc234ca1f4",
+   "bytes": 1288,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/invalid_transaction_two_canonical_pointers.json",
+   "sha256": "0d9850833dc8c40a89b99212f2357b99e9c27b65a23306cbadb0a6d850cacf89",
+   "bytes": 1289,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_archive_committed_receipt.json",
+   "sha256": "5333855eab43e26dd0681ca42c71f1617635c96113c12beec6c84c26532bf37b",
+   "bytes": 772,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_archive_prepared_receipt.json",
+   "sha256": "37eac4763aae40d2e00798079853d60dc8a90713d48554e0d0423c9c367787af",
+   "bytes": 771,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_authority_evaluation_authorized.json",
+   "sha256": "c96f6ceff6cf7330293e8af12cf9be555c68e628fa4984f2f44702a433c0e81c",
+   "bytes": 518,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_authority_evaluation_scope_denied.json",
+   "sha256": "afde454649ac2632309ad12bdb3e359bdfbea26b6a11573366d6baee53b093ba",
+   "bytes": 533,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_authority_evaluation_unmapped_denied.json",
+   "sha256": "ed11ea8fdbe07809b35c4259a6c1ac11a9c99b819962f567581a86b4ce94513e",
+   "bytes": 502,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_authority_profile_binding_required.json",
+   "sha256": "b018fcb1873de688af438cc6551acd86055dd33aaef772fb8d522bd6dce2cc61",
+   "bytes": 1175,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_authority_profile_bound.json",
+   "sha256": "65009aea8c0521f8bb127afac5929741cb9da4801af3d7a9d368424288103970",
+   "bytes": 1399,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_delta_request.json",
+   "sha256": "806c0cd21ca04942b245429fcedcad7639aa5fb4f3a042054b8f2c0f33d9bdfa",
+   "bytes": 1185,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_delta_updated_receipt.json",
+   "sha256": "52679197892939489d1439b20821297015713fd0bce4ccd93b7fe1a0489713cc",
+   "bytes": 1017,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_deployment_manifest_all_off.json",
+   "sha256": "193e4a0dadf56f00121e5f1a4691cd4319a39413080556aaccb4dd44b74bbf6f",
+   "bytes": 869,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_deployment_manifest_delta_on.json",
+   "sha256": "35f450c50b13a41c3d540015ec259f99655d252621dfd8e2d87d29bd15d2ed93",
+   "bytes": 1172,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_expired_confirmation_receipt.json",
+   "sha256": "48fed42a8b6429db40f3787326c2119d78e4a001a80d9f73d20e586764a19cb9",
+   "bytes": 539,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_feature_activation_receipt.json",
+   "sha256": "edae9f8db470fa916dfc5451b73c916deab058a6ab04f27adc27dcf36c252a85",
+   "bytes": 624,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_intake_boundary_cases.json",
+   "sha256": "859476a5246c2bb9ca5a09b36cef234462062ebf3e5c8d0f746f354a02e4e43b",
+   "bytes": 1848,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_intake_profile.json",
+   "sha256": "753cc31fdb3df9b125a3665674d7a0237bd01fe7ac0de2dd2242ae7e5f3b0f88",
+   "bytes": 691,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_legal_hold_apply_receipt.json",
+   "sha256": "13498234f6b58c2d3150f75697f07a274985b5c46195466abe26d3649e50d5ff",
+   "bytes": 459,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_legal_hold_release_receipt.json",
+   "sha256": "243d608bc1fd61cc8322d232c2af3fc9646162eef3ca4e77295c1bd9984d2812",
+   "bytes": 489,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_message_resolution_direct.json",
+   "sha256": "83cecca5f0f19588fb2f5225951c65430b463ae962f9858abc7937e6cd5030a3",
+   "bytes": 450,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_message_resolution_fallback.json",
+   "sha256": "1c126b7f581bf6b5a7160f783a4bf67afd6a03a3e927c6de7d2602cbff0a87a5",
+   "bytes": 473,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_message_resolution_unknown_code.json",
+   "sha256": "b3f9c6493d3b1c3cf2bcf0c41d5ec4b9cbe276e609bd70819a066e7c1f32dcfb",
+   "bytes": 460,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_partial_intake_receipt.json",
+   "sha256": "9563bbb5c49846ff2f94cc94585d3fbcacc298223a16cc95b2e6e4fa94db7d0e",
+   "bytes": 1315,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_recreate_confirmation_receipt.json",
+   "sha256": "699852ba11d2331faa808fe84279ca232a6249fb9e9204214cde3fea093ef0ca",
+   "bytes": 510,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_recreate_in_progress_receipt.json",
+   "sha256": "3ac8ceeab9d1dbe7afa9b0af9113173cd98e546b7a3b44f214f14b49d81c6099",
+   "bytes": 867,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_recreate_rejected_receipt.json",
+   "sha256": "deacc181317f39feb9a81e7cb192780b10cc7cda03830bb95767f6b6490e7607",
+   "bytes": 857,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_recreate_request.json",
+   "sha256": "70116f01599de7046d425ac6fe28d96ef01c618c32f1638c848bbcbccecbf35f",
+   "bytes": 2055,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_restore_committed_receipt.json",
+   "sha256": "1e705c155d9de7c4b25e84d66a89d7861c2766986c60320feab819226c23a23a",
+   "bytes": 1734,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_restore_request.json",
+   "sha256": "c29377c08b969b604cf55f562098631dbb201eef70d9680ba68782ea827c1ec6",
+   "bytes": 1942,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_restore_rolled_back_receipt.json",
+   "sha256": "f7b1a5decae611016ca2272abc5a16673c93abf9f3094d83945030de437cfa61",
+   "bytes": 1316,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_retention_boundary_cases.json",
+   "sha256": "903b3e0f370315386de840be4e607cedea44014fbff944de01bcad68b8e98ca2",
+   "bytes": 1764,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_retention_eligible_receipt.json",
+   "sha256": "99c9170492da3fcc0bc1758492d55f63624f055de32349cd876da40d7aa2710e",
+   "bytes": 756,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_retention_legal_hold_receipt.json",
+   "sha256": "334edd77590029fa0a94a1e795ec0ff29e5facef70bab1af0f3bcc2cead91aa4",
+   "bytes": 772,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_retention_profile.json",
+   "sha256": "ba722207c98f632b3027b60f3b81de862312eaf1c9e70da2a363da513e449292",
+   "bytes": 498,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_retention_purge_unauthorized_receipt.json",
+   "sha256": "077376a46dbfb9e46a684dc4656e97f96d1d38fdd6738a05b49c5f6889adb09e",
+   "bytes": 764,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_retention_unconfigured_receipt.json",
+   "sha256": "0fa8ed90d969de08d26549cf0b96d7c05244676e11b9e77835d01e5594473364",
+   "bytes": 571,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_status_query_by_request.json",
+   "sha256": "e56f752d9831f2824d147060b0ec89c1795758e245b7a9c4f5c2ff8d75a9c26d",
+   "bytes": 208,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_status_response_completed.json",
+   "sha256": "4fcf7ffedf4f0e650333486faf4714e965e06ba4c3cbb526f4842cb788038c19",
+   "bytes": 482,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_status_response_not_found.json",
+   "sha256": "9bfd86e471e43db931e0a7d8ab56c27d4130d92af8d0cd910e06a0bea8172f26",
+   "bytes": 344,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_transaction_committed_receipt.json",
+   "sha256": "e8e56eff963be87efee08413b9fdbcec8a2a68c26d358792c8f3679b557d4a77",
+   "bytes": 1322,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_transaction_rolled_back_receipt.json",
+   "sha256": "8e4f29879e6926e6ceb32a3b5170114b389d37bb36ea01b28aa25a9910aff2da",
+   "bytes": 993,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/fixtures/listing_suite/valid_zero_accepted_intake_receipt.json",
+   "sha256": "3cc0d8ad359a2deb8708921bb182b118b09b68d94984a41cecfffe0ab70ded85",
+   "bytes": 885,
+   "version": "1.0"
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_archive_legal_hold_receipt.schema.json",
+   "sha256": "48b367901bccf61a0c2656405321023fe148a3cac83e11960469fa7f6ca8e39e",
+   "bytes": 1556,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_archive_retention_boundary_cases.schema.json",
+   "sha256": "22ceb7a2d3f5a3c732c6dbdff75aac970458367a17c4474edd86ba985e9643b9",
+   "bytes": 961,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_archive_retention_evaluation_receipt.schema.json",
+   "sha256": "8637089f1141b7d14ea967828e69c6a29ed92242ed76c8ebaeb7594f77f05fab",
+   "bytes": 2533,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_archive_retention_profile.schema.json",
+   "sha256": "28c21c374bd61e97b9cb3705a58d63b8747709274a7a0d20c90b8935e290dd3b",
+   "bytes": 1148,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_authority_evaluation_receipt.schema.json",
+   "sha256": "2cf65a34010abf2fd9095cadb3a42bea1483fe09f5dfdc7fea11bcfda6af531c",
+   "bytes": 1726,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_authority_mapping_profile.schema.json",
+   "sha256": "34c608f4896c873f2beceb733ac17534b3c08e7509f5d70a4c8d9605a8b7b005",
+   "bytes": 2685,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_deployment_manifest.schema.json",
+   "sha256": "ff253a99cb8168a3cfec43a67c11dbfa3532821e94d16815265b8dd64b056b68",
+   "bytes": 3983,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_feature_activation_receipt.schema.json",
+   "sha256": "3ba0c2b07e6e288a5e24f0aa55783b189f79325cc579b44077b9c83611b1cc45",
+   "bytes": 2046,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_locale_profile.schema.json",
+   "sha256": "f1f1fc0747391e7efb9b015f87e6f5012e6afbbd387022863819187b1d498fc2",
+   "bytes": 1258,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_message_catalog.schema.json",
+   "sha256": "2e238f0fc9ff6effc9d71b9abd3a2691f9a072d999799722700965728c84e88f",
+   "bytes": 1393,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_message_resolution_receipt.schema.json",
+   "sha256": "b5609fb4098b7824dd87b525a1333358e7b739f340872bb9ff45df379f1e19d7",
+   "bytes": 1660,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_passport_action_receipt.schema.json",
+   "sha256": "a4fe3ab5bb7ee3e3326b650e1be77b83441845f14dec8dc606456d9132877c9a",
+   "bytes": 2043,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_passport_action_request.schema.json",
+   "sha256": "6f727a096a4f26a152b44d917a91112d128ed0fb1eb9e2e4c0d95db5f1723094",
+   "bytes": 3433,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_passport_restore_receipt.schema.json",
+   "sha256": "589259959860333e337ba27213469f2b55b2cc662f31d6a4b738c6827e70523d",
+   "bytes": 3156,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_passport_restore_request.schema.json",
+   "sha256": "270ef7f893e106759e0a637ad91f6c27101a56980dfdbf3257e2436a16349def",
+   "bytes": 2798,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_passport_status_query.schema.json",
+   "sha256": "0a255f84f96426a69f71be3cd03508781077958549463525bdf15c38910787a1",
+   "bytes": 998,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_passport_status_response.schema.json",
+   "sha256": "e7ccc34e2707d7372b72715050a57c601b30c73b3c6904a7bce846f529334cdf",
+   "bytes": 1691,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_recreate_confirmation_receipt.schema.json",
+   "sha256": "cc311e74ef80de22390795477ba6ca0b58da487d32bad9c3d864a1461f804c38",
+   "bytes": 1636,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_source_intake_boundary_cases.schema.json",
+   "sha256": "1cf6e664d664d79a60a4893a189109077ef8daff52a28d552935e256fc9d8334",
+   "bytes": 921,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_source_intake_profile.schema.json",
+   "sha256": "ca9a0dc14e3cafdc4227197deea44769e1949bbea25fdf82fcecd738e51be167",
+   "bytes": 1556,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/listing_suite_source_intake_receipt.schema.json",
+   "sha256": "60c7b114a5d1681306f99f840ab883ecc92833161f94806f1d38df3cb9ebe4fc",
+   "bytes": 3394,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/passport_recreate_archive_receipt.schema.json",
+   "sha256": "f76d633215e3239ea39f4df2b949d43b9a64fc70e0983a617cedeb2bff22f3a3",
+   "bytes": 1285,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/passport_recreate_transaction_receipt.schema.json",
+   "sha256": "c77d574266881afe44e790e032aa38af88dc53819f8f7b5f67c49052609741e4",
+   "bytes": 2541,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/product_media_semantic_registry_schema.v1.1.json",
+   "sha256": "58f8e70de556a240fcbbdafc067097479247b9bc4a8e5f57051f5bf6e7d9a355",
+   "bytes": 4963,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/tools/README.md",
+   "sha256": "c7871e92954657dd3c49ef381789965a5e4393672aeba295e52d1cbdc67c178d",
+   "bytes": 11131,
+   "version": "1.1"
+  },
+  {
+   "path": "02_SKU_Passport/tools/handoff_integrity_check.js",
+   "sha256": "9ec751c9ceb9819cb7d29f5566cfdccfe534cae1d0f3f389734ca5d9a21e5107",
+   "bytes": 7440,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/tools/handoff_metadata_consistency_check.js",
+   "sha256": "40c471f6d8b14e977c30a13c1704a977b8d39cfbd2590deeabf499824c80cbd6",
+   "bytes": 4387,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/tools/passport_package_check.js",
+   "sha256": "5849d0b6bd31d33a3d1e2811e4ca38a2b3f2acd21af375c0d5fbdfd5980f9bd2",
+   "bytes": 11182,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/tools/passport_package_check.test.js",
+   "sha256": "97551c4ff37f04632d5dcae4a065d79783efbc7fc9ab07db5824ba967c6e680c",
+   "bytes": 6828,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/tools/response_coverage_check.js",
+   "sha256": "73c819a4139aa2ad496d17d51c92508b7550f653206b03acbef197e7780ca940",
+   "bytes": 4592,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/tools/response_coverage_check.test.js",
+   "sha256": "8e4093feff398acc8a8e79144f15b20b591af8a665ae1fb4069d77c913a8b892",
+   "bytes": 2877,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/Аудит_Рецензент_Скептик_Паспорт_SKU_2026-09-27.md",
+   "sha256": "2a885024ad6da290ae9eb253137169bc475b23c1bf983d7e56fa9eff08c483f1",
+   "bytes": 19183,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/Аудит_Рецензент_Скептик_Паспорт_Конвеєр_Агенти_2026-09-27_v3.md",
+   "sha256": "a94e2d02a12052d94fd5bebaace62b94162562d2a3230a1d4e6325b81ad2975e",
+   "bytes": 9679,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/Дорожня_карта_розвитку_універсального_шаблону_Паспорта_SKU_2026-09-27.md",
+   "sha256": "2a9ddecad70b96ab2c5049ffd6380251830b2a7bd642d150cf78fca8c50c3c4c",
+   "bytes": 12911,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/Реєстр_оновлень_агентів_та_походження_правил_2026-09-27.md",
+   "sha256": "e90d12a5ac3201a6eff9e097d8c1fac7356d7a1baa4647b0d8be2883d0839de7",
+   "bytes": 18127,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/Синхронізація_агентів_і_контракту_2026-09-27.md",
+   "sha256": "2eab35942778ecc55a9624493a23ade271aef9d62aa559ecac2ba8403359a96c",
+   "bytes": 3948,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/Форма_первичной_информации_о_SKU_v1.docx",
+   "sha256": "9ad89e3ad7e3d8711e5f388b18a04ddc07951d97f5d1b5a1c09ed02c49aec3ef",
+   "bytes": 46597,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/Чек-лист_первинної_інформації_SKU__PROPOSAL_2026-09-30.md",
+   "sha256": "63931acdd724b82d60566f759be364922dcaaca050668a7f37966907203c55a8",
+   "bytes": 26380,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/Шаблон_запроса_ответов_Паспорт_SKU.docx",
+   "sha256": "f4b0adc828e2726bf12b8d0fa063b0b889a3922959fe58bb2a379352eed7af43",
+   "bytes": 37232,
+   "version": null
+  },
+  {
+   "path": "02_SKU_Passport/Шаблон_массового_сбора_ответов_SKU.xlsx",
+   "sha256": "4ec576500a8acf31a0ac6543b1aa34b4d55355a4828fab99b4ef003fdd8ed527",
+   "bytes": 35833,
+   "version": null
+  },
+  {
+   "path": "03_Content_TZ/05_Routing/Content_TZ_Agent_On_Request_Contract.md",
+   "sha256": "ae24d3ff2b585620f0cc7da8b6176b7d8ad08754bb3d2e80fbb7d3a2f25343fd",
+   "bytes": 19253,
+   "version": "1.6"
+  },
+  {
+   "path": "03_Content_TZ/05_Routing/marketplace_requirements_registry.json",
+   "sha256": "c154011a9bc5c7fc147535334dce24370cf208766ec3319e90291a212ca01164",
+   "bytes": 7965,
+   "version": "1.1"
+  },
+  {
+   "path": "03_Content_TZ/07_QA_Tools/E2E_AGENT_EVAL_CONTRACT.md",
+   "sha256": "5528ef895cc1b65449d39edf43bd419eab9e8d3ef773132e57c1d83bc5fa5502",
+   "bytes": 6456,
+   "version": "1.0"
+  },
+  {
+   "path": "04_Image_Collection/00_Product_Requirements/IMAGE_COLLECTION_ASSET_REVIEW_STANDARD_v1.0.md",
+   "sha256": "c14da4a5d9e6ef4a9d834124e70b17716947716b6423454126dc665a791e14f5",
+   "bytes": 5411,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/00_Product_Requirements/Image_Collection_Collection_Model_Contract_v1.0.md",
+   "sha256": "49d6dda5f9a5dffd9b482fc04157d283e956ba9904ecce2a1a332c81795ca2b0",
+   "bytes": 5646,
+   "version": "1.0"
+  },
+  {
+   "path": "04_Image_Collection/00_Product_Requirements/Image_Collection_Listing_Suite_Binding_and_Result_Contract_v1.0.md",
+   "sha256": "3d1a8f589e6654448a7e3781d995c33dc83e7d29bd685a5c7872c9d9adad2f9f",
+   "bytes": 5370,
+   "version": "1.0"
+  },
+  {
+   "path": "04_Image_Collection/00_Product_Requirements/Image_Collection_Passport_Boundary_Contract_v1.0.md",
+   "sha256": "b23a3bc9ac6e6a797eeb999f87a67327414c607029a428b2a2df9b2c0d5b94d5",
+   "bytes": 5297,
+   "version": "1.0"
+  },
+  {
+   "path": "04_Image_Collection/00_Product_Requirements/Image_Collection_UI_Implementation_Handoff_v1.0.md",
+   "sha256": "206cad3d18ff6a2994676667e0749e7f0f39a520db4e3315bfd0dab988e5aa9e",
+   "bytes": 10391,
+   "version": "1.0"
+  },
+  {
+   "path": "04_Image_Collection/00_Product_Requirements/Image_Collection_UI_State_and_Human_Action_Contract_v1.0.md",
+   "sha256": "20240217bc9174169166efcacd7c2ab1c213f1cdaa9d3222eb728297a4db302a",
+   "bytes": 5852,
+   "version": "1.0"
+  },
+  {
+   "path": "04_Image_Collection/00_Product_Requirements/Image_Collector_Agent_Specification_v1.7.md",
+   "sha256": "7cd57276fb76171530834a19e3082688c0d658058ed426410fd3b03d8e47769b",
+   "bytes": 20747,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/00_README.md",
+   "sha256": "8aeefadd131ae37e157b479a03fdf63a2678a00e27516324eb8f3620f610eb4e",
+   "bytes": 14896,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/01_Agent_Instructions/Image_Collector_Agent_Instructions_v1.9.md",
+   "sha256": "b5dea5659a6bf3f9412e5a55c50c8e3542d00e2a55691e44440eeb7ea8011291",
+   "bytes": 76077,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/01_Agent_Instructions/Image_Collector_Reviewer_Agent_Instructions_v0.7.md",
+   "sha256": "02ad9b95988b6141c5cb5fb4b4676a7d17278536ec1a13655f87afa03fda3d95",
+   "bytes": 8859,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/01_Agent_Instructions/Image_Collector_Skeptic_Agent_Instructions_v0.7.md",
+   "sha256": "5c638691588f9ee96db13a1775772dfb60c362a0d142c20c4f06626e695a22cb",
+   "bytes": 8323,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/access_resolution_queue.template.md",
+   "sha256": "661b68135fa73932746f38eb56c2d83b9204bdcb34e4e23a2dba8bc5d0672823",
+   "bytes": 930,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/existing_media_snapshot.schema.json",
+   "sha256": "b96fd064061b23f2f8943d4b1f137888209781f6fede7efa26304d9f0d7f0173",
+   "bytes": 2696,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/image_collection_asset_review_receipt.schema.json",
+   "sha256": "1e7659b62700166e27810da6ab354b1533cef14ee9efeb00ccd6028246c0bb3f",
+   "bytes": 4345,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/image_collection_initial_eligibility_receipt.schema.json",
+   "sha256": "250e1c554206e493a8cbb6cbca84ba25ccbae6bd4a81d887fa2fdfd988485f44",
+   "bytes": 2417,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/image_collection_ui_result_receipt.schema.json",
+   "sha256": "83009a323a2ae1b9e74a2ef71f663ccea1012d63e39434d7f7a856520600ad26",
+   "bytes": 4403,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/image_collection_ui_state_receipt.schema.json",
+   "sha256": "c95415c50c72204829bf2e199fb4cf00ee8dd11c50327a5dbef3621558c40e4a",
+   "bytes": 3689,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/image_collection_user_action_receipt.schema.json",
+   "sha256": "5731ef2526f439ff666363319c57a7ea8f2effef33792f0c4eb69f07085a94eb",
+   "bytes": 1696,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/image_collection_user_action_request.schema.json",
+   "sha256": "b825aad3ba1fa0ddde1a27ca2f02f16617faee5d0d19d2c1f8ea9a89fd8f6c8f",
+   "bytes": 2595,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/image_collector_manifest_schema.v0.5.json",
+   "sha256": "33a97be32d9437b393812192793fb739c6579f40df3255e2522da7684bb21ef2",
+   "bytes": 34149,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/listing_suite_start_media_collection_receipt.schema.json",
+   "sha256": "05f9d8dbb3d3f69093d7397ffa1a2b377670ab0ace6ff1f05d5a46ca12c09cf9",
+   "bytes": 2071,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/listing_suite_start_media_collection_request.schema.json",
+   "sha256": "98253acbcdd4fb30ba26148d36c59c65cb1ab9b9da0033aacea3c2b2e6e04155",
+   "bytes": 5175,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/media_collection_start_request.schema.json",
+   "sha256": "d6fad083e065530f83ec30046611997d6c2bdd5f5f756886956d69a5c3ac6485",
+   "bytes": 4485,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/media_intake_classification_receipt.schema.json",
+   "sha256": "b6793c660082b14bb5042c5fd4b86d7ac33ca13dcdad1fc23caba01bb143e742",
+   "bytes": 1892,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/rights_clearance_queue.template.md",
+   "sha256": "fc0775cc06be8f9fb8c0a0ac8522a0545df3394e2c53b3e791bb5dc2e4f130c4",
+   "bytes": 935,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/sample_valid_manifest.v0.5.json",
+   "sha256": "c52d1cbb175de1826bb40a8c9c2468afc0f9b945d4b07e6a1794d783da881708",
+   "bytes": 11658,
+   "version": "v0.5"
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/sample_valid_pilot_review_manifest.v0.5.json",
+   "sha256": "52b2305020550bb890595cef45e809690ec2087409f2ce0eb649e4abf779b58a",
+   "bytes": 11309,
+   "version": "v0.5"
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/schema_v0.2_migration_note.md",
+   "sha256": "ed4031f278a1c98229efc1bdeaafe396a82348b624fad506fbb41eaf35de92ed",
+   "bytes": 1487,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/schema_v0.3_migration_note.md",
+   "sha256": "cd957ba09e93c24c0abe535099eec8ef62263b7f48962e53b71fd462243bc9ee",
+   "bytes": 1956,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/schema_v0.4_migration_note.md",
+   "sha256": "d24f6ba5243bd8c6575797b1d529aaee9c88db6c72021527c53f6a23ad657755",
+   "bytes": 1975,
+   "version": null
+  },
+  {
+   "path": "04_Image_Collection/02_Machine_Validation/schema_v0.5_migration_note.md",
+   "sha256": "fe81e6114346eeb73b4d72dcdfede869b30ddbd620ba1fda85a0b20ccde83a62",
+   "bytes": 1380,
+   "version": null
+  },
+  {
+   "path": "09_Shared_Contracts/AGENT_SESSION_CONTRACT.md",
+   "sha256": "a372246b3409c602748526f4fcdc633f5eba494155415310ecadf10e47503c7e",
+   "bytes": 6191,
+   "version": null
+  },
+  {
+   "path": "09_Shared_Contracts/CONTEXT_ASSEMBLY_CONTRACT.md",
+   "sha256": "705811ab581c21a905c86caafbb713cb6f5b37728f3b8344c19e159011155311",
+   "bytes": 7536,
+   "version": "1.2"
+  },
+  {
+   "path": "09_Shared_Contracts/SESSION_HANDOFF_RECEIPT.md",
+   "sha256": "03fb5499b867408284f5f21fdc7b761932d3827d973600ccd2ef2f0ef3aebdcc",
+   "bytes": 2346,
+   "version": null
+  },
+  {
+   "path": "09_Shared_Contracts/SESSION_TO_CANONICAL_WRITEBACK_GATE.md",
+   "sha256": "a483a592f55f793be372289bf93206122f6557c77f15b0f3339499b4e05b6a8b",
+   "bytes": 3559,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_APPROVED_PASSPORT_DELTA_AND_WRITEBACK_CONTRACT.md",
+   "sha256": "9a0c0aacc8271539eb4e49fec6c9e554d9d6c7b0fa8b0d35b95ccd8974fd1675",
+   "bytes": 3566,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_CHECKPOINT_ACCEPTANCE_CONTRACT.md",
+   "sha256": "7ebc67c93e148b5e1bf819bea3283548082908bbf26ea430e1c35c41f66a0b09",
+   "bytes": 3078,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_CORE_EDGE_REGISTRY.json",
+   "sha256": "dbbd58dcb85ba3a116e001e939c29296c8c3c61af0158083d59faf9d58c05a3a",
+   "bytes": 170101,
+   "version": "3.6"
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_DECISION_GRAPH_ANALYSIS.json",
+   "sha256": "a84bcb563080195df139807a45811b4789630132cb5f994ff52ea28b257a9ac5",
+   "bytes": 6805,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_DECISION_GRAPH_ANALYSIS.md",
+   "sha256": "27967a663049d8d0044396541efdc8469f6055cc5bfbbb234ac544f475e1175b",
+   "bytes": 5983,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_EXECUTION_GRAPH_CONTRACT.md",
+   "sha256": "0fb72c5640a54c52d29a486f7bfb7786361a4d44f102d1d9a5b9dca151e75ed8",
+   "bytes": 42144,
+   "version": "2.6"
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_EXECUTION_LEASE_AND_IDEMPOTENCY_CONTRACT.md",
+   "sha256": "ba4980349fb9c471d8f39e1d1193da22c473964a7e7f9067aa5034f16bdddf78",
+   "bytes": 2335,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_GOVERNANCE_ROUTE_MAPPING.json",
+   "sha256": "9d1bb8ce8ff08bc526935681aff0fe2c503af97046e599488547d64de7602027",
+   "bytes": 38250,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_GOVERNANCE_ROUTE_MAPPING.md",
+   "sha256": "83b65a04013f33f29df456aae460b051fe5800e7e67dcf80948d2c6c1eeb10f3",
+   "bytes": 4311,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_GRAPH_ANALYSIS_POLICY.json",
+   "sha256": "f75b9f3321b3f253608a088553aba73dfd6062065d237ecdf5527699f8b35d59",
+   "bytes": 1066,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_NODE_REGISTRY.json",
+   "sha256": "a1ea875386ef0fd4f2687d387634465845a0ea58e89187404fded51133177d8c",
+   "bytes": 102776,
+   "version": "3.2"
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_PASSPORT_AUDIT_RECEIPT_CONTRACT.md",
+   "sha256": "d3fd9a533850cbb763e560e27f6c2bbe50a0e0427a395ad066629510e7cb34b0",
+   "bytes": 3451,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_RECOVERY_AND_RESUME_CONTRACT.md",
+   "sha256": "81c4d160a063fa8f89a22a16487fd139dc5c1eb99d5d8b2246a6348a83b50ffb",
+   "bytes": 2685,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_REWORK_BUDGET_AND_TERMINATION_CONTRACT.md",
+   "sha256": "8547347562defeb49f98cf9beea2a26dff9c536667eca7161078294de98f13ba",
+   "bytes": 3795,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_REWORK_TERMINATION_POLICY.json",
+   "sha256": "1aeb4ae78ff104e3d8b72d8dc9cec1098afffe75164e7fa419aeb0e7a362743e",
+   "bytes": 1096,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_ROUTER_DECISION_CONTRACT.md",
+   "sha256": "6e4c85ccf8334bdfd2aa7a0cd27079fc932c0abe714c2e4d81dd667750662dde",
+   "bytes": 4307,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_RUN_STATE.md",
+   "sha256": "8ccbc231517498cb5321c712fd3235869729b67ce45a40fccaa91a9a3a9de12e",
+   "bytes": 10373,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_STATE_TRANSITION_WRITER_CONTRACT.md",
+   "sha256": "e72eb11cbe847d78db05652ddde7affc0dece4be681d229368c14151befc7c03",
+   "bytes": 5782,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_approved_passport_delta.schema.json",
+   "sha256": "aef4f87af6c2ea16064a3d2e30dcaeac2158f8ab51ce96480b93d1c8c9ba9d7e",
+   "bytes": 2819,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_checkpoint_acceptance_receipt.schema.json",
+   "sha256": "0ac782e58e0aa1d9d6650eb71920643bca828327f33fbe9bd6ae5a2d7db2b928",
+   "bytes": 4121,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_passport_media_delta.schema.json",
+   "sha256": "c0b894742c396674ca9b1e0c628370ffa5cef27ed9a0d9ac28a933fcc93ec745",
+   "bytes": 6731,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_passport_write_receipt.schema.json",
+   "sha256": "be3b74f0e62f6edfc831589c8e06c3e03a27532752235c08d0871fd4bcb0a4cd",
+   "bytes": 3410,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_recovery_resume_receipt.schema.json",
+   "sha256": "6537b92b37a28efe9b4261449f3deac7b1bf2d5d102c01a39655316417c04980",
+   "bytes": 1395,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_recovery_resume_request.schema.json",
+   "sha256": "1d2e302052c5e381f0930fea130043bbd21346d86e9edf3289a80ad5666bb7db",
+   "bytes": 1886,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_run_state.schema.json",
+   "sha256": "734e63dd0119eac0d169ccd4825218d6816c03ee15e4c5c9f0b32be440eef840",
+   "bytes": 14191,
+   "version": null
+  }
+ ]
+}

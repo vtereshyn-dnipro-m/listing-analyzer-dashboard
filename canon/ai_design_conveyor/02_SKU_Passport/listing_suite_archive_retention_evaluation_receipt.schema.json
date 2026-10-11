@@ -1,0 +1,29 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","evaluation_receipt_id","archive_receipt_ref","archive_manifest_sha256","sku_id","passport_id","archived_at","profile","evaluated_at","retention_deadline","legal_hold_ids","dependency_refs","state","reason_code","physical_deletion_executed","next_review_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "evaluation_receipt_id":{"type":"string","pattern":"^LS-RETENTION-EVAL-[A-Z0-9._-]+$"},
+    "archive_receipt_ref":{"type":"string","minLength":1},
+    "archive_manifest_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "sku_id":{"type":"string","minLength":1},
+    "passport_id":{"type":"string","minLength":1},
+    "archived_at":{"type":"string","format":"date-time"},
+    "profile":{"oneOf":[{"type":"null"},{"type":"object","additionalProperties":false,"required":["profile_id","profile_version","profile_sha256"],"properties":{"profile_id":{"type":"string"},"profile_version":{"type":"string"},"profile_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}}}]},
+    "evaluated_at":{"type":"string","format":"date-time"},
+    "retention_deadline":{"type":["string","null"],"format":"date-time"},
+    "legal_hold_ids":{"type":"array","uniqueItems":true,"items":{"type":"string"}},
+    "dependency_refs":{"type":"array","uniqueItems":true,"items":{"type":"string"}},
+    "state":{"enum":["RETAINED","LEGAL_HOLD","BLOCKED_BY_DEPENDENCY","ELIGIBLE_FOR_ADMIN_REVIEW","PURGE_NOT_AUTHORIZED"]},
+    "reason_code":{"type":"string","minLength":1},
+    "physical_deletion_executed":{"const":false},
+    "next_review_at":{"type":["string","null"],"format":"date-time"}
+  },
+  "allOf":[
+    {"if":{"properties":{"state":{"const":"LEGAL_HOLD"}},"required":["state"]},"then":{"properties":{"legal_hold_ids":{"minItems":1}}}},
+    {"if":{"properties":{"state":{"const":"BLOCKED_BY_DEPENDENCY"}},"required":["state"]},"then":{"properties":{"dependency_refs":{"minItems":1}}}},
+    {"if":{"properties":{"state":{"const":"ELIGIBLE_FOR_ADMIN_REVIEW"}},"required":["state"]},"then":{"properties":{"profile":{"type":"object"},"retention_deadline":{"type":"string","format":"date-time"},"legal_hold_ids":{"maxItems":0},"dependency_refs":{"maxItems":0}}}},
+    {"if":{"properties":{"profile":{"const":null}},"required":["profile"]},"then":{"properties":{"state":{"const":"RETAINED"},"retention_deadline":{"const":null},"reason_code":{"const":"RETENTION_POLICY_NOT_CONFIGURED"}}}}
+  ]
+}

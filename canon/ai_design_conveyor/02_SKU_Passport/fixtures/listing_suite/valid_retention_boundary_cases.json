@@ -1,0 +1,13 @@
+{
+  "schema_version":"1.0",
+  "profile_ref":"Listing_Suite_Archive_Retention_Profile_v1.0.json",
+  "cases":[
+    {"case_id":"RET-1094","age_days":1094,"profile_configured":true,"legal_hold_active":false,"dependency_active":false,"purge_requested":false,"expected_state":"RETAINED","expected_reason_code":"RETENTION_PERIOD_ACTIVE"},
+    {"case_id":"RET-1095","age_days":1095,"profile_configured":true,"legal_hold_active":false,"dependency_active":false,"purge_requested":false,"expected_state":"ELIGIBLE_FOR_ADMIN_REVIEW","expected_reason_code":"RETENTION_PERIOD_ELAPSED"},
+    {"case_id":"RET-1096","age_days":1096,"profile_configured":true,"legal_hold_active":false,"dependency_active":false,"purge_requested":false,"expected_state":"ELIGIBLE_FOR_ADMIN_REVIEW","expected_reason_code":"RETENTION_PERIOD_ELAPSED"},
+    {"case_id":"RET-HOLD","age_days":1096,"profile_configured":true,"legal_hold_active":true,"dependency_active":false,"purge_requested":false,"expected_state":"LEGAL_HOLD","expected_reason_code":"LEGAL_HOLD_ACTIVE"},
+    {"case_id":"RET-DEPENDENCY","age_days":1096,"profile_configured":true,"legal_hold_active":false,"dependency_active":true,"purge_requested":false,"expected_state":"BLOCKED_BY_DEPENDENCY","expected_reason_code":"ACTIVE_ARCHIVE_DEPENDENCY"},
+    {"case_id":"RET-NO-PROFILE","age_days":5000,"profile_configured":false,"legal_hold_active":false,"dependency_active":false,"purge_requested":false,"expected_state":"RETAINED","expected_reason_code":"RETENTION_POLICY_NOT_CONFIGURED"},
+    {"case_id":"RET-PURGE","age_days":1096,"profile_configured":true,"legal_hold_active":false,"dependency_active":false,"purge_requested":true,"expected_state":"PURGE_NOT_AUTHORIZED","expected_reason_code":"PHYSICAL_DELETION_AUTHORITY_ABSENT"}
+  ]
+}

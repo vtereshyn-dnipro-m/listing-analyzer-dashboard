@@ -1,0 +1,19 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","catalog_id","catalog_version","effective_at","enabled_locales","fallback_locale","messages","approved_by","catalog_sha256"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "catalog_id":{"type":"string","pattern":"^LS-MESSAGE-CATALOG-[A-Z0-9._-]+$"},
+    "catalog_version":{"type":"string","minLength":1},
+    "effective_at":{"type":"string","format":"date-time"},
+    "enabled_locales":{"type":"array","minItems":2,"maxItems":2,"uniqueItems":true,"items":{"enum":["uk-UA","ru-RU"]}},
+    "fallback_locale":{"const":"uk-UA"},
+    "messages":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/message"}},
+    "approved_by":{"type":"string","minLength":1},
+    "catalog_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}
+  },
+  "$defs":{
+    "message":{"type":"object","additionalProperties":false,"required":["user_message_code","severity","allowed_action","texts"],"properties":{"user_message_code":{"type":"string","pattern":"^[A-Z0-9_]+$"},"severity":{"enum":["INFO","SUCCESS","WARNING","ERROR"]},"allowed_action":{"type":"string","minLength":1},"texts":{"type":"object","additionalProperties":false,"required":["uk-UA","ru-RU"],"properties":{"uk-UA":{"type":"string","minLength":1},"ru-RU":{"type":"string","minLength":1}}}}}
+  }
+}

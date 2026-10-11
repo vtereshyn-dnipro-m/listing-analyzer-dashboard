@@ -1,0 +1,25 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","evaluation_receipt_id","profile_ref","profile_sha256","actor_id","verified_issuer","requested_action","sku_id","matched_roles","scope_match","verdict","reason_code","evaluated_at","mutation_executed"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "evaluation_receipt_id":{"type":"string","pattern":"^LS-AUTH-EVAL-[A-Z0-9._-]+$"},
+    "profile_ref":{"type":"string","minLength":1},
+    "profile_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "actor_id":{"type":"string","minLength":1},
+    "verified_issuer":{"type":["string","null"]},
+    "requested_action":{"type":"string","minLength":1},
+    "sku_id":{"type":["string","null"]},
+    "matched_roles":{"type":"array","uniqueItems":true,"items":{"enum":["DATA_CONTRIBUTOR","PRODUCT_OWNER","PRODUCT_OWNER_WITH_RECREATE_AUTHORITY","PASSPORT_ADMIN","AUDITOR","LEGAL_OWNER","AUDIT_OWNER"]}},
+    "scope_match":{"type":"boolean"},
+    "verdict":{"enum":["AUTHORIZED","DENIED"]},
+    "reason_code":{"enum":["AUTHORIZED","AUTHORITY_PROFILE_NOT_ACTIVE","AUTHORITY_NOT_MAPPED","ACTION_NOT_AUTHORIZED","SKU_SCOPE_DENIED","IDENTITY_NOT_VERIFIED"]},
+    "evaluated_at":{"type":"string","format":"date-time"},
+    "mutation_executed":{"type":"boolean"}
+  },
+  "allOf":[
+    {"if":{"properties":{"verdict":{"const":"AUTHORIZED"}},"required":["verdict"]},"then":{"properties":{"reason_code":{"const":"AUTHORIZED"},"matched_roles":{"minItems":1},"scope_match":{"const":true}}}},
+    {"if":{"properties":{"verdict":{"const":"DENIED"}},"required":["verdict"]},"then":{"properties":{"mutation_executed":{"const":false}}}}
+  ]
+}

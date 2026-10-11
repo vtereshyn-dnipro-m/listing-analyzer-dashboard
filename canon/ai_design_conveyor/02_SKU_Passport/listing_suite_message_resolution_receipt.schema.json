@@ -1,0 +1,23 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","resolution_receipt_id","catalog_id","catalog_version","catalog_sha256","user_message_code","requested_locale","resolved_locale","resolution_status","text_present","semantics_preserved","resolved_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "resolution_receipt_id":{"type":"string","pattern":"^LS-MSG-RES-[A-Z0-9._-]+$"},
+    "catalog_id":{"type":"string","minLength":1},
+    "catalog_version":{"type":"string","minLength":1},
+    "catalog_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "user_message_code":{"type":"string","pattern":"^[A-Z0-9_]+$"},
+    "requested_locale":{"type":"string","minLength":1},
+    "resolved_locale":{"enum":["uk-UA","ru-RU"]},
+    "resolution_status":{"enum":["DIRECT","FALLBACK_USED","UNSUPPORTED_LOCALE_FALLBACK","UNKNOWN_CODE"]},
+    "text_present":{"type":"boolean"},
+    "semantics_preserved":{"type":"boolean"},
+    "resolved_at":{"type":"string","format":"date-time"}
+  },
+  "allOf":[
+    {"if":{"properties":{"resolution_status":{"enum":["FALLBACK_USED","UNSUPPORTED_LOCALE_FALLBACK"]}},"required":["resolution_status"]},"then":{"properties":{"resolved_locale":{"const":"uk-UA"},"text_present":{"const":true},"semantics_preserved":{"const":true}}}},
+    {"if":{"properties":{"resolution_status":{"const":"UNKNOWN_CODE"}},"required":["resolution_status"]},"then":{"properties":{"user_message_code":{"const":"CONTRACT_COMPATIBILITY_ERROR"},"resolved_locale":{"const":"uk-UA"},"text_present":{"const":true},"semantics_preserved":{"const":true}}}}
+  ]
+}

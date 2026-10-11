@@ -1,0 +1,32 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","state_receipt_id","sku_id","collection_id","manifest_version","manifest_sha256","ui_state","evidence_refs","open_action_ids","next_action","passport_delta_receipt_ref","projected_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "state_receipt_id":{"type":"string","pattern":"^IMAGE-COLLECTION-UI-STATE-[A-Z0-9._-]+$"},
+    "sku_id":{"type":"string","minLength":1},
+    "collection_id":{"type":["string","null"]},
+    "manifest_version":{"type":["string","null"]},
+    "manifest_sha256":{"type":["string","null"],"pattern":"^[a-f0-9]{64}$"},
+    "ui_state":{"enum":["NOT_STARTED","MATERIALS_REGISTERED","SEARCH_RUNNING","ACCESS_REQUIRED","REVIEW_RUNNING","USER_DECISION_REQUIRED","READY_FOR_CONFIRMATION","COLLECTION_CONFIRMED","PASSPORT_TRANSFER_PENDING","PASSPORT_TRANSFERRED","COMPLETED_WITH_LIMITATIONS"]},
+    "evidence_refs":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "open_action_ids":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "next_action":{"enum":["CREATE_START_REQUEST","START_CONFIRMED_SCOPE","VIEW_PROGRESS","RESOLVE_ACCESS_ACTION","COMPLETE_USER_DECISION","WAIT_FOR_REVIEWS","CONFIRM_COLLECTION","VIEW_CONFIRMED_POOL","LOOKUP_PASSPORT_TRANSFER","OPEN_UPDATED_PASSPORT","VIEW_LIMITATIONS"]},
+    "passport_delta_receipt_ref":{"type":["string","null"]},
+    "projected_at":{"type":"string","format":"date-time"}
+  },
+  "allOf":[
+    {"if":{"properties":{"ui_state":{"const":"NOT_STARTED"}},"required":["ui_state"]},"then":{"properties":{"collection_id":{"const":null},"manifest_version":{"const":null},"manifest_sha256":{"const":null},"next_action":{"const":"CREATE_START_REQUEST"}}}},
+    {"if":{"properties":{"ui_state":{"const":"MATERIALS_REGISTERED"}},"required":["ui_state"]},"then":{"properties":{"next_action":{"const":"START_CONFIRMED_SCOPE"}}}},
+    {"if":{"properties":{"ui_state":{"const":"SEARCH_RUNNING"}},"required":["ui_state"]},"then":{"properties":{"next_action":{"const":"VIEW_PROGRESS"}}}},
+    {"if":{"properties":{"ui_state":{"const":"ACCESS_REQUIRED"}},"required":["ui_state"]},"then":{"properties":{"open_action_ids":{"minItems":1},"next_action":{"const":"RESOLVE_ACCESS_ACTION"}}}},
+    {"if":{"properties":{"ui_state":{"const":"USER_DECISION_REQUIRED"}},"required":["ui_state"]},"then":{"properties":{"open_action_ids":{"minItems":1},"next_action":{"const":"COMPLETE_USER_DECISION"}}}},
+    {"if":{"properties":{"ui_state":{"const":"REVIEW_RUNNING"}},"required":["ui_state"]},"then":{"properties":{"next_action":{"const":"WAIT_FOR_REVIEWS"}}}},
+    {"if":{"properties":{"ui_state":{"const":"READY_FOR_CONFIRMATION"}},"required":["ui_state"]},"then":{"properties":{"next_action":{"const":"CONFIRM_COLLECTION"}}}},
+    {"if":{"properties":{"ui_state":{"const":"COLLECTION_CONFIRMED"}},"required":["ui_state"]},"then":{"properties":{"next_action":{"const":"VIEW_CONFIRMED_POOL"}}}},
+    {"if":{"properties":{"ui_state":{"const":"PASSPORT_TRANSFER_PENDING"}},"required":["ui_state"]},"then":{"properties":{"passport_delta_receipt_ref":{"const":null},"next_action":{"const":"LOOKUP_PASSPORT_TRANSFER"}}}},
+    {"if":{"properties":{"ui_state":{"const":"PASSPORT_TRANSFERRED"}},"required":["ui_state"]},"then":{"properties":{"passport_delta_receipt_ref":{"type":"string","minLength":1},"next_action":{"const":"OPEN_UPDATED_PASSPORT"}}}},
+    {"if":{"properties":{"ui_state":{"const":"COMPLETED_WITH_LIMITATIONS"}},"required":["ui_state"]},"then":{"properties":{"next_action":{"const":"VIEW_LIMITATIONS"}}}}
+  ]
+}

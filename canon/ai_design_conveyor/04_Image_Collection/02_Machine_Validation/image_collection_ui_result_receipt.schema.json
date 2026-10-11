@@ -1,0 +1,24 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,
+  "required":["schema_version","receipt_id","sku_id","collection_id","collection_purpose","result_state","source_counts","asset_counts","open_user_action_ids","media_gate","passport_delta_status","passport_update","next_action","publication_authority","projected_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},"receipt_id":{"type":"string","pattern":"^IMAGE-COLLECTION-UI-RESULT-[A-Z0-9._-]+$"},"sku_id":{"type":"string","minLength":1},"collection_id":{"type":["string","null"]},"collection_purpose":{"type":["string","null"],"enum":["INITIAL_COLLECTION","ADDITIONAL_DISCOVERY","USER_MEDIA_INTAKE","RECOVERY_DELTA",null]},
+    "result_state":{"enum":["STARTED","IN_PROGRESS","DECISION_REQUIRED","READY_FOR_CONFIRMATION","PASSPORT_TRANSFER_PENDING","COMPLETED","COMPLETED_WITH_LIMITATIONS","REQUEST_REJECTED"]},
+    "source_counts":{"$ref":"#/$defs/sourceCounts"},"asset_counts":{"$ref":"#/$defs/assetCounts"},"open_user_action_ids":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},"media_gate":{"enum":["NOT_EVALUATED","REVIEW_RUNNING","USER_DECISION_REQUIRED","READY_FOR_HUMAN_REVIEW","COLLECTION_READY","REWORK_NEEDED"]},"passport_delta_status":{"enum":["NOT_CREATED","READY_FOR_PASSPORT_DELTA_APPLY","PASSPORT_UPDATE_PENDING","PASSPORT_DELTA_APPLIED","NOT_APPLICABLE"]},"passport_update":{"type":["object","null"],"oneOf":[{"type":"null"},{"$ref":"#/$defs/passportUpdate"}]},
+    "next_action":{"enum":["VIEW_PROGRESS","RESOLVE_USER_ACTION","CONFIRM_COLLECTION","WAIT_FOR_PASSPORT_TRANSFER","OPEN_UPDATED_PASSPORT","VIEW_LIMITATIONS","CORRECT_START_REQUEST"]},"publication_authority":{"const":"NOT_GRANTED"},"projected_at":{"type":"string","format":"date-time"}
+  },
+  "allOf":[
+    {"if":{"properties":{"result_state":{"const":"DECISION_REQUIRED"}},"required":["result_state"]},"then":{"properties":{"open_user_action_ids":{"minItems":1},"next_action":{"const":"RESOLVE_USER_ACTION"}}}},
+    {"if":{"properties":{"result_state":{"const":"READY_FOR_CONFIRMATION"}},"required":["result_state"]},"then":{"properties":{"media_gate":{"const":"READY_FOR_HUMAN_REVIEW"},"next_action":{"const":"CONFIRM_COLLECTION"}}}},
+    {"if":{"properties":{"result_state":{"const":"PASSPORT_TRANSFER_PENDING"}},"required":["result_state"]},"then":{"properties":{"passport_delta_status":{"const":"PASSPORT_UPDATE_PENDING"},"passport_update":{"const":null},"next_action":{"const":"WAIT_FOR_PASSPORT_TRANSFER"}}}},
+    {"if":{"properties":{"result_state":{"const":"COMPLETED"}},"required":["result_state"]},"then":{"properties":{"passport_delta_status":{"const":"PASSPORT_DELTA_APPLIED"},"passport_update":{"$ref":"#/$defs/passportUpdate"},"next_action":{"const":"OPEN_UPDATED_PASSPORT"}}}},
+    {"if":{"properties":{"result_state":{"const":"COMPLETED_WITH_LIMITATIONS"}},"required":["result_state"]},"then":{"properties":{"next_action":{"const":"VIEW_LIMITATIONS"}}}},
+    {"if":{"properties":{"result_state":{"const":"REQUEST_REJECTED"}},"required":["result_state"]},"then":{"properties":{"collection_id":{"const":null},"collection_purpose":{"const":null},"passport_delta_status":{"const":"NOT_APPLICABLE"},"passport_update":{"const":null},"next_action":{"const":"CORRECT_START_REQUEST"}}}}
+  ],
+  "$defs":{
+    "sha":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "sourceCounts":{"type":"object","additionalProperties":false,"required":["existing","new","duplicate","inaccessible"],"properties":{"existing":{"type":"integer","minimum":0},"new":{"type":"integer","minimum":0},"duplicate":{"type":"integer","minimum":0},"inaccessible":{"type":"integer","minimum":0}}},
+    "assetCounts":{"type":"object","additionalProperties":false,"required":["accepted","review","quarantine","rejected"],"properties":{"accepted":{"type":"integer","minimum":0},"review":{"type":"integer","minimum":0},"quarantine":{"type":"integer","minimum":0},"rejected":{"type":"integer","minimum":0}}},
+    "passportUpdate":{"type":"object","additionalProperties":false,"required":["delta_receipt_ref","base_version","base_sha256","new_version","new_sha256"],"properties":{"delta_receipt_ref":{"type":"string","minLength":1},"base_version":{"type":"string","minLength":1},"base_sha256":{"$ref":"#/$defs/sha"},"new_version":{"type":"string","minLength":1},"new_sha256":{"$ref":"#/$defs/sha"}}}
+  }
+}

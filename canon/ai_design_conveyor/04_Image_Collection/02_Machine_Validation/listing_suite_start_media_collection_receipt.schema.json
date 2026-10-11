@@ -1,0 +1,13 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","type":"object","additionalProperties":false,
+  "required":["schema_version","receipt_id","request_id","request_sha256","idempotency_key","result","reason_code","sku_id","collection_id","run_id","downstream_request_ref","authorization_receipt_ref","automatic_duplicate_runs_created","publication_authority","evaluated_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},"receipt_id":{"type":"string","pattern":"^LS-MEDIA-START-RECEIPT-[A-Z0-9._-]+$"},"request_id":{"type":"string","minLength":1},"request_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},"idempotency_key":{"type":"string","minLength":16},
+    "result":{"enum":["START_ACCEPTED","START_REPLAYED","USER_INTENT_REQUIRED","ROUTED_TO_PASSPORT_INTAKE","START_REJECTED"]},"reason_code":{"enum":["START_BOUND_AND_AUTHORIZED","IDEMPOTENT_REPLAY","MIXED_INPUT_REQUIRES_INTENT","DOCUMENT_INPUT_ROUTED","STALE_PASSPORT_INPUT","STALE_MEDIA_SNAPSHOT","CONFIRMATION_SCOPE_MISMATCH","COLLECTION_ROOT_OUTSIDE_PRODUCT_ROOT","PURPOSE_MODE_MISMATCH","IDEMPOTENCY_KEY_CONFLICT","INPUT_INVALID"]},
+    "sku_id":{"type":"string","minLength":1},"collection_id":{"type":["string","null"]},"run_id":{"type":["string","null"]},"downstream_request_ref":{"type":["string","null"]},"authorization_receipt_ref":{"type":["string","null"]},"automatic_duplicate_runs_created":{"const":0},"publication_authority":{"const":"NOT_GRANTED"},"evaluated_at":{"type":"string","format":"date-time"}
+  },
+  "allOf":[
+    {"if":{"properties":{"result":{"enum":["START_ACCEPTED","START_REPLAYED"]}},"required":["result"]},"then":{"properties":{"collection_id":{"type":"string","minLength":1},"run_id":{"type":"string","minLength":1},"downstream_request_ref":{"type":"string","minLength":1},"authorization_receipt_ref":{"type":"string","minLength":1}}}},
+    {"if":{"properties":{"result":{"enum":["USER_INTENT_REQUIRED","ROUTED_TO_PASSPORT_INTAKE","START_REJECTED"]}},"required":["result"]},"then":{"properties":{"collection_id":{"const":null},"run_id":{"const":null}}}}
+  ]
+}

@@ -1,0 +1,13 @@
+{
+  "schema_version":"1.0",
+  "profile_id":"LS-RETENTION-PROFILE-PRODUCTION-CANDIDATE",
+  "profile_version":"1.0",
+  "effective_at":"2026-10-04T00:00:00+03:00",
+  "retention_period_days":1095,
+  "archive_read_roles":["PRODUCT_OWNER","PASSPORT_ADMIN","AUDITOR"],
+  "review_owner_id":"PASSPORT_ADMIN",
+  "legal_hold_authorities":["PASSPORT_ADMIN","LEGAL_OWNER","AUDIT_OWNER"],
+  "configured_by":"PROJECT_OWNER_APPROVED_CONFIGURATION",
+  "approved_by":"PROJECT_OWNER",
+  "profile_sha256":"16c8430a21f70595afe3fd846a90b88720238ab51b12dd7d5fe6f7959aeaf501"
+}

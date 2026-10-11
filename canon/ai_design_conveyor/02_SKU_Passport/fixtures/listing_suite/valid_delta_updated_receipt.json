@@ -1,0 +1,29 @@
+{
+  "schema_version": "1.0",
+  "receipt_id": "LS-PSP-RECEIPT-FIXTURE-DELTA-001",
+  "request_id": "LS-PSP-REQ-FIXTURE-DELTA-001",
+  "request_sha256": "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+  "requested_action": "SUBMIT_SOURCE_EVIDENCE_DELTA",
+  "sku_id": "SKU-FIXTURE-001",
+  "result": "PASSPORT_UPDATED",
+  "passport_before": {
+    "passport_id": "PSP-FIXTURE-001",
+    "version": "7",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "passport_after": {
+    "passport_id": "PSP-FIXTURE-001",
+    "version": "8",
+    "sha256": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+  },
+  "accepted_source_count": 1,
+  "rejected_source_count": 0,
+  "duplicate_count": 0,
+  "change_event_ids": ["CHANGE-FIXTURE-001"],
+  "question_ids": [],
+  "conflict_ids": [],
+  "user_message_code": "PASSPORT_UPDATE_CONFIRMED",
+  "external_side_effects_executed": 0,
+  "publication_authority": "NOT_GRANTED",
+  "evaluated_at": "2026-10-04T12:10:00Z"
+}

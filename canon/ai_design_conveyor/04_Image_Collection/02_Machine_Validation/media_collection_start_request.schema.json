@@ -1,0 +1,36 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","request_id","sku_id","passport","existing_media_snapshot","collection_purpose","execution_mode","discovery_mode","source_inventory","search_scope","previous_search_cutoff","prior_coverage_ref","recovery_source_ids","visual_target_ids","product_root","human_confirmation_id","idempotency_key"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "request_id":{"type":"string","pattern":"^MEDIA-COLLECTION-REQ-[A-Z0-9._-]+$"},
+    "sku_id":{"type":"string","minLength":1},
+    "passport":{"$ref":"#/$defs/passport"},
+    "existing_media_snapshot":{"$ref":"#/$defs/snapshotRef"},
+    "collection_purpose":{"enum":["INITIAL_COLLECTION","ADDITIONAL_DISCOVERY","USER_MEDIA_INTAKE","RECOVERY_DELTA"]},
+    "execution_mode":{"enum":["STANDARD","PILOT_REVIEW_ONLY"]},
+    "discovery_mode":{"enum":["INTERNET_DISCOVERY","LOCAL_ONLY","TARGETED_RECOVERY"]},
+    "source_inventory":{"type":"array","items":{"$ref":"#/$defs/source"}},
+    "search_scope":{"type":["string","null"]},
+    "previous_search_cutoff":{"type":["string","null"],"format":"date-time"},
+    "prior_coverage_ref":{"type":["string","null"]},
+    "recovery_source_ids":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "visual_target_ids":{"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "product_root":{"type":"string","minLength":1},
+    "human_confirmation_id":{"type":"string","minLength":1},
+    "idempotency_key":{"type":"string","minLength":16}
+  },
+  "allOf":[
+    {"if":{"properties":{"collection_purpose":{"const":"INITIAL_COLLECTION"}},"required":["collection_purpose"]},"then":{"properties":{"discovery_mode":{"const":"INTERNET_DISCOVERY"},"search_scope":{"type":"string","minLength":1},"previous_search_cutoff":{"const":null},"prior_coverage_ref":{"const":null},"recovery_source_ids":{"maxItems":0}}}},
+    {"if":{"properties":{"collection_purpose":{"const":"ADDITIONAL_DISCOVERY"}},"required":["collection_purpose"]},"then":{"properties":{"discovery_mode":{"const":"INTERNET_DISCOVERY"},"search_scope":{"type":"string","minLength":1},"previous_search_cutoff":{"type":"string","format":"date-time"},"prior_coverage_ref":{"type":"string","minLength":1},"recovery_source_ids":{"maxItems":0}}}},
+    {"if":{"properties":{"collection_purpose":{"const":"USER_MEDIA_INTAKE"}},"required":["collection_purpose"]},"then":{"properties":{"discovery_mode":{"const":"LOCAL_ONLY"},"source_inventory":{"minItems":1},"search_scope":{"const":null},"previous_search_cutoff":{"const":null},"prior_coverage_ref":{"const":null},"recovery_source_ids":{"maxItems":0}}}},
+    {"if":{"properties":{"collection_purpose":{"const":"RECOVERY_DELTA"}},"required":["collection_purpose"]},"then":{"properties":{"discovery_mode":{"const":"TARGETED_RECOVERY"},"search_scope":{"const":null},"previous_search_cutoff":{"const":null},"prior_coverage_ref":{"const":null},"recovery_source_ids":{"minItems":1}}}}
+  ],
+  "$defs":{
+    "sha":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "passport":{"type":"object","additionalProperties":false,"required":["passport_id","version","state","sha256"],"properties":{"passport_id":{"type":"string","minLength":1},"version":{"type":"string","minLength":1},"state":{"enum":["NOT_READY","BLOCKED","READY_WITH_LIMITATIONS","READY"]},"sha256":{"$ref":"#/$defs/sha"}}},
+    "snapshotRef":{"type":"object","additionalProperties":false,"required":["snapshot_id","sha256","collection_count"],"properties":{"snapshot_id":{"type":"string","minLength":1},"sha256":{"$ref":"#/$defs/sha"},"collection_count":{"type":"integer","minimum":0}}},
+    "source":{"type":"object","additionalProperties":false,"required":["source_input_id","source_input_type","locator","sha256","folder_contract_ref"],"properties":{"source_input_id":{"type":"string","minLength":1},"source_input_type":{"enum":["IMAGE_FILE","VIDEO_FILE","DIRECT_IMAGE_URL","DIRECT_VIDEO_URL","MEDIA_PAGE_URL","MEDIA_FOLDER"]},"locator":{"type":"string","minLength":1},"sha256":{"type":["string","null"],"pattern":"^[a-f0-9]{64}$"},"folder_contract_ref":{"type":["string","null"]}},"allOf":[{"if":{"properties":{"source_input_type":{"const":"MEDIA_FOLDER"}},"required":["source_input_type"]},"then":{"properties":{"folder_contract_ref":{"type":"string","minLength":1}}},"else":{"properties":{"folder_contract_ref":{"const":null}}}}]}
+  }
+}

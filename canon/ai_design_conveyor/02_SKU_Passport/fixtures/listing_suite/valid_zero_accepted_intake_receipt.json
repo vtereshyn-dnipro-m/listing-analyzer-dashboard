@@ -1,0 +1,18 @@
+{
+  "schema_version":"1.0",
+  "intake_receipt_id":"LS-INTAKE-RECEIPT-FIXTURE-ZERO-001",
+  "snapshot_id":"LS-SNAPSHOT-FIXTURE-ZERO-001",
+  "actor_id":"USER-FIXTURE-001",
+  "sku_id":"SKU-FIXTURE-001",
+  "selection_root":"C:/input/selected-folder",
+  "policy":{"policy_id":"LS-INTAKE-POLICY-FIXTURE-001","policy_version":"1.0-fixture","policy_sha256":"6666666666666666666666666666666666666666666666666666666666666666"},
+  "frozen_at":"2026-10-04T12:21:00Z",
+  "object_count":1,
+  "accepted_source_count":0,
+  "rejected_source_count":1,
+  "duplicate_count":0,
+  "submission_status":"NO_ACCEPTED_OBJECTS",
+  "objects":[
+    {"source_artifact_id":"SRC-INTAKE-003","original_locator":"C:/input/selected-folder/blocked.pdf","archived_locator":null,"detected_mime_type":null,"size_bytes":null,"sha256":null,"access_result":"ACCESS_DENIED","reason_code":"READ_FAILED","duplicate_of":null}
+  ]
+}

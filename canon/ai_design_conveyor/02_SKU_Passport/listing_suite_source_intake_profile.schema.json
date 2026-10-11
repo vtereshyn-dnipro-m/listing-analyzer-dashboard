@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","policy_id","policy_version","effective_at","allowed_extensions","allowed_mime_types","max_file_count","max_single_file_bytes","max_total_bytes","max_video_duration_seconds","max_recursion_depth","archive_root_pattern","hash_algorithm","configured_by","approved_by","policy_sha256"],
+  "properties": {
+    "schema_version": {"const":"1.0"},
+    "policy_id": {"type":"string","pattern":"^LS-INTAKE-POLICY-[A-Z0-9._-]+$"},
+    "policy_version": {"type":"string","minLength":1},
+    "effective_at": {"type":"string","format":"date-time"},
+    "allowed_extensions": {"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","pattern":"^\\.[a-z0-9]+$"}},
+    "allowed_mime_types": {"type":"array","minItems":1,"uniqueItems":true,"items":{"type":"string","pattern":"^[a-z0-9.+-]+/[a-z0-9.+-]+$"}},
+    "max_file_count": {"type":"integer","minimum":1},
+    "max_single_file_bytes": {"type":"integer","minimum":1},
+    "max_total_bytes": {"type":"integer","minimum":1},
+    "max_video_duration_seconds": {"type":"integer","minimum":1},
+    "max_recursion_depth": {"type":"integer","minimum":0},
+    "archive_root_pattern": {"const":"product_root/артефакти/YYYY-MM-DD/"},
+    "hash_algorithm": {"const":"SHA-256"},
+    "configured_by": {"type":"string","minLength":1},
+    "approved_by": {"type":"string","minLength":1},
+    "policy_sha256": {"type":"string","pattern":"^[a-f0-9]{64}$"}
+  }
+}

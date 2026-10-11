@@ -1,0 +1,30 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","request_id","requested_action","actor_id","actor_authority","requested_at","sku_id","product_version","current_active_passport","archived_target","restore_reason","confirmations","idempotency_key"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "request_id":{"type":"string","pattern":"^LS-RESTORE-REQ-[A-Z0-9._-]+$"},
+    "requested_action":{"const":"RESTORE_ARCHIVED_PASSPORT"},
+    "actor_id":{"type":"string","minLength":1},
+    "actor_authority":{"const":"PASSPORT_ADMIN"},
+    "requested_at":{"type":"string","format":"date-time"},
+    "sku_id":{"type":"string","minLength":1},
+    "product_version":{"type":"string","minLength":1},
+    "current_active_passport":{"$ref":"#/$defs/passport"},
+    "archived_target":{
+      "allOf":[{"$ref":"#/$defs/passport"}],
+      "type":"object",
+      "required":["archive_receipt_ref","archive_receipt_sha256"],
+      "properties":{"archive_receipt_ref":{"type":"string","minLength":1},"archive_receipt_sha256":{"$ref":"#/$defs/sha"}}
+    },
+    "restore_reason":{"type":"string","minLength":1},
+    "confirmations":{"type":"array","minItems":2,"maxItems":2,"items":{"$ref":"#/$defs/confirmation"},"allOf":[{"contains":{"properties":{"confirmation_type":{"const":"RESTORE_INTENT_CONFIRMED"}},"required":["confirmation_type"]},"minContains":1,"maxContains":1},{"contains":{"properties":{"confirmation_type":{"const":"RESTORE_SNAPSHOT_CONFIRMED"}},"required":["confirmation_type"]},"minContains":1,"maxContains":1}]},
+    "idempotency_key":{"type":"string","minLength":16}
+  },
+  "$defs":{
+    "sha":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "passport":{"type":"object","additionalProperties":true,"required":["passport_id","passport_lineage_id","version","path","sha256"],"properties":{"passport_id":{"type":"string","minLength":1},"passport_lineage_id":{"type":"string","minLength":1},"version":{"type":"string","minLength":1},"path":{"type":"string","minLength":1},"sha256":{"$ref":"#/$defs/sha"}}},
+    "confirmation":{"type":"object","additionalProperties":false,"required":["confirmation_id","restore_request_id","confirmation_type","actor_id","confirmed_at","expires_at","current_passport_sha256","archived_passport_sha256"],"properties":{"confirmation_id":{"type":"string","minLength":1},"restore_request_id":{"type":"string","minLength":1},"confirmation_type":{"enum":["RESTORE_INTENT_CONFIRMED","RESTORE_SNAPSHOT_CONFIRMED"]},"actor_id":{"type":"string","minLength":1},"confirmed_at":{"type":"string","format":"date-time"},"expires_at":{"type":"string","format":"date-time"},"current_passport_sha256":{"$ref":"#/$defs/sha"},"archived_passport_sha256":{"$ref":"#/$defs/sha"}}}
+  }
+}

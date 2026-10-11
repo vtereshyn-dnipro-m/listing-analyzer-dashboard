@@ -1,0 +1,24 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema_version","query_id","sku_id","lookup_status","operation_status","request_id","operation_id","latest_receipt_ref","latest_receipt_sha256","replayed_from_storage","mutation_authority","evaluated_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "query_id":{"type":"string","minLength":1},
+    "sku_id":{"type":"string","minLength":1},
+    "lookup_status":{"enum":["FOUND","NOT_FOUND","ACCESS_DENIED"]},
+    "operation_status":{"enum":["ACCEPTED","IN_PROGRESS","COMPLETED","REJECTED","ROLLED_BACK","RECOVERY_REQUIRED","NOT_AVAILABLE"]},
+    "request_id":{"type":["string","null"]},
+    "operation_id":{"type":["string","null"]},
+    "latest_receipt_ref":{"type":["string","null"]},
+    "latest_receipt_sha256":{"oneOf":[{"type":"null"},{"type":"string","pattern":"^[a-f0-9]{64}$"}]},
+    "replayed_from_storage":{"const":true},
+    "mutation_authority":{"const":"NONE"},
+    "evaluated_at":{"type":"string","format":"date-time"}
+  },
+  "allOf":[
+    {"if":{"properties":{"lookup_status":{"const":"FOUND"}},"required":["lookup_status"]},"then":{"properties":{"operation_status":{"not":{"const":"NOT_AVAILABLE"}},"request_id":{"type":"string","minLength":1},"latest_receipt_ref":{"type":"string","minLength":1},"latest_receipt_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}}}},
+    {"if":{"properties":{"lookup_status":{"enum":["NOT_FOUND","ACCESS_DENIED"]}},"required":["lookup_status"]},"then":{"properties":{"operation_status":{"const":"NOT_AVAILABLE"},"latest_receipt_ref":{"const":null},"latest_receipt_sha256":{"const":null}}}}
+  ]
+}

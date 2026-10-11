@@ -1,0 +1,42 @@
+{
+  "policy_version": "1.4",
+  "effective_date": "2026-10-04",
+  "start_node_ids": [
+    "N010_RUN_INITIALIZATION"
+  ],
+  "terminal_node_ids": [
+    "N146_CONTENT_TZ_REVIEW_CANCELLATION",
+    "N149_EXTERNAL_CONTENT_TZ_DELIVERY",
+    "N240_HUMAN_RELEASE_DECISION"
+  ],
+  "excluded_from_runtime_reachability": [],
+  "external_action_node_classes": [
+    "EXTERNAL_ACTION_NODE"
+  ],
+  "termination_policy_ref": "AI_DESIGN_REWORK_TERMINATION_POLICY.json",
+  "termination_writer_contract_ref": "AI_DESIGN_STATE_TRANSITION_WRITER_CONTRACT.md",
+  "human_wait_excluded_from_termination_proof": true,
+  "bounded_cycle_tokens": [
+    "attempts_remaining",
+    "cost_remaining",
+    "max_attempts",
+    "call_limit",
+    "budget",
+    "circuit_breaker",
+    "human_decision",
+    "owner_decision"
+  ],
+  "formalization_placeholders": [
+    "TO_BE_FORMALIZED",
+    "TBD",
+    "TO_BE_DEFINED"
+  ],
+  "authorized_external_action_tokens": [
+    "AUTHORIZED",
+    "AUTHORITY",
+    "APPROVED",
+    "LEASE",
+    "ADMITTED",
+    "HUMAN"
+  ]
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version":"1.0",
+  "policy_id":"LS-INTAKE-POLICY-FIXTURE-001",
+  "policy_version":"1.0-fixture",
+  "effective_at":"2026-10-04T12:00:00Z",
+  "allowed_extensions":[".pdf",".jpg",".mp4"],
+  "allowed_mime_types":["application/pdf","image/jpeg","video/mp4"],
+  "max_file_count":10,
+  "max_single_file_bytes":104857600,
+  "max_total_bytes":524288000,
+  "max_video_duration_seconds":600,
+  "max_recursion_depth":3,
+  "archive_root_pattern":"product_root/артефакти/YYYY-MM-DD/",
+  "hash_algorithm":"SHA-256",
+  "configured_by":"SYSTEM-OWNER-FIXTURE",
+  "approved_by":"PRODUCT-OWNER-FIXTURE",
+  "policy_sha256":"6666666666666666666666666666666666666666666666666666666666666666"
+}

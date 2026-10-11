@@ -1,0 +1,13 @@
+{
+  "schema_version":"1.0",
+  "policy_id":"LS-INTAKE-POLICY-FIXTURE-INCOMPLETE",
+  "policy_version":"1.0-fixture",
+  "effective_at":"2026-10-04T12:00:00Z",
+  "allowed_extensions":[".pdf"],
+  "allowed_mime_types":["application/pdf"],
+  "archive_root_pattern":"product_root/артефакти/YYYY-MM-DD/",
+  "hash_algorithm":"SHA-256",
+  "configured_by":"SYSTEM-OWNER-FIXTURE",
+  "approved_by":"PRODUCT-OWNER-FIXTURE",
+  "policy_sha256":"7777777777777777777777777777777777777777777777777777777777777777"
+}

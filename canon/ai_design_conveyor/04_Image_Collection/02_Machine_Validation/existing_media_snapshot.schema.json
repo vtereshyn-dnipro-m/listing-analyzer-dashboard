@@ -1,0 +1,26 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","snapshot_id","sku_id","passport","media_registry","collection_ids","sources","counts","open_actions","captured_at","snapshot_sha256"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "snapshot_id":{"type":"string","pattern":"^MEDIA-SNAPSHOT-[A-Z0-9._-]+$"},
+    "sku_id":{"type":"string","minLength":1},
+    "passport":{"$ref":"#/$defs/binding"},
+    "media_registry":{"$ref":"#/$defs/registry"},
+    "collection_ids":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "sources":{"type":"array","items":{"$ref":"#/$defs/source"}},
+    "counts":{"$ref":"#/$defs/counts"},
+    "open_actions":{"type":"array","items":{"$ref":"#/$defs/action"}},
+    "captured_at":{"type":"string","format":"date-time"},
+    "snapshot_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"}
+  },
+  "$defs":{
+    "sha":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "binding":{"type":"object","additionalProperties":false,"required":["passport_id","version","sha256"],"properties":{"passport_id":{"type":"string","minLength":1},"version":{"type":"string","minLength":1},"sha256":{"$ref":"#/$defs/sha"}}},
+    "registry":{"type":"object","additionalProperties":false,"required":["version","sha256"],"properties":{"version":{"type":"string","minLength":1},"sha256":{"$ref":"#/$defs/sha"}}},
+    "source":{"type":"object","additionalProperties":false,"required":["source_id","collection_id","status","last_checked_at","asset_ids","passport_row_ids"],"properties":{"source_id":{"type":"string","minLength":1},"collection_id":{"type":"string","minLength":1},"status":{"enum":["ACCEPTED","REVIEW","QUARANTINE","UNAVAILABLE"]},"last_checked_at":{"type":"string","format":"date-time"},"asset_ids":{"type":"array","uniqueItems":true,"items":{"type":"string"}},"passport_row_ids":{"type":"array","uniqueItems":true,"items":{"type":"string"}}}},
+    "counts":{"type":"object","additionalProperties":false,"required":["sources","accepted","review","quarantine","unavailable"],"properties":{"sources":{"type":"integer","minimum":0},"accepted":{"type":"integer","minimum":0},"review":{"type":"integer","minimum":0},"quarantine":{"type":"integer","minimum":0},"unavailable":{"type":"integer","minimum":0}}},
+    "action":{"type":"object","additionalProperties":false,"required":["action_id","action_type","source_id","status"],"properties":{"action_id":{"type":"string","minLength":1},"action_type":{"enum":["ACCESS_REQUIRED","REVIEW_REQUIRED","HUMAN_DECISION_REQUIRED"]},"source_id":{"type":"string","minLength":1},"status":{"const":"OPEN"}}}
+  }
+}

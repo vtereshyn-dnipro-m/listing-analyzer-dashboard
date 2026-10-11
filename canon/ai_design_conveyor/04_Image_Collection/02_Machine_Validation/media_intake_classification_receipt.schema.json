@@ -1,0 +1,23 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","receipt_id","input_id","sku_id","detected_content_class","classification_result","user_choice","media_request_id","passport_request_id","automatic_runs_created","reason_code","classified_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "receipt_id":{"type":"string","pattern":"^MEDIA-INTAKE-CLASS-[A-Z0-9._-]+$"},
+    "input_id":{"type":"string","minLength":1},
+    "sku_id":{"type":"string","minLength":1},
+    "detected_content_class":{"enum":["MEDIA","PASSPORT_DOCUMENT","MIXED","UNSUPPORTED"]},
+    "classification_result":{"enum":["ACCEPTED_AS_MEDIA_SOURCE","ROUTE_TO_PASSPORT_SOURCE_INTAKE","USER_INTENT_REQUIRED","UNSUPPORTED_INPUT","SEPARATE_REQUESTS_CREATED"]},
+    "user_choice":{"type":["string","null"],"enum":[null,"MEDIA_COLLECTION_ONLY","PASSPORT_SOURCE_INTAKE_ONLY","BOTH_AS_SEPARATE_REQUESTS"]},
+    "media_request_id":{"type":["string","null"]},
+    "passport_request_id":{"type":["string","null"]},
+    "automatic_runs_created":{"const":0},
+    "reason_code":{"type":"string","minLength":1},
+    "classified_at":{"type":"string","format":"date-time"}
+  },
+  "allOf":[
+    {"if":{"properties":{"classification_result":{"const":"USER_INTENT_REQUIRED"}},"required":["classification_result"]},"then":{"properties":{"detected_content_class":{"const":"MIXED"},"user_choice":{"const":null},"media_request_id":{"const":null},"passport_request_id":{"const":null}}}},
+    {"if":{"properties":{"classification_result":{"const":"SEPARATE_REQUESTS_CREATED"}},"required":["classification_result"]},"then":{"properties":{"detected_content_class":{"const":"MIXED"},"user_choice":{"const":"BOTH_AS_SEPARATE_REQUESTS"},"media_request_id":{"type":"string","minLength":1},"passport_request_id":{"type":"string","minLength":1}}}}
+  ]
+}

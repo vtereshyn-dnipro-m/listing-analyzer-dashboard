@@ -1,0 +1,13 @@
+{
+  "schema_version":"1.0",
+  "profile_id":"LS-LOCALE-PROFILE-PRODUCTION-CANDIDATE",
+  "profile_version":"1.0",
+  "effective_at":"2026-10-04T00:00:00+03:00",
+  "default_locale":"uk-UA",
+  "fallback_locale":"uk-UA",
+  "enabled_locales":["uk-UA","ru-RU"],
+  "planned_locales":["en-US"],
+  "resolution_order":["USER_PREFERENCE","ORGANIZATION_PREFERENCE","DEFAULT_LOCALE"],
+  "approved_by":"PROJECT_OWNER",
+  "profile_sha256":"91a06ea98fe35c7e2f9e9b212ea68f0e7c9f53bc61e5b24da8f1c60126ec8948"
+}

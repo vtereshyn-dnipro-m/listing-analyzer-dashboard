@@ -1,0 +1,21 @@
+{
+  "schema_version": "1.0",
+  "archive_receipt_id": "PSP-ARCHIVE-FIXTURE-001",
+  "operation_id": "OP-FIXTURE-RECREATE-001",
+  "sku_id": "SKU-FIXTURE-001",
+  "old_passport": {
+    "passport_id": "PSP-FIXTURE-001",
+    "version": "7",
+    "path": "C:/product/SKU-FIXTURE-001/passport.json",
+    "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  },
+  "archive_path": "C:/product/SKU-FIXTURE-001/archive/PSP-FIXTURE-001-v7",
+  "archive_manifest_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "replaced_by_passport_id": "PSP-FIXTURE-002",
+  "actor_id": "ADMIN-FIXTURE-001",
+  "timestamp": "2026-10-04T12:06:00Z",
+  "policy_version": "1.0",
+  "status": "PREPARED",
+  "error_code": null,
+  "recovery_action": null
+}

@@ -1,0 +1,23 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","receipt_id","request_id","request_sha256","sku_id","collection_id","requested_action","result","reason_code","affected_ids","source_records_deleted","collection_ready_set","passport_mutation_executed","publication_authority","evaluated_at"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "receipt_id":{"type":"string","pattern":"^IMAGE-COLLECTION-ACTION-RECEIPT-[A-Z0-9._-]+$"},
+    "request_id":{"type":"string","minLength":1},
+    "request_sha256":{"type":"string","pattern":"^[a-f0-9]{64}$"},
+    "sku_id":{"type":"string","minLength":1},
+    "collection_id":{"type":"string","minLength":1},
+    "requested_action":{"type":"string","minLength":1},
+    "result":{"enum":["APPLIED","NO_CHANGE","REJECTED"]},
+    "reason_code":{"enum":["ACTION_APPLIED","DUPLICATE_REPLAY","STALE_COLLECTION_INPUT","ACTION_NOT_ALLOWED_IN_STATE","EVIDENCE_ARTIFACT_REQUIRED","PILOT_COLLECTION_READY_FORBIDDEN","IDEMPOTENCY_KEY_CONFLICT"]},
+    "affected_ids":{"type":"array","uniqueItems":true,"items":{"type":"string","minLength":1}},
+    "source_records_deleted":{"const":false},
+    "collection_ready_set":{"type":"boolean"},
+    "passport_mutation_executed":{"const":false},
+    "publication_authority":{"const":"NOT_GRANTED"},
+    "evaluated_at":{"type":"string","format":"date-time"}
+  },
+  "allOf":[{"if":{"properties":{"collection_ready_set":{"const":true}},"required":["collection_ready_set"]},"then":{"properties":{"requested_action":{"const":"CONFIRM_COLLECTION_COMPLETE"},"result":{"const":"APPLIED"},"reason_code":{"const":"ACTION_APPLIED"}}}}]
+}
