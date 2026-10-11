@@ -354,7 +354,7 @@ def table_exists(name: str) -> bool | None:
     """
     df, err = safe_read("SELECT to_regclass(%(n)s) AS t",
                         params={"n": name})
-    if err or df.empty:
+    if err or df.empty or "t" not in df.columns:
         return None
     return df.iloc[0]["t"] is not None
 

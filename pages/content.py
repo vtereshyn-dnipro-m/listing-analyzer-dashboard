@@ -17,8 +17,8 @@ pages/content.py — «Контент». Первая вкладка: «Пере
 не влезающий в слой, обнаруживается при экспорте — когда работа уже
 сделана. Поэтому длина считается ДО вставки и стоит в каждой строке.
 
-Вкладок пока одна, но структура заложена на несколько: сюда же пойдут
-остальные задачи по контенту.
+Вторая вкладка — «Паспорт SKU» (components/passport_area.py): единый
+документ о товаре, из которого потом строится контент.
 """
 from __future__ import annotations
 
@@ -41,6 +41,7 @@ from services.localization import (
     preview_png, save_model_translation, save_parsed, save_prompt,
     save_translation, summarize, sync_age_hours,
 )
+from components import passport_area
 from components.ui import css_key, inject_fonts, eyebrow
 
 inject_fonts()
@@ -63,7 +64,9 @@ WARN_INK = "#854F0B"
 
 STATE_COLOR = {"all": OK_GREEN, "partial": "#B4763A", "none": "#A32D2D"}
 
-tab_loc, = st.tabs([t("loc.tab")])
+# «Паспорт SKU» — вторая область Контента (ТЗ v1.0: «Listing Suite → Контент →
+# Паспорт SKU»); раскладка и правила — в components/passport_area.py.
+tab_loc, tab_pp = st.tabs([t("loc.tab"), t("pp.area")])
 
 
 # ---------------------------------------------------------------- данные
@@ -1358,3 +1361,7 @@ with tab_loc:
         render_editor(products, demo)
     else:
         render_list(products, demo)
+
+
+with tab_pp:
+    passport_area.render()
