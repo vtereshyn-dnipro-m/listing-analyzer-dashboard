@@ -57,10 +57,17 @@ CREATE UNIQUE INDEX IF NOT EXISTS passport_objects_one_active
     ON listing_data.passport_objects (sku_id) WHERE status = 'ACTIVE';
 CREATE INDEX IF NOT EXISTS passport_objects_lineage ON listing_data.passport_objects (lineage_id);
 
--- Запуск графа. run_state — объект по ai_design_run_state.schema.json; колонки
--- рядом — его проекция для выборок («есть ли у SKU незавершённый запуск»).
-CREATE TABLE IF NOT EXISTS listing_data.passport_runs (
+-- Запуск графа AI Design. Таблицы движка — ai_runs, ai_run_events, ai_receipts —
+-- общие, без префикса passport_: граф один (AI_DESIGN_EXECUTION_GRAPH_CONTRACT),
+-- и запуск «Контента» начинается в нём же — ребро E140 выходит из
+-- координатора Паспорта N020. Свои таблицы под каждую область означали бы два
+-- движка, которые расходятся. Область запуска — колонка route; «Контент»
+-- расширит её CHECK своей миграцией.
+-- run_state — объект по ai_design_run_state.schema.json; колонки рядом — его
+-- проекция для выборок («есть ли у SKU незавершённый запуск»).
+CREATE TABLE IF NOT EXISTS listing_data.ai_runs (
     run_id            text        PRIMARY KEY,
+    route             text        NOT NULL CHECK (route IN ('SKU_PASSPORT')),
     sku_id            text        NOT NULL,
     passport_id       text,
     requested_action  text        NOT NULL
@@ -83,13 +90,13 @@ CREATE TABLE IF NOT EXISTS listing_data.passport_runs (
     created_at        timestamptz NOT NULL DEFAULT now(),
     updated_at        timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS passport_runs_open
-    ON listing_data.passport_runs (sku_id) WHERE terminal_status = 'NOT_TERMINAL';
+CREATE INDEX IF NOT EXISTS ai_runs_open
+    ON listing_data.ai_runs (sku_id) WHERE terminal_status = 'NOT_TERMINAL';
 
 -- Переход графа: одно ребро — одна строка, с квитанцией и тем, сколько
 -- бюджета он списал. Только дописывается.
-CREATE TABLE IF NOT EXISTS listing_data.passport_run_events (
-    run_id          text        NOT NULL REFERENCES listing_data.passport_runs (run_id),
+CREATE TABLE IF NOT EXISTS listing_data.ai_run_events (
+    run_id          text        NOT NULL REFERENCES listing_data.ai_runs (run_id),
     seq             integer     NOT NULL CHECK (seq > 0),
     edge_id         text        CHECK (edge_id IS NULL OR edge_id ~ '^E[0-9]{3}_[A-Z0-9_]+$'),
     from_node_id    text,
@@ -104,7 +111,7 @@ CREATE TABLE IF NOT EXISTS listing_data.passport_run_events (
 -- Квитанции действий Listing Suite (listing_suite_passport_action_receipt) и
 -- журнал идемпотентности: тот же ключ — та же квитанция, другой payload с тем
 -- же ключом — IDEMPOTENCY_KEY_CONFLICT. Отсюда же read-only status lookup.
-CREATE TABLE IF NOT EXISTS listing_data.passport_receipts (
+CREATE TABLE IF NOT EXISTS listing_data.ai_receipts (
     receipt_id        text        PRIMARY KEY,
     request_id        text        NOT NULL,
     idempotency_key   text        NOT NULL UNIQUE,
@@ -118,8 +125,8 @@ CREATE TABLE IF NOT EXISTS listing_data.passport_receipts (
     receipt_sha256    text        NOT NULL CHECK (receipt_sha256 ~ '^[a-f0-9]{64}$'),
     created_at        timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS passport_receipts_request ON listing_data.passport_receipts (request_id);
-CREATE INDEX IF NOT EXISTS passport_receipts_sku ON listing_data.passport_receipts (sku_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS ai_receipts_request ON listing_data.ai_receipts (request_id);
+CREATE INDEX IF NOT EXISTS ai_receipts_sku ON listing_data.ai_receipts (sku_id, created_at DESC);
 
 -- Зарегистрированные исходные материалы: копия в product_root/артефакты/ДАТА/,
 -- SHA и результат доступа по каждому объекту (Integration Contract
@@ -236,7 +243,7 @@ $$;
 DO $$
 DECLARE t text;
 BEGIN
-    FOREACH t IN ARRAY ARRAY['passport_run_events', 'passport_receipts',
+    FOREACH t IN ARRAY ARRAY['ai_run_events', 'ai_receipts',
                              'passport_answers', 'passport_answer_verdicts'] LOOP
         EXECUTE format('DROP TRIGGER IF EXISTS %I ON listing_data.%I', t || '_append_only', t);
         EXECUTE format('CREATE TRIGGER %I BEFORE UPDATE OR DELETE ON listing_data.%I
@@ -251,8 +258,9 @@ COMMIT;
 SELECT t AS table_name,
        to_regclass('listing_data.' || t) IS NOT NULL AS exists,
        has_table_privilege('583bf6d1-6cd0-4a89-9c44-b387ec5c21cb', 'listing_data.' || t, 'INSERT') AS app_can_write
-  FROM unnest(ARRAY['passport_objects', 'passport_runs', 'passport_run_events', 'passport_receipts',
+  FROM unnest(ARRAY['passport_objects', 'ai_runs', 'ai_run_events', 'ai_receipts',
                     'passport_source_artifacts', 'passport_questions', 'passport_answers',
                     'passport_answer_verdicts', 'passport_blocks']) AS t;
 
-SELECT tgname FROM pg_trigger WHERE tgname LIKE 'passport_%_append_only' ORDER BY 1;
+SELECT tgname FROM pg_trigger WHERE tgname LIKE '%_append_only'
+   AND tgrelid::regclass::text ~ '(passport_|ai_)' ORDER BY 1;

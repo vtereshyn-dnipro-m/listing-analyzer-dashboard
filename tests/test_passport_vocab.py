@@ -90,12 +90,12 @@ contract_states = set(re.findall(r"^- `([A-Z_]+)`", section, re.M))
 schema = json.loads(doc("10_Runtime_Registry/ai_design_run_state.schema.json"))
 schema_states = set(schema["properties"]["lifecycle_state"]["enum"])
 check(f"состояния запуска = контракт ∪ схема ({len(contract_states | schema_states)})",
-      sql_enum("passport_runs", "lifecycle_state") == contract_states | schema_states)
+      sql_enum("ai_runs", "lifecycle_state") == contract_states | schema_states)
 check("terminal_status = enum схемы run_state",
-      sql_enum("passport_runs", "terminal_status") == set(schema["$defs"]["terminal"]["properties"]["status"]["enum"]))
+      sql_enum("ai_runs", "terminal_status") == set(schema["$defs"]["terminal"]["properties"]["status"]["enum"]))
 modes = set(schema["properties"]["execution_mode"]["enum"])
 check(f"execution_mode ⊆ схемы run_state и без GRAPH_SPEC_ONLY (это режим описания, не запуска)",
-      sql_enum("passport_runs", "execution_mode") <= modes and "GRAPH_SPEC_ONLY" not in sql_enum("passport_runs", "execution_mode"))
+      sql_enum("ai_runs", "execution_mode") <= modes and "GRAPH_SPEC_ONLY" not in sql_enum("ai_runs", "execution_mode"))
 
 check("формат ID вопроса Q-<RUN>-<NNN> есть в ТЗ и в CHECK",
       "Q-<RUN>-<NNN>" in tz and "'^Q-[A-Za-z0-9._-]+-[0-9]{3,}$'" in SQL)
@@ -103,7 +103,7 @@ check("формат блокера BLK-<RUN>-<NNN> есть в ТЗ и в CHECK"
       "BLK-<RUN>-<NNN>" in tz and "'^BLK-[A-Za-z0-9._-]+-[0-9]{3,}$'" in SQL)
 check("один ACTIVE Паспорт на SKU держит база: частичный уникальный индекс",
       re.search(r"UNIQUE INDEX[^;]+\(sku_id\)\s+WHERE status = 'ACTIVE'", SQL) is not None)
-for t in ("passport_run_events", "passport_receipts", "passport_answers", "passport_answer_verdicts"):
+for t in ("ai_run_events", "ai_receipts", "passport_answers", "passport_answer_verdicts"):
     check(f"{t} — только дописывание (триггер)", f"'{t}'" in SQL.split("FOREACH t IN ARRAY")[1])
 
 print()
