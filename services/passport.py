@@ -165,7 +165,7 @@ def load_registry() -> dict:
                             responsible_user, resume_condition, created_at
                        FROM passport_blocks WHERE resolved_at IS NULL""",
         "runs": """SELECT run_id, sku_id, requested_action, lifecycle_state, current_node_id, created_at
-                     FROM passport_runs WHERE terminal_status = 'NOT_TERMINAL'""",
+                     FROM ai_runs WHERE route = 'SKU_PASSPORT' AND terminal_status = 'NOT_TERMINAL'""",
     }
     return _read_all(out, queries)
 
@@ -592,7 +592,7 @@ def lookup_status(sku_id: str, by: str, value: str, read=safe_read) -> dict:
     query_id = "LS-PSP-QUERY-" + hashlib.sha256(f"{by}:{value}:{now}".encode()).hexdigest()[:16].upper()
     df, err = read(
         f"""SELECT receipt_id, request_id, operation_id, result, receipt_sha256
-              FROM passport_receipts WHERE sku_id = %(s)s AND {by} = %(v)s
+              FROM ai_receipts WHERE sku_id = %(s)s AND {by} = %(v)s
              ORDER BY created_at DESC LIMIT 1""", {"s": sku_id, "v": value})
     base = {"schema_version": "1.0", "query_id": query_id, "sku_id": sku_id, "replayed_from_storage": True,
             "mutation_authority": "NONE", "evaluated_at": now}

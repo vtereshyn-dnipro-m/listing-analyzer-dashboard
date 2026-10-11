@@ -1441,9 +1441,9 @@ Listing Suite три языка.
 `Listing_Suite_Authority_Mapping_Contract`. Это предложение от 07.10.2026, оно
 ждёт подтверждения владельца процесса.
 
-Таблицы: `passport_objects`, `passport_runs`, `passport_questions`,
+Таблицы: `passport_objects`, `ai_runs`, `passport_questions`,
 `passport_answers`, `passport_answer_verdicts`, `passport_blocks`,
-`passport_receipts` (только чтение).
+`ai_receipts` (только чтение).
 
 ### `services/cache.py`
 Точечная инвалидация кэшей: группы «что поменялось → что перечитать».
@@ -1502,9 +1502,9 @@ en → сам ключ (забытый перевод виден в UI, без �
 | `catalog_source` | зеркало каталога Amazon | ноутбук | matrix_setup |
 | `collection_schedule` | расписание автосбора (одна строка `id = 1`) | matrix_setup | matrix_setup |
 | `passport_objects` | Паспорт SKU: указатель на единственный ACTIVE Паспорт SKU, его версия, SHA, состояние, ограничения, системный read-back | движок (этап 2+) | `services/passport.py` |
-| `passport_runs` | запуски графа Паспорта: run_state по схеме канона, текущий узел, terminal | движок | `services/passport.py` |
-| `passport_run_events` | переходы графа с квитанцией и списанием бюджета, только дописывание | движок | — |
-| `passport_receipts` | квитанции действий Listing Suite и журнал идемпотентности, только дописывание | действия (этап 3+) | `services/passport.py` (lookup) |
+| `ai_runs` | запуски графа AI Design (общие для Паспорта и будущего «Контента», область — `route`): run_state по схеме канона, текущий узел, terminal | движок | `services/passport.py` |
+| `ai_run_events` | переходы графа с квитанцией и списанием бюджета, только дописывание | движок | — |
+| `ai_receipts` | квитанции действий Listing Suite и журнал идемпотентности, только дописывание | действия (этап 3+) | `services/passport.py` (lookup) |
 | `passport_source_artifacts` | зарегистрированные исходные материалы: копия, SHA, результат доступа | приём (этап 3) | — |
 | `passport_questions` | вопросы Верификатора `Q-<RUN>-<NNN>`: тип, статус 06E, влияние, ответственный | движок | `services/passport.py` |
 | `passport_answers` | версии ответов на вопросы, неизменяемые | вкладка Верификатора (этап 4) | `services/passport.py` |
