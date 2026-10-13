@@ -198,6 +198,46 @@ def _matrix():
 
 
 @st.cache_data(ttl=60)
+def _max_login_hours() -> float:
+    """Сколько часов действует вход через Google — `reorder_params.auth_max_login_hours`, та же настройка, что у
+    Кабинета (по умолчанию 168). Streamlit держит cookie входа 30 дней и Google не перепроверяет: удалённый в
+    Workspace сотрудник с открытым браузером входил бы до месяца. Старше срока — повторный вход через Google."""
+    try:
+        conn = get_conn()
+    except Exception:
+        return 168.0
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT value FROM kabinet_data.reorder_params WHERE key = 'auth_max_login_hours'")
+            row = cur.fetchone()
+        return float(row[0]) if row and row[0] is not None and float(row[0]) > 0 else 168.0
+    except Exception:
+        return 168.0
+    finally:
+        conn.close()
+
+
+def _bind_sub(email: str, sub: str) -> str:
+    """Карточка ↔ Google ID (claim `sub`): функция базы `kabinet_data.app_user_bind_sub` — одно правило с Кабинетом.
+    'archived:<адрес>' — адрес перешёл к другому Google-аккаунту: карточка прежнего человека ушла в архив, и дальше
+    это обычный первый вход рабочей почты («Просмотр» в обоих продуктах). Ошибка — 'error', вход не ломаем."""
+    try:
+        conn = get_conn()
+    except Exception:
+        return "error"
+    try:
+        with conn.cursor() as cur:
+            cur.execute("SELECT kabinet_data.app_user_bind_sub(%s, %s)", (email, sub))
+            res = cur.fetchone()[0]
+        conn.commit()
+        return res or "error"
+    except Exception:
+        return "error"
+    finally:
+        conn.close()
+
+
+@st.cache_data(ttl=60)
 def _load_user(email: str):
     """Строка человека. None — строки нет вовсе. `ls_role` пустая — строка есть, а
     доступа в Listing Suite нет, и это разные случаи: о первом сообщаем
@@ -560,6 +600,36 @@ def guard():
         _screen(_login_screen, "Sign in")
         return
     email = _text(getattr(st.user, "email", "")).strip().lower()
+    # Вход старше auth_max_login_hours — на повторный вход через Google (iat — время выдачи токена при входе)
+    try:
+        import time as _time
+        _age_h = (_time.time() - float(getattr(st.user, "iat", 0) or 0)) / 3600.0
+    except Exception:
+        _age_h = float("inf")
+    _max_h = _max_login_hours()
+    if _age_h > _max_h:
+        _log_login(email, "relogin", f"вход старше {_max_h:g} ч — повторный вход через Google")
+        st.logout()
+        return
+    # Карточка ↔ Google ID — раз за сеанс
+    if not st.session_state.get("_auth_sub_checked"):
+        _sub = _text(getattr(st.user, "sub", "")).strip()
+        _res = _bind_sub(email, _sub)
+        if _res.startswith("archived:"):
+            _arch = _res.split(":", 1)[1]
+            _load_user.clear()
+            st.session_state.pop("_auth_user", None)
+            _log_login(email, "reassigned", f"адрес у другого Google-аккаунта; прежняя карточка → {_arch}")
+            log_action("card_archived", True, "user", email,
+                       f"адрес перешёл к другому Google-аккаунту: прежняя карточка с ролями → {_arch} (выключена)")
+            try:
+                _telegram(f"⚠️ Listing Suite: адрес &lt;{email}&gt; теперь у другого Google-аккаунта.\n"
+                          f"Карточка прежнего человека с его ролями убрана в архив ({_arch}, выключена); "
+                          f"новый человек входит как новый: «Просмотр» здесь и в Кабинете.")
+            except Exception as e:
+                log_action("notify_card_archived", False, "user", email,
+                           f"приложение не отправило: {type(e).__name__}: {str(e)[:120]}")
+        st.session_state["_auth_sub_checked"] = True
     row = _load_user(email)
     # Рабочая почта входит сама: нет карточки — заводим «Просмотр» в обоих продуктах (как
     # первый вход в Кабинет), карточка есть, а роли здесь нет — даём «Просмотр». Выключенная
@@ -567,7 +637,8 @@ def guard():
     if email.endswith("@" + DOMAIN) and (
             row is None or (row["is_active"] and not row.get("expired") and not row["ls_role"])):
         created = row is None
-        if _admit_work_email(email, _text(getattr(st.user, "name", "")).strip(), created):
+        if _admit_work_email(email, _text(getattr(st.user, "name", "")).strip(), created,
+                             _text(getattr(st.user, "sub", "")).strip()):
             _load_user.clear()
             st.session_state.pop("_auth_user", None)       # «кто сейчас» посчитан до карточки
             row = _load_user(email)
@@ -608,7 +679,7 @@ def _telegram(text: str):
                   json={"chat_id": chat, "text": text, "parse_mode": "HTML"}, timeout=10)
 
 
-def _admit_work_email(email, name, created: bool) -> bool:
+def _admit_work_email(email, name, created: bool, sub: str = "") -> bool:
     """Карточка или роль «Просмотр» для рабочей почты. Роль Кабинета у существующей карточки
     не трогаем; у новой — «Просмотр», как при первом входе в Кабинет."""
     try:
@@ -619,12 +690,12 @@ def _admit_work_email(email, name, created: bool) -> bool:
         with conn.cursor() as cur:
             cur.execute("""
                 INSERT INTO kabinet_data.app_users
-                    (email, role, ls_role, note, created_by, first_login_at, last_login_at)
-                VALUES (%s, 'viewer', 'viewer', %s, 'ls:first-login', now(), now())
+                    (email, role, ls_role, note, created_by, first_login_at, last_login_at, google_sub)
+                VALUES (%s, 'viewer', 'viewer', %s, 'ls:first-login', now(), now(), NULLIF(%s, ''))
                 ON CONFLICT (email) DO UPDATE
                    SET ls_role = COALESCE(NULLIF(app_users.ls_role, ''), 'viewer')
             """, (email, f"первый вход через Listing Suite: {name}" if name
-                  else "первый вход через Listing Suite"))
+                  else "первый вход через Listing Suite", sub or ""))
         conn.commit()
     except Exception:
         return False

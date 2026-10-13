@@ -17,7 +17,10 @@ tests/test_auth_roles.py — вход и роли: что можно каждо�
     выключенная карточка и чужой домен не пускаются;
   · матрица из базы главнее кода, а действие, которого в базе нет, запрещено всем:
     новая кнопка не должна заработать раньше, чем кто-то решил, кому она доступна;
-  · отправка в Amazon начинается с утверждающего — контент-менеджеру она закрыта.
+  · отправка в Amazon начинается с утверждающего — контент-менеджеру она закрыта;
+  · вход старше auth_max_login_hours уходит на повторный вход через Google, а карточка
+    привязана к Google ID: адрес у другого аккаунта — прежняя карточка в архив, новый
+    человек входит «Просмотром» (14.10.2026).
 
 База подменяется целиком, сеть не трогается.
 
@@ -33,7 +36,7 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 # --- подмена базы: соединение, которое отвечает заранее заданным ---------------
-ОТВЕТЫ: dict = {"mode": 1, "matrix": [], "user": None}
+ОТВЕТЫ: dict = {"mode": 1, "matrix": [], "user": None, "bind": "ok"}
 ЗАВЕДЕНО: list = []      # почты, для которых приложение выполнило INSERT в app_users
 
 
@@ -45,6 +48,11 @@ class _Cur:
         s = " ".join(sql.split())
         if "ls_auth_enabled" in s:
             self._rows = [] if ОТВЕТЫ["mode"] is None else [(ОТВЕТЫ["mode"],)]
+        elif "app_user_bind_sub" in s:
+            r = ОТВЕТЫ["bind"]
+            if r.startswith("archived:"):
+                ОТВЕТЫ["user"] = None        # карточку унесли в архив — по почте её больше нет
+            self._rows = [(r,)]
         elif "app_permissions" in s:
             self._rows = list(ОТВЕТЫ["matrix"])
         elif s.startswith("INSERT INTO kabinet_data.app_users"):
@@ -236,10 +244,20 @@ auth._telegram = lambda text: None
 auth.notify_unknown = lambda *a, **k: None
 
 
-def войти(почта, user):
-    ЗАВЕДЕНО.clear(); ОТКАЗЫ.clear()
-    сброс(mode=1, matrix=БАЗА, user=user)
-    auth.st.user = types.SimpleNamespace(is_logged_in=True, email=почта, name="Новый")
+ВЫХОДЫ: list = []
+ВХОДЫ: list = []
+auth.st.logout = lambda: ВЫХОДЫ.append(1)
+_log_login_orig = auth._log_login
+auth._log_login = lambda email, result, reason="": ВХОДЫ.append(result)
+
+
+def войти(почта, user, возраст_ч=1.0, bind="ok"):
+    import time
+    ЗАВЕДЕНО.clear(); ОТКАЗЫ.clear(); ВЫХОДЫ.clear(); ВХОДЫ.clear()
+    сброс(mode=1, matrix=БАЗА, user=user, bind=bind)
+    auth._max_login_hours.clear()
+    auth.st.user = types.SimpleNamespace(is_logged_in=True, email=почта, name="Новый",
+                                         sub="sub-1", iat=time.time() - возраст_ч * 3600)
     auth.guard()
     return auth.current()
 
@@ -262,6 +280,22 @@ check("истёкший срок — отказ, роль не выдаётся"
 
 u = войти("чужой@gmail.com", None)
 check("чужой домен без карточки — отказ, карточка не заводится", not ЗАВЕДЕНО and ОТКАЗЫ)
+
+# --- 4б. срок входа и Google ID -------------------------------------------------
+u = войти("кто@dniprom.com", ("approver", True, None, False), возраст_ч=200)
+check("вход старше 168 ч — повторный вход через Google, внутрь не пускаем",
+      ВЫХОДЫ == [1] and "relogin" in ВХОДЫ and "ok" not in ВХОДЫ)
+
+u = войти("кто@dniprom.com", ("approver", True, None, False), возраст_ч=100)
+check("вход моложе 168 ч — без повторного входа", not ВЫХОДЫ and u.role == auth.APPROVER)
+
+u = войти("кто@dniprom.com", ("approver", True, None, False), bind="archived:кто@dniprom.com~20261014-1200")
+check("адрес у другого Google-аккаунта — роли прежнего не достаются, новый входит «Просмотром»",
+      "reassigned" in ВХОДЫ and ЗАВЕДЕНО == ["кто@dniprom.com"] and u.role == auth.VIEWER and not ОТКАЗЫ)
+
+u = войти("чужой@gmail.com", ("approver", True, None, False), bind="archived:чужой@gmail.com~20261014-1200")
+check("исключение вне домена у другого Google-аккаунта — отказ, карточка не заводится",
+      not ЗАВЕДЕНО and ОТКАЗЫ)
 
 # --- 5. список страниц и список прав — один и тот же -------------------------
 check("у каждой страницы есть право видимости",
