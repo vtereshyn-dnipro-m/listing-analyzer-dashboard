@@ -90,6 +90,10 @@ _настройки = _разделы.get("settings", [])
 if auth.can("ls.admin"):
     _настройки = _настройки + [st.Page("pages/access.py", title=t("auth.admin.title"),
                                        icon=":material/lock:")]
+    # Макет «Утверждения» (14.10.2026) — тоже только администраторам и со своей проверкой на
+    # странице: данные примерные, кнопки неактивны, в базу и в Amazon ничего не пишется.
+    _разделы.setdefault("work", []).append(
+        st.Page("pages/approval_mock.py", title=t("approval.nav"), icon=":material/fact_check:"))
 
 nav = st.navigation(
     {t("nav.section.work"): _разделы.get("work", []),
