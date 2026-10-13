@@ -11,11 +11,14 @@
 У человека две роли в двух колонках — `role` для Кабинета, `ls_role` для Listing
 Suite. Пустая `ls_role` означает «доступа сюда нет» и это НЕ «Просмотр».
 
-**Listing Suite никого не заводит.** В Кабинете первый вход с рабочей почты создаёт
-карточку с ролью «Просмотр»; здесь — нет. Открытие второго продукта не должно молча
-давать доступ к первому, а карточка в `app_users` — это и доступ в Кабинет тоже.
-Поэтому незнакомая почта получает отказ, администраторы — сообщение в Telegram, а
-роль назначает человек в «Кабинет → Доступ».
+**Рабочую почту Listing Suite впускает сам** (решение владельца 13.10.2026: «любой наш
+сотрудник с рабочей почтой — и в Listing Suite, и в Кабинет»; до этого не заводил никого).
+Вход с @dniprom.com без карточки заводит её — «Просмотр» и здесь, и в Кабинете, ровно как
+первый вход в Кабинет; карточка с пустой ролью Listing Suite получает здесь «Просмотр».
+Администраторам уходит сообщение в Telegram, роль выше назначают в «Кабинет → Доступ».
+Почта вне домена по-прежнему получает отказ, пока её не заведут вручную. Закрыть доступ
+сотруднику — выключить карточку (`is_active`): пустая роль здесь для рабочей почты больше
+не запрет, при следующем входе она снова станет «Просмотром».
 
 **Внешний заслон здесь уже есть.** Приложение на Streamlit Cloud закрыто авторизацией
 самого Cloud, и запрос постороннего не доходит до кода вовсе. Значит вход через Google
@@ -558,9 +561,16 @@ def guard():
         return
     email = _text(getattr(st.user, "email", "")).strip().lower()
     row = _load_user(email)
-    # Домен сам по себе доступа ЗДЕСЬ не даёт: роль в Listing Suite назначают.
-    # Приложение никого не заводит — карточка в app_users это ещё и доступ в Кабинет,
-    # и открытие второго продукта не должно молча давать первый.
+    # Рабочая почта входит сама: нет карточки — заводим «Просмотр» в обоих продуктах (как
+    # первый вход в Кабинет), карточка есть, а роли здесь нет — даём «Просмотр». Выключенная
+    # карточка и истёкший срок не трогаются: это и есть способ закрыть доступ.
+    if email.endswith("@" + DOMAIN) and (
+            row is None or (row["is_active"] and not row.get("expired") and not row["ls_role"])):
+        created = row is None
+        if _admit_work_email(email, _text(getattr(st.user, "name", "")).strip(), created):
+            _load_user.clear()
+            st.session_state.pop("_auth_user", None)       # «кто сейчас» посчитан до карточки
+            row = _load_user(email)
     if row is None:
         _log_login(email, "denied_domain", "нет карточки в списке людей")
         notify_unknown(email, _text(getattr(st.user, "name", "")))
@@ -596,6 +606,42 @@ def _telegram(text: str):
         w.secrets.get_secret(scope="kabinet-alerts", key="telegram-chat-id").value).decode()
     requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
                   json={"chat_id": chat, "text": text, "parse_mode": "HTML"}, timeout=10)
+
+
+def _admit_work_email(email, name, created: bool) -> bool:
+    """Карточка или роль «Просмотр» для рабочей почты. Роль Кабинета у существующей карточки
+    не трогаем; у новой — «Просмотр», как при первом входе в Кабинет."""
+    try:
+        conn = get_conn()
+    except Exception:
+        return False
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                INSERT INTO kabinet_data.app_users
+                    (email, role, ls_role, note, created_by, first_login_at, last_login_at)
+                VALUES (%s, 'viewer', 'viewer', %s, 'ls:first-login', now(), now())
+                ON CONFLICT (email) DO UPDATE
+                   SET ls_role = COALESCE(NULLIF(app_users.ls_role, ''), 'viewer')
+            """, (email, f"первый вход через Listing Suite: {name}" if name
+                  else "первый вход через Listing Suite"))
+        conn.commit()
+    except Exception:
+        return False
+    finally:
+        conn.close()
+    log_action("auto_admit", True, "user", email,
+               "карточка заведена: «Просмотр» здесь и в Кабинете" if created
+               else "роль Listing Suite «Просмотр» по рабочей почте")
+    try:
+        _telegram(f"🆕 Listing Suite: вошёл {name or ''} &lt;{email}&gt; — "
+                  + ("заведена карточка, «Просмотр» здесь и в Кабинете." if created
+                     else "дана роль «Просмотр».")
+                  + " Роль выше — «Кабинет → Доступ».")
+    except Exception as e:
+        log_action("notify_admit", False, "user", email,
+                   f"приложение не отправило: {type(e).__name__}: {str(e)[:120]}")
+    return True
 
 
 def notify_unknown(email, name):
