@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dnipro-m.local/ai-design/ai_design_router_decision.schema.json",
+  "title": "AI Design Router Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version","decision_id","run_id","graph_version","run_state_sha256","router_version","active_node_ids","candidate_evaluations","outcome","selected_edge_id","reason_code","blocker_code","human_decision_required","decision_created_at"],
+  "properties": {
+    "schema_version": {"const":"1.0"},
+    "decision_id": {"type":"string","pattern":"^ROUTE-[A-Z0-9][A-Z0-9_-]+$"},
+    "run_id": {"type":"string","pattern":"^RUN-[A-Z0-9][A-Z0-9_-]+$"},
+    "graph_version": {"type":"string","minLength":1},
+    "run_state_sha256": {"$ref":"#/$defs/sha256"},
+    "router_version": {"type":"string","pattern":"^[0-9]+\\.[0-9]+$"},
+    "active_node_ids": {"type":"array","uniqueItems":true,"items":{"$ref":"#/$defs/nodeId"}},
+    "candidate_evaluations": {"type":"array","items":{"$ref":"#/$defs/candidate"}},
+    "outcome": {"enum":["EDGE_SELECTED","RUN_BLOCKED","HUMAN_ROUTE_DECISION","NO_OP_TERMINAL"]},
+    "selected_edge_id": {"oneOf":[{"type":"null"},{"$ref":"#/$defs/edgeId"}]},
+    "reason_code": {"enum":["SINGLE_ELIGIBLE_EDGE","MULTIPLE_ELIGIBLE_EDGES","GUARD_UNRESOLVED","REQUIRED_PAYLOAD_INVALID","REQUIRED_RECEIPT_MISSING","AUTHORITY_MISSING","RECEIVER_NOT_READY","NO_REGISTERED_EDGE","NO_ELIGIBLE_EDGE","TERMINAL_STATE"]},
+    "blocker_code": {"type":["string","null"],"enum":[null,"GUARD_UNRESOLVED","REQUIRED_PAYLOAD_INVALID","REQUIRED_RECEIPT_MISSING","RECEIVER_NOT_ACCEPTED","SIDE_EFFECT_AUTHORITY_MISSING","UNROUTABLE_CASE"]},
+    "human_decision_required": {"type":"boolean"},
+    "decision_created_at": {"type":"string","format":"date-time"}
+  },
+  "$defs": {
+    "sha256": {"type":"string","pattern":"^[a-fA-F0-9]{64}$"},
+    "nodeId": {"type":"string","pattern":"^N[0-9]{3}_[A-Z0-9_]+$"},
+    "edgeId": {"type":"string","pattern":"^E[0-9]{3}_[A-Z0-9_]+$"},
+    "check": {
+      "type":"object","additionalProperties":false,"required":["status","evidence_refs"],
+      "properties":{"status":{"enum":["PASS","FAIL","UNRESOLVED","NOT_REQUIRED"]},"evidence_refs":{"type":"array","items":{"type":"string","minLength":1}}}
+    },
+    "receiptCheck": {
+      "type":"object","additionalProperties":false,"required":["receipt_type","status","receipt_ref"],
+      "properties":{"receipt_type":{"type":"string","minLength":1},"status":{"enum":["PASS","MISSING","INVALID"]},"receipt_ref":{"type":["string","null"]}}
+    },
+    "candidate": {
+      "type":"object","additionalProperties":false,
+      "required":["edge_id","source_node_id","target_node_id","registered","state_available","gate_evaluation_ref","gate_evaluation_sha256","trigger_result","guard_result","payload_result","required_receipt_results","authority_result","receiver_precheck","eligible","rejection_reason_codes"],
+      "properties": {
+        "edge_id":{"$ref":"#/$defs/edgeId"},
+        "source_node_id":{"$ref":"#/$defs/nodeId"},
+        "target_node_id":{"$ref":"#/$defs/nodeId"},
+        "registered":{"type":"boolean"},
+        "state_available":{"type":"boolean"},
+        "gate_evaluation_ref":{"type":"string","minLength":1},
+        "gate_evaluation_sha256":{"$ref":"#/$defs/sha256"},
+        "trigger_result":{"$ref":"#/$defs/check"},
+        "guard_result":{"$ref":"#/$defs/check"},
+        "payload_result":{"$ref":"#/$defs/check"},
+        "required_receipt_results":{"type":"array","items":{"$ref":"#/$defs/receiptCheck"}},
+        "authority_result":{"$ref":"#/$defs/check"},
+        "receiver_precheck":{"$ref":"#/$defs/check"},
+        "eligible":{"type":"boolean"},
+        "rejection_reason_codes":{"type":"array","uniqueItems":true,"items":{"enum":["NOT_REGISTERED","NOT_STATE_AVAILABLE","TRIGGER_FALSE","TRIGGER_UNRESOLVED","GUARD_FALSE","GUARD_UNRESOLVED","PAYLOAD_INVALID","PAYLOAD_UNRESOLVED","RECEIPT_MISSING","RECEIPT_INVALID","AUTHORITY_MISSING","AUTHORITY_UNRESOLVED","RECEIVER_NOT_READY","RECEIVER_UNRESOLVED"]}}
+      }
+    }
+  }
+}

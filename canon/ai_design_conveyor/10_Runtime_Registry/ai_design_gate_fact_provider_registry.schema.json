@@ -1,0 +1,32 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://dnipro-m.local/ai-design/ai_design_gate_fact_provider_registry.schema.json",
+  "title":"AI Design Gate Fact Provider Registry",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","registry_id","graph_version","default_missing_or_stale_policy","providers"],
+  "properties":{
+    "schema_version":{"const":"1.0"},
+    "registry_id":{"const":"AI-DESIGN-GATE-FACT-PROVIDERS-1.0"},
+    "graph_version":{"type":"string","minLength":1},
+    "default_missing_or_stale_policy":{"const":"UNRESOLVED"},
+    "providers":{"type":"array","minItems":1,"items":{"$ref":"#/$defs/provider"}}
+  },
+  "$defs":{
+    "edgeId":{"type":"string","pattern":"^E[0-9]{3}_[A-Z0-9_]+$"},
+    "provider":{
+      "type":"object","additionalProperties":false,
+      "required":["fact_id","value_type","provider_kind","authoritative_artifact_type","extraction_selector","freshness_rule","missing_or_stale_policy","allowed_evaluator_class","consumer_edge_ids"],
+      "properties":{
+        "fact_id":{"type":"string","pattern":"^[a-z][a-z0-9_]+$"},
+        "value_type":{"enum":["boolean","number","string","array"]},
+        "provider_kind":{"enum":["RUN_STATE_DERIVATION","FILE_INTEGRITY_CHECK","VALIDATOR_RECEIPT_FIELD","HANDOFF_RECEIPT_FIELD","HUMAN_DECISION_RECEIPT_FIELD","EXECUTION_RECEIPT_FIELD","SEMANTIC_REVIEW_RECEIPT_FIELD"]},
+        "authoritative_artifact_type":{"enum":["RUN_STATE","ARTIFACT_INTEGRITY_RECEIPT","VALIDATION_RECEIPT","HANDOFF_RECEIPT","HUMAN_DECISION_RECEIPT","EXECUTION_RECEIPT","SEMANTIC_REVIEW_RECEIPT"]},
+        "extraction_selector":{"type":"string","minLength":1},
+        "freshness_rule":{"enum":["RUN_STATE_HASH_EXACT","ARTIFACT_HASH_AND_PATH_CURRENT","RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH","DECISION_BOUND_TO_CURRENT_RUN_STATE","RECEIPT_BOUND_TO_INVOCATION_AND_RUN","REVIEW_BOUND_TO_EXACT_ARTIFACT_HASH"]},
+        "missing_or_stale_policy":{"const":"UNRESOLVED"},
+        "allowed_evaluator_class":{"enum":["DETERMINISTIC","HUMAN_SEMANTIC","EXTERNAL_RECEIPT"]},
+        "consumer_edge_ids":{"type":"array","minItems":1,"uniqueItems":true,"items":{"$ref":"#/$defs/edgeId"}}
+      }
+    }
+  }
+}

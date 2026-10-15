@@ -1,0 +1,1775 @@
+{
+  "schema_version": "1.0",
+  "registry_id": "AI-DESIGN-GATE-FACT-PROVIDERS-1.0",
+  "graph_version": "AI-DESIGN-GRAPH-2.5",
+  "default_missing_or_stale_policy": "UNRESOLVED",
+  "providers": [
+    {
+      "fact_id": "adapter_resolution",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/adapter_resolution",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E209_EVALUATE_PROVIDER_ADMISSION",
+        "E210_EXECUTE_ONE_PROVIDER_CALL"
+      ]
+    },
+    {
+      "fact_id": "admission_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/admission_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E210_EXECUTE_ONE_PROVIDER_CALL",
+        "E211_ACQUIRE_EXECUTION_LEASE"
+      ]
+    },
+    {
+      "fact_id": "agent_resolution_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/agent_resolution_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E184_RELOAD_AND_RERESOLVE_PROMPT_AGENT",
+        "E185_COMPILE_PROMPT_PACKAGE"
+      ]
+    },
+    {
+      "fact_id": "allowed_execution_verdicts",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/allowed_execution_verdicts",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E210_EXECUTE_ONE_PROVIDER_CALL",
+        "E211_ACQUIRE_EXECUTION_LEASE"
+      ]
+    },
+    {
+      "fact_id": "amendment_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/amendment_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E255_REWORK_CONTENT_TZ_FROM_QA"
+      ]
+    },
+    {
+      "fact_id": "approved_remaining_asset_ids",
+      "value_type": "array",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/approved_remaining_asset_ids",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E268_CONTINUE_ADMITTED_BATCH_AT_PREFLIGHT",
+        "E280_CONTINUE_BATCH_AT_PREFLIGHT"
+      ]
+    },
+    {
+      "fact_id": "attempt_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/attempt_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E225_RETRY_TECHNICAL_PROVIDER_FAILURE",
+        "E265_REWORK_CREATOR_EXECUTION_FROM_QA"
+      ]
+    },
+    {
+      "fact_id": "attempts_remaining",
+      "value_type": "boolean",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/attempts_remaining",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E225_RETRY_TECHNICAL_PROVIDER_FAILURE"
+      ]
+    },
+    {
+      "fact_id": "audit_verdict",
+      "value_type": "string",
+      "provider_kind": "SEMANTIC_REVIEW_RECEIPT_FIELD",
+      "authoritative_artifact_type": "SEMANTIC_REVIEW_RECEIPT",
+      "extraction_selector": "semantic_review_receipt://audit_verdict",
+      "freshness_rule": "REVIEW_BOUND_TO_EXACT_ARTIFACT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "HUMAN_SEMANTIC",
+      "consumer_edge_ids": [
+        "E050_ACCEPT_AUDITED_PASSPORT"
+      ]
+    },
+    {
+      "fact_id": "auditor_receiver_status",
+      "value_type": "string",
+      "provider_kind": "HANDOFF_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HANDOFF_RECEIPT",
+      "extraction_selector": "handoff_receipt://auditor_receiver_status",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E040_AUDIT_VALIDATED_PASSPORT"
+      ]
+    },
+    {
+      "fact_id": "authority_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/authority_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E206_EVALUATE_PRODUCTION_BATCH_BUDGET",
+        "E209_EVALUATE_PROVIDER_ADMISSION",
+        "E210_EXECUTE_ONE_PROVIDER_CALL"
+      ]
+    },
+    {
+      "fact_id": "authorization_scope_exact",
+      "value_type": "boolean",
+      "provider_kind": "HANDOFF_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HANDOFF_RECEIPT",
+      "extraction_selector": "handoff_receipt://authorization_scope_exact",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E100_START_IMAGE_COLLECTION"
+      ]
+    },
+    {
+      "fact_id": "auto_batch_receipt_valid",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/auto_batch_receipt_valid",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E268_CONTINUE_ADMITTED_BATCH_AT_PREFLIGHT"
+      ]
+    },
+    {
+      "fact_id": "base_passport_hash_matches",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://base_passport_hash_matches",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E070_APPLY_APPROVED_PASSPORT_DELTA"
+      ]
+    },
+    {
+      "fact_id": "budget_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/budget_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E208_RESOLVE_PROVIDER_ADAPTER",
+        "E211_ACQUIRE_EXECUTION_LEASE"
+      ]
+    },
+    {
+      "fact_id": "candidate_update_status",
+      "value_type": "string",
+      "provider_kind": "SEMANTIC_REVIEW_RECEIPT_FIELD",
+      "authoritative_artifact_type": "SEMANTIC_REVIEW_RECEIPT",
+      "extraction_selector": "semantic_review_receipt://candidate_update_status",
+      "freshness_rule": "REVIEW_BOUND_TO_EXACT_ARTIFACT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "HUMAN_SEMANTIC",
+      "consumer_edge_ids": [
+        "E070_APPLY_APPROVED_PASSPORT_DELTA"
+      ]
+    },
+    {
+      "fact_id": "checkpoint_valid",
+      "value_type": "boolean",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://checkpoint_valid",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E310_RESUME_AT_COORDINATOR"
+      ]
+    },
+    {
+      "fact_id": "circuit_breaker_open",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/circuit_breaker_open",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E248_OPEN_QA_DEFECT_CIRCUIT_BREAKER"
+      ]
+    },
+    {
+      "fact_id": "closeout_evidence_changed",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/closeout_evidence_changed",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E288_REEVALUATE_RUN_CLOSEOUT"
+      ]
+    },
+    {
+      "fact_id": "closeout_exception_route",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/closeout_exception_route",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E287_ESCALATE_RUN_CLOSEOUT_BLOCKER",
+        "E288_REEVALUATE_RUN_CLOSEOUT"
+      ]
+    },
+    {
+      "fact_id": "closeout_recheck_budget_remaining",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/closeout_recheck_budget_remaining",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E288_REEVALUATE_RUN_CLOSEOUT"
+      ]
+    },
+    {
+      "fact_id": "closeout_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/closeout_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E290_REQUEST_HUMAN_RELEASE"
+      ]
+    },
+    {
+      "fact_id": "collection_root_verified",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://collection_root_verified",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E110_VALIDATE_IMAGE_COLLECTION"
+      ]
+    },
+    {
+      "fact_id": "collector_output_package_exists",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://collector_output_package_exists",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E030_VALIDATE_COLLECTOR_PACKAGE"
+      ]
+    },
+    {
+      "fact_id": "content_package_qa_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/content_package_qa_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E289_EVALUATE_RUN_CLOSEOUT",
+        "E290_REQUEST_HUMAN_RELEASE"
+      ]
+    },
+    {
+      "fact_id": "content_task_requested",
+      "value_type": "boolean",
+      "provider_kind": "HUMAN_DECISION_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HUMAN_DECISION_RECEIPT",
+      "extraction_selector": "human_decision_receipt://content_task_requested",
+      "freshness_rule": "DECISION_BOUND_TO_CURRENT_RUN_STATE",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "HUMAN_SEMANTIC",
+      "consumer_edge_ids": [
+        "E140_REQUEST_CONTENT_TZ"
+      ]
+    },
+    {
+      "fact_id": "content_tz_file_exists",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://content_tz_file_exists",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E160_VALIDATE_CONTENT_TZ"
+      ]
+    },
+    {
+      "fact_id": "content_tz_package_validation",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/content_tz_package_validation",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E167_REVIEWED_END_TO_END_TO_FREEZE"
+      ]
+    },
+    {
+      "fact_id": "content_tz_scenario_control",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/content_tz_scenario_control",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E150_START_CONTENT_TZ_AUTHORING"
+      ]
+    },
+    {
+      "fact_id": "content_tz_self_check",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/content_tz_self_check",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E160_VALIDATE_CONTENT_TZ"
+      ]
+    },
+    {
+      "fact_id": "content_tz_validation",
+      "value_type": "string",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://content_tz_validation",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E166_REQUEST_CONTENT_TZ_HUMAN_REVIEW",
+        "E180_PREPARE_EXECUTION_INPUTS"
+      ]
+    },
+    {
+      "fact_id": "continue_receipt_valid",
+      "value_type": "boolean",
+      "provider_kind": "HUMAN_DECISION_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HUMAN_DECISION_RECEIPT",
+      "extraction_selector": "human_decision_receipt://continue_receipt_valid",
+      "freshness_rule": "DECISION_BOUND_TO_CURRENT_RUN_STATE",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "HUMAN_SEMANTIC",
+      "consumer_edge_ids": [
+        "E280_CONTINUE_BATCH_AT_PREFLIGHT"
+      ]
+    },
+    {
+      "fact_id": "coordinator_route",
+      "value_type": "string",
+      "provider_kind": "HANDOFF_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HANDOFF_RECEIPT",
+      "extraction_selector": "handoff_receipt://coordinator_route",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E020_ROUTE_TO_PASSPORT_COLLECTION"
+      ]
+    },
+    {
+      "fact_id": "correction_request_valid",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/correction_request_valid",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E291_CLASSIFY_HUMAN_FINAL_CONTENT_CORRECTION"
+      ]
+    },
+    {
+      "fact_id": "cost_remaining",
+      "value_type": "boolean",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/cost_remaining",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E225_RETRY_TECHNICAL_PROVIDER_FAILURE"
+      ]
+    },
+    {
+      "fact_id": "cross_artifact_parity",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/cross_artifact_parity",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E166_REQUEST_CONTENT_TZ_HUMAN_REVIEW",
+        "E170_FREEZE_EXPECTED_DELIVERABLES"
+      ]
+    },
+    {
+      "fact_id": "defect_scope_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/defect_scope_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E248_OPEN_QA_DEFECT_CIRCUIT_BREAKER"
+      ]
+    },
+    {
+      "fact_id": "delivery_authority_valid",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/delivery_authority_valid",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E171_DELIVER_EXTERNAL_CONTENT_TZ"
+      ]
+    },
+    {
+      "fact_id": "delivery_route",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/delivery_route",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E167_REVIEWED_END_TO_END_TO_FREEZE",
+        "E168_COMPLETE_CONTENT_TZ_ONLY",
+        "E169_COMPLETE_REVIEWED_CONTENT_TZ_ONLY",
+        "E170_FREEZE_EXPECTED_DELIVERABLES"
+      ]
+    },
+    {
+      "fact_id": "evidence_changed",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/evidence_changed",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E246_RECLASSIFY_REJECTED_FINISHING_DEFECT"
+      ]
+    },
+    {
+      "fact_id": "exact_passport_available",
+      "value_type": "boolean",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/exact_passport_available",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E090_REQUEST_IMAGE_COLLECTION"
+      ]
+    },
+    {
+      "fact_id": "exact_product_identity_pinned",
+      "value_type": "boolean",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/exact_product_identity_pinned",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E010_INITIALIZE_PASSPORT_ROUTE"
+      ]
+    },
+    {
+      "fact_id": "execution_evidence",
+      "value_type": "string",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://execution_evidence",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E240_ROUTE_FINISHED_EXPORT_TO_QA"
+      ]
+    },
+    {
+      "fact_id": "execution_inputs_frozen",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/execution_inputs_frozen",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E183_RESOLVE_PROMPT_AGENT_RUNTIME"
+      ]
+    },
+    {
+      "fact_id": "expected_deliverable_requirements_complete",
+      "value_type": "boolean",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://expected_deliverable_requirements_complete",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E170_FREEZE_EXPECTED_DELIVERABLES"
+      ]
+    },
+    {
+      "fact_id": "expected_deliverables_draft_exists",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/expected_deliverables_draft_exists",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E160_VALIDATE_CONTENT_TZ"
+      ]
+    },
+    {
+      "fact_id": "expected_draft_validation",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/expected_draft_validation",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E166_REQUEST_CONTENT_TZ_HUMAN_REVIEW",
+        "E170_FREEZE_EXPECTED_DELIVERABLES"
+      ]
+    },
+    {
+      "fact_id": "expected_manifest_frozen",
+      "value_type": "boolean",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://expected_manifest_frozen",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E180_PREPARE_EXECUTION_INPUTS"
+      ]
+    },
+    {
+      "fact_id": "export_validation",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/export_validation",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E171_DELIVER_EXTERNAL_CONTENT_TZ"
+      ]
+    },
+    {
+      "fact_id": "final_content_decision",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/final_content_decision",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E291_CLASSIFY_HUMAN_FINAL_CONTENT_CORRECTION"
+      ]
+    },
+    {
+      "fact_id": "final_export_hash_valid",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://final_export_hash_valid",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E240_ROUTE_FINISHED_EXPORT_TO_QA"
+      ]
+    },
+    {
+      "fact_id": "finishing_acceptance_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/finishing_acceptance_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E246_RECLASSIFY_REJECTED_FINISHING_DEFECT",
+        "E247_ESCALATE_FINISHING_REWORK_BLOCKER"
+      ]
+    },
+    {
+      "fact_id": "finishing_required",
+      "value_type": "boolean",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/finishing_required",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E230_ROUTE_OUTPUT_TO_FINISHING",
+        "E235_ROUTE_FINAL_OUTPUT_TO_QA"
+      ]
+    },
+    {
+      "fact_id": "full_collection_rerun_authorized",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/full_collection_rerun_authorized",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E135_REWORK_REVIEWED_COLLECTION"
+      ]
+    },
+    {
+      "fact_id": "graph_version_compatible",
+      "value_type": "boolean",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/graph_version_compatible",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E310_RESUME_AT_COORDINATOR"
+      ]
+    },
+    {
+      "fact_id": "graph_version_pinned",
+      "value_type": "boolean",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/graph_version_pinned",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E010_INITIALIZE_PASSPORT_ROUTE"
+      ]
+    },
+    {
+      "fact_id": "input_check",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/input_check",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E185_COMPILE_PROMPT_PACKAGE"
+      ]
+    },
+    {
+      "fact_id": "inspection_outcome",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/inspection_outcome",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E262_ESCALATE_INCOMPLETE_CONTENT_QA",
+        "E263_RETRY_CONTENT_OUTPUT_QA_INSPECTION"
+      ]
+    },
+    {
+      "fact_id": "lease_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/lease_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E210_EXECUTE_ONE_PROVIDER_CALL",
+        "E212_REUSE_IDEMPOTENT_PROVIDER_RESULT"
+      ]
+    },
+    {
+      "fact_id": "manifest_v0_5_exists",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://manifest_v0_5_exists",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E110_VALIDATE_IMAGE_COLLECTION"
+      ]
+    },
+    {
+      "fact_id": "manifest_validation",
+      "value_type": "string",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://manifest_validation",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E115_REWORK_IMAGE_COLLECTION_DELTA",
+        "E120_REVIEW_VALID_IMAGE_COLLECTION"
+      ]
+    },
+    {
+      "fact_id": "manual_batch_decision_required",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/manual_batch_decision_required",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E270_REQUEST_BATCH_CONTINUE"
+      ]
+    },
+    {
+      "fact_id": "material_gap",
+      "value_type": "boolean",
+      "provider_kind": "SEMANTIC_REVIEW_RECEIPT_FIELD",
+      "authoritative_artifact_type": "SEMANTIC_REVIEW_RECEIPT",
+      "extraction_selector": "semantic_review_receipt://material_gap",
+      "freshness_rule": "REVIEW_BOUND_TO_EXACT_ARTIFACT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "HUMAN_SEMANTIC",
+      "consumer_edge_ids": [
+        "E060_ROUTE_MATERIAL_GAPS"
+      ]
+    },
+    {
+      "fact_id": "media_collection_scope_needed",
+      "value_type": "boolean",
+      "provider_kind": "HUMAN_DECISION_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HUMAN_DECISION_RECEIPT",
+      "extraction_selector": "human_decision_receipt://media_collection_scope_needed",
+      "freshness_rule": "DECISION_BOUND_TO_CURRENT_RUN_STATE",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "HUMAN_SEMANTIC",
+      "consumer_edge_ids": [
+        "E090_REQUEST_IMAGE_COLLECTION"
+      ]
+    },
+    {
+      "fact_id": "new_attempt_evidence",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/new_attempt_evidence",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E263_RETRY_CONTENT_OUTPUT_QA_INSPECTION"
+      ]
+    },
+    {
+      "fact_id": "next_asset_id",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/next_asset_id",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E268_CONTINUE_ADMITTED_BATCH_AT_PREFLIGHT",
+        "E280_CONTINUE_BATCH_AT_PREFLIGHT"
+      ]
+    },
+    {
+      "fact_id": "next_call_authorized",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/next_call_authorized",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E208_RESOLVE_PROVIDER_ADAPTER"
+      ]
+    },
+    {
+      "fact_id": "no_material_conflict",
+      "value_type": "boolean",
+      "provider_kind": "SEMANTIC_REVIEW_RECEIPT_FIELD",
+      "authoritative_artifact_type": "SEMANTIC_REVIEW_RECEIPT",
+      "extraction_selector": "semantic_review_receipt://no_material_conflict",
+      "freshness_rule": "REVIEW_BOUND_TO_EXACT_ARTIFACT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "HUMAN_SEMANTIC",
+      "consumer_edge_ids": [
+        "E050_ACCEPT_AUDITED_PASSPORT"
+      ]
+    },
+    {
+      "fact_id": "one_pilot_asset_selected",
+      "value_type": "boolean",
+      "provider_kind": "HUMAN_DECISION_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HUMAN_DECISION_RECEIPT",
+      "extraction_selector": "human_decision_receipt://one_pilot_asset_selected",
+      "freshness_rule": "DECISION_BOUND_TO_CURRENT_RUN_STATE",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "HUMAN_SEMANTIC",
+      "consumer_edge_ids": [
+        "E200_PREFLIGHT_AI_CREATOR"
+      ]
+    },
+    {
+      "fact_id": "output_file_exists",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://output_file_exists",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E212_REUSE_IDEMPOTENT_PROVIDER_RESULT",
+        "E220_RECORD_PROVIDER_OUTPUT"
+      ]
+    },
+    {
+      "fact_id": "output_manifest",
+      "value_type": "string",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://output_manifest",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E230_ROUTE_OUTPUT_TO_FINISHING",
+        "E235_ROUTE_FINAL_OUTPUT_TO_QA"
+      ]
+    },
+    {
+      "fact_id": "owner_route_decision",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/owner_route_decision",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E249_CHECKPOINT_DEFECT_ESCALATION_DECISION"
+      ]
+    },
+    {
+      "fact_id": "passport_delta_route",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/passport_delta_route",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E130_APPLY_MEDIA_DELTA_TO_PASSPORT"
+      ]
+    },
+    {
+      "fact_id": "passport_hash_pinned",
+      "value_type": "boolean",
+      "provider_kind": "HANDOFF_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HANDOFF_RECEIPT",
+      "extraction_selector": "handoff_receipt://passport_hash_pinned",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E150_START_CONTENT_TZ_AUTHORING"
+      ]
+    },
+    {
+      "fact_id": "passport_media_delta_exists",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://passport_media_delta_exists",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E130_APPLY_MEDIA_DELTA_TO_PASSPORT"
+      ]
+    },
+    {
+      "fact_id": "passport_readiness",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/passport_readiness",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E140_REQUEST_CONTENT_TZ"
+      ]
+    },
+    {
+      "fact_id": "policy_changed",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/policy_changed",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E207_RESUME_AFTER_PROVIDER_AUTHORITY"
+      ]
+    },
+    {
+      "fact_id": "preflight",
+      "value_type": "string",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://preflight",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E205_EVALUATE_PROVIDER_EXECUTION_AUTHORITY"
+      ]
+    },
+    {
+      "fact_id": "preflight_issue_class",
+      "value_type": "string",
+      "provider_kind": "EXECUTION_RECEIPT_FIELD",
+      "authoritative_artifact_type": "EXECUTION_RECEIPT",
+      "extraction_selector": "execution_receipt://preflight_issue_class",
+      "freshness_rule": "RECEIPT_BOUND_TO_INVOCATION_AND_RUN",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E215_RETURN_PROMPT_INPUT_DEFECT"
+      ]
+    },
+    {
+      "fact_id": "prior_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/prior_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E207_RESUME_AFTER_PROVIDER_AUTHORITY"
+      ]
+    },
+    {
+      "fact_id": "product_root_verified",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://product_root_verified",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E100_START_IMAGE_COLLECTION"
+      ]
+    },
+    {
+      "fact_id": "product_truth_change_required",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/product_truth_change_required",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E253_ESCALATE_CONTENT_TZ_PRODUCT_TRUTH_CHANGE",
+        "E254_ESCALATE_CONTENT_TZ_SCOPE_CHANGE",
+        "E255_REWORK_CONTENT_TZ_FROM_QA"
+      ]
+    },
+    {
+      "fact_id": "production_admission",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/production_admission",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E267_EVALUATE_AUTOMATED_BATCH_CONTINUE"
+      ]
+    },
+    {
+      "fact_id": "prompt_package_exists",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://prompt_package_exists",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E190_VALIDATE_PROMPT_PACKAGE"
+      ]
+    },
+    {
+      "fact_id": "prompt_package_still_valid",
+      "value_type": "boolean",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://prompt_package_still_valid",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E265_REWORK_CREATOR_EXECUTION_FROM_QA"
+      ]
+    },
+    {
+      "fact_id": "prompt_receiver_status",
+      "value_type": "string",
+      "provider_kind": "HANDOFF_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HANDOFF_RECEIPT",
+      "extraction_selector": "handoff_receipt://prompt_receiver_status",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E183_RESOLVE_PROMPT_AGENT_RUNTIME",
+        "E187_REWORK_EXECUTION_INPUTS"
+      ]
+    },
+    {
+      "fact_id": "prompt_validation",
+      "value_type": "string",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://prompt_validation",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E195_REWORK_PROMPT_PACKAGE",
+        "E200_PREFLIGHT_AI_CREATOR"
+      ]
+    },
+    {
+      "fact_id": "provider_state_reconciled",
+      "value_type": "boolean",
+      "provider_kind": "EXECUTION_RECEIPT_FIELD",
+      "authoritative_artifact_type": "EXECUTION_RECEIPT",
+      "extraction_selector": "execution_receipt://provider_state_reconciled",
+      "freshness_rule": "RECEIPT_BOUND_TO_INVOCATION_AND_RUN",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E225_RETRY_TECHNICAL_PROVIDER_FAILURE"
+      ]
+    },
+    {
+      "fact_id": "qa_defect_class",
+      "value_type": "string",
+      "provider_kind": "SEMANTIC_REVIEW_RECEIPT_FIELD",
+      "authoritative_artifact_type": "SEMANTIC_REVIEW_RECEIPT",
+      "extraction_selector": "semantic_review_receipt://qa_defect_class",
+      "freshness_rule": "REVIEW_BOUND_TO_EXACT_ARTIFACT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "HUMAN_SEMANTIC",
+      "consumer_edge_ids": [
+        "E245_REWORK_FINISHING",
+        "E250_REWORK_PROMPT_FROM_QA",
+        "E255_REWORK_CONTENT_TZ_FROM_QA",
+        "E260_REWORK_PRODUCT_FACT_FROM_QA"
+      ]
+    },
+    {
+      "fact_id": "qa_evidence_complete",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/qa_evidence_complete",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E264_APPLY_CONTENT_OUTPUT_QA_POLICY"
+      ]
+    },
+    {
+      "fact_id": "qa_evidence_refresh_budget_remaining",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/qa_evidence_refresh_budget_remaining",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E263_RETRY_CONTENT_OUTPUT_QA_INSPECTION"
+      ]
+    },
+    {
+      "fact_id": "qa_verdict",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/qa_verdict",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E266_CLASSIFY_QA_DEFECT_SCOPE",
+        "E267_EVALUATE_AUTOMATED_BATCH_CONTINUE"
+      ]
+    },
+    {
+      "fact_id": "readback_pass",
+      "value_type": "boolean",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://readback_pass",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E080_RETURN_WRITTEN_PASSPORT_TO_COORDINATOR"
+      ]
+    },
+    {
+      "fact_id": "receiver_status",
+      "value_type": "string",
+      "provider_kind": "HANDOFF_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HANDOFF_RECEIPT",
+      "extraction_selector": "handoff_receipt://receiver_status",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E020_ROUTE_TO_PASSPORT_COLLECTION"
+      ]
+    },
+    {
+      "fact_id": "recipient_bound",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/recipient_bound",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E171_DELIVER_EXTERNAL_CONTENT_TZ"
+      ]
+    },
+    {
+      "fact_id": "reclassification_attempt",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/reclassification_attempt",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E246_RECLASSIFY_REJECTED_FINISHING_DEFECT"
+      ]
+    },
+    {
+      "fact_id": "recovery_run_state",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/recovery_run_state",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E310_RESUME_AT_COORDINATOR"
+      ]
+    },
+    {
+      "fact_id": "rejection_class",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/rejection_class",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E187_REWORK_EXECUTION_INPUTS"
+      ]
+    },
+    {
+      "fact_id": "reload_attempt_count",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/reload_attempt_count",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E184_RELOAD_AND_RERESOLVE_PROMPT_AGENT"
+      ]
+    },
+    {
+      "fact_id": "remaining_expected_asset_ids_count",
+      "value_type": "number",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/remaining_expected_asset_ids_count",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E267_EVALUATE_AUTOMATED_BATCH_CONTINUE",
+        "E270_REQUEST_BATCH_CONTINUE"
+      ]
+    },
+    {
+      "fact_id": "remediation_attempt",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/remediation_attempt",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E135_REWORK_REVIEWED_COLLECTION",
+        "E136_REWORK_REVIEW_RECEIPT",
+        "E175_REWORK_EXPECTED_DELIVERABLES"
+      ]
+    },
+    {
+      "fact_id": "request_scope_complete",
+      "value_type": "boolean",
+      "provider_kind": "HANDOFF_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HANDOFF_RECEIPT",
+      "extraction_selector": "handoff_receipt://request_scope_complete",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E150_START_CONTENT_TZ_AUTHORING"
+      ]
+    },
+    {
+      "fact_id": "requested_changes_complete",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/requested_changes_complete",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E163_RETURN_CONTENT_TZ_TO_AUTHORING"
+      ]
+    },
+    {
+      "fact_id": "result_revision_new",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/result_revision_new",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E162_SUBMIT_EDITED_CONTENT_TZ_FOR_REVALIDATION"
+      ]
+    },
+    {
+      "fact_id": "review_decision",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/review_decision",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E161_CANCEL_CONTENT_TZ_AFTER_REVIEW",
+        "E162_SUBMIT_EDITED_CONTENT_TZ_FOR_REVALIDATION",
+        "E163_RETURN_CONTENT_TZ_TO_AUTHORING",
+        "E167_REVIEWED_END_TO_END_TO_FREEZE",
+        "E169_COMPLETE_REVIEWED_CONTENT_TZ_ONLY"
+      ]
+    },
+    {
+      "fact_id": "review_mode",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/review_mode",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E166_REQUEST_CONTENT_TZ_HUMAN_REVIEW",
+        "E167_REVIEWED_END_TO_END_TO_FREEZE",
+        "E168_COMPLETE_CONTENT_TZ_ONLY",
+        "E169_COMPLETE_REVIEWED_CONTENT_TZ_ONLY",
+        "E170_FREEZE_EXPECTED_DELIVERABLES"
+      ]
+    },
+    {
+      "fact_id": "reviewed_draft_hash_current",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/reviewed_draft_hash_current",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E167_REVIEWED_END_TO_END_TO_FREEZE"
+      ]
+    },
+    {
+      "fact_id": "rework_attempt",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/rework_attempt",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E115_REWORK_IMAGE_COLLECTION_DELTA"
+      ]
+    },
+    {
+      "fact_id": "rework_route_decision",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/rework_route_decision",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E115_REWORK_IMAGE_COLLECTION_DELTA",
+        "E116_ESCALATE_REPEATED_MANIFEST_DEFECT",
+        "E117_ESCALATE_IMAGE_COLLECTION_IDENTITY_CONFLICT"
+      ]
+    },
+    {
+      "fact_id": "route_class",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/route_class",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E135_REWORK_REVIEWED_COLLECTION",
+        "E136_REWORK_REVIEW_RECEIPT",
+        "E137_ESCALATE_REVIEW_QUARANTINE",
+        "E139_REQUEST_COLLECTION_SCOPE_EXPANSION",
+        "E175_REWORK_EXPECTED_DELIVERABLES",
+        "E176_REVALIDATE_EXPECTED_DELIVERABLE_BINDINGS",
+        "E177_REQUEST_DELIVERABLE_SCOPE_DECISION",
+        "E178_ROUTE_EXPECTED_DELIVERABLE_UPSTREAM_GAP",
+        "E179_ESCALATE_EXPECTED_DELIVERABLE_DEFECT"
+      ]
+    },
+    {
+      "fact_id": "route_receipt_count",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/route_receipt_count",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E183_RESOLVE_PROMPT_AGENT_RUNTIME"
+      ]
+    },
+    {
+      "fact_id": "run_state_consistent",
+      "value_type": "boolean",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/run_state_consistent",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E300_CHECKPOINT_FROM_COORDINATOR"
+      ]
+    },
+    {
+      "fact_id": "same_defect_occurrence",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/same_defect_occurrence",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E115_REWORK_IMAGE_COLLECTION_DELTA",
+        "E116_ESCALATE_REPEATED_MANIFEST_DEFECT",
+        "E135_REWORK_REVIEWED_COLLECTION",
+        "E175_REWORK_EXPECTED_DELIVERABLES"
+      ]
+    },
+    {
+      "fact_id": "scope_change_authorized",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/scope_change_authorized",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E175_REWORK_EXPECTED_DELIVERABLES"
+      ]
+    },
+    {
+      "fact_id": "scope_change_required",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/scope_change_required",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E254_ESCALATE_CONTENT_TZ_SCOPE_CHANGE",
+        "E255_REWORK_CONTENT_TZ_FROM_QA"
+      ]
+    },
+    {
+      "fact_id": "scope_expansion_authorized",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/scope_expansion_authorized",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E135_REWORK_REVIEWED_COLLECTION",
+        "E139_REQUEST_COLLECTION_SCOPE_EXPANSION"
+      ]
+    },
+    {
+      "fact_id": "sealed_execution_record_exists",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/sealed_execution_record_exists",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E205_EVALUATE_PROVIDER_EXECUTION_AUTHORITY"
+      ]
+    },
+    {
+      "fact_id": "sealed_execution_record_valid",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/sealed_execution_record_valid",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E206_EVALUATE_PRODUCTION_BATCH_BUDGET",
+        "E208_RESOLVE_PROVIDER_ADAPTER"
+      ]
+    },
+    {
+      "fact_id": "semantic_receipt_present",
+      "value_type": "boolean",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://semantic_receipt_present",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E190_VALIDATE_PROMPT_PACKAGE"
+      ]
+    },
+    {
+      "fact_id": "semantic_scope_frozen",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/semantic_scope_frozen",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E180_PREPARE_EXECUTION_INPUTS"
+      ]
+    },
+    {
+      "fact_id": "side_effects_reconciled",
+      "value_type": "boolean",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/side_effects_reconciled",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E310_RESUME_AT_COORDINATOR"
+      ]
+    },
+    {
+      "fact_id": "source_bindings_complete",
+      "value_type": "boolean",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://source_bindings_complete",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E160_VALIDATE_CONTENT_TZ"
+      ]
+    },
+    {
+      "fact_id": "source_manifest_present",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://source_manifest_present",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E030_VALIDATE_COLLECTOR_PACKAGE"
+      ]
+    },
+    {
+      "fact_id": "structural_validation",
+      "value_type": "string",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://structural_validation",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E040_AUDIT_VALIDATED_PASSPORT"
+      ]
+    },
+    {
+      "fact_id": "terminal_execution_receipt_exists",
+      "value_type": "boolean",
+      "provider_kind": "FILE_INTEGRITY_CHECK",
+      "authoritative_artifact_type": "ARTIFACT_INTEGRITY_RECEIPT",
+      "extraction_selector": "artifact_integrity_receipt://terminal_execution_receipt_exists",
+      "freshness_rule": "ARTIFACT_HASH_AND_PATH_CURRENT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E212_REUSE_IDEMPOTENT_PROVIDER_RESULT",
+        "E220_RECORD_PROVIDER_OUTPUT"
+      ]
+    },
+    {
+      "fact_id": "tz_validation",
+      "value_type": "string",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://tz_validation",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E165_REWORK_CONTENT_TZ",
+        "E170_FREEZE_EXPECTED_DELIVERABLES"
+      ]
+    },
+    {
+      "fact_id": "upstream_owner",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/upstream_owner",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E253_ESCALATE_CONTENT_TZ_PRODUCT_TRUTH_CHANGE",
+        "E254_ESCALATE_CONTENT_TZ_SCOPE_CHANGE",
+        "E255_REWORK_CONTENT_TZ_FROM_QA"
+      ]
+    },
+    {
+      "fact_id": "user_requested_gap_closure",
+      "value_type": "boolean",
+      "provider_kind": "HUMAN_DECISION_RECEIPT_FIELD",
+      "authoritative_artifact_type": "HUMAN_DECISION_RECEIPT",
+      "extraction_selector": "human_decision_receipt://user_requested_gap_closure",
+      "freshness_rule": "DECISION_BOUND_TO_CURRENT_RUN_STATE",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "HUMAN_SEMANTIC",
+      "consumer_edge_ids": [
+        "E060_ROUTE_MATERIAL_GAPS"
+      ]
+    },
+    {
+      "fact_id": "validation_required",
+      "value_type": "string",
+      "provider_kind": "RUN_STATE_DERIVATION",
+      "authoritative_artifact_type": "RUN_STATE",
+      "extraction_selector": "run_state://derived/validation_required",
+      "freshness_rule": "RUN_STATE_HASH_EXACT",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "DETERMINISTIC",
+      "consumer_edge_ids": [
+        "E162_SUBMIT_EDITED_CONTENT_TZ_FOR_REVALIDATION"
+      ]
+    },
+    {
+      "fact_id": "validation_verdict",
+      "value_type": "string",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://validation_verdict",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E035_REWORK_COLLECTOR_PACKAGE"
+      ]
+    },
+    {
+      "fact_id": "write_receipt_valid",
+      "value_type": "boolean",
+      "provider_kind": "VALIDATOR_RECEIPT_FIELD",
+      "authoritative_artifact_type": "VALIDATION_RECEIPT",
+      "extraction_selector": "validation_receipt://write_receipt_valid",
+      "freshness_rule": "RECEIPT_BOUND_TO_RUN_AND_INPUT_HASH",
+      "missing_or_stale_policy": "UNRESOLVED",
+      "allowed_evaluator_class": "EXTERNAL_RECEIPT",
+      "consumer_edge_ids": [
+        "E080_RETURN_WRITTEN_PASSPORT_TO_COORDINATOR"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,182 @@
+{
+  "schema_version": "1.0",
+  "suite_id": "AI_DESIGN_E2E_SHADOW_SCENARIOS_V1",
+  "graph_version": "AI-DESIGN-GRAPH-2.5",
+  "external_side_effects_executed": 0,
+  "scenarios": [
+    {
+      "scenario_id": "HAPPY_PATH_SINGLE_ASSET",
+      "scenario_type": "END_TO_END",
+      "start_node_id": "N010_RUN_INITIALIZATION",
+      "terminal_node_id": "N240_HUMAN_RELEASE_DECISION",
+      "edge_ids": [
+        "E010_INITIALIZE_PASSPORT_ROUTE",
+        "E020_ROUTE_TO_PASSPORT_COLLECTION",
+        "E030_VALIDATE_COLLECTOR_PACKAGE",
+        "E040_AUDIT_VALIDATED_PASSPORT",
+        "E050_ACCEPT_AUDITED_PASSPORT",
+        "E090_REQUEST_IMAGE_COLLECTION",
+        "E100_START_IMAGE_COLLECTION",
+        "E110_VALIDATE_IMAGE_COLLECTION",
+        "E120_REVIEW_VALID_IMAGE_COLLECTION",
+        "E130_APPLY_MEDIA_DELTA_TO_PASSPORT",
+        "E080_RETURN_WRITTEN_PASSPORT_TO_COORDINATOR",
+        "E140_REQUEST_CONTENT_TZ",
+        "E150_START_CONTENT_TZ_AUTHORING",
+        "E160_VALIDATE_CONTENT_TZ",
+        "E170_FREEZE_EXPECTED_DELIVERABLES",
+        "E180_PREPARE_EXECUTION_INPUTS",
+        "E183_RESOLVE_PROMPT_AGENT_RUNTIME",
+        "E185_COMPILE_PROMPT_PACKAGE",
+        "E190_VALIDATE_PROMPT_PACKAGE",
+        "E200_PREFLIGHT_AI_CREATOR",
+        "E205_EVALUATE_PROVIDER_EXECUTION_AUTHORITY",
+        "E206_EVALUATE_PRODUCTION_BATCH_BUDGET",
+        "E208_RESOLVE_PROVIDER_ADAPTER",
+        "E209_EVALUATE_PROVIDER_ADMISSION",
+        "E211_ACQUIRE_EXECUTION_LEASE",
+        "E210_EXECUTE_ONE_PROVIDER_CALL",
+        "E220_RECORD_PROVIDER_OUTPUT",
+        "E230_ROUTE_OUTPUT_TO_FINISHING",
+        "E240_ROUTE_FINISHED_EXPORT_TO_QA",
+        "E264_APPLY_CONTENT_OUTPUT_QA_POLICY",
+        "E289_EVALUATE_RUN_CLOSEOUT",
+        "E290_REQUEST_HUMAN_RELEASE"
+      ]
+    },
+    {
+      "scenario_id": "EXTERNAL_CONTENT_TZ_LOCAL_HANDOFF",
+      "scenario_type": "END_TO_END",
+      "start_node_id": "N130_CONTENT_TZ_AUTHORING",
+      "terminal_node_id": "N149_EXTERNAL_CONTENT_TZ_DELIVERY",
+      "edge_ids": [
+        "E160_VALIDATE_CONTENT_TZ",
+        "E168_COMPLETE_CONTENT_TZ_ONLY",
+        "E171_DELIVER_EXTERNAL_CONTENT_TZ"
+      ]
+    },
+    {
+      "scenario_id": "PROMPT_AGENT_RELOAD_RECOVERY",
+      "scenario_type": "RECOVERY",
+      "start_node_id": "N155_CONTENT_TZ_EXECUTION_INPUT_ROUTING",
+      "terminal_node_id": "N160_PROMPT_PACKAGE_COMPILATION",
+      "edge_ids": [
+        "E183_RESOLVE_PROMPT_AGENT_RUNTIME",
+        "E184_RELOAD_AND_RERESOLVE_PROMPT_AGENT",
+        "E185_COMPILE_PROMPT_PACKAGE"
+      ]
+    },
+    {
+      "scenario_id": "BATCH_CONTINUE_LOOP",
+      "scenario_type": "BOUNDED_LOOP",
+      "start_node_id": "N220_CONTENT_OUTPUT_QA",
+      "terminal_node_id": "N220_CONTENT_OUTPUT_QA",
+      "edge_ids": [
+        "E264_APPLY_CONTENT_OUTPUT_QA_POLICY",
+        "E267_EVALUATE_AUTOMATED_BATCH_CONTINUE",
+        "E268_CONTINUE_ADMITTED_BATCH_AT_PREFLIGHT",
+        "E205_EVALUATE_PROVIDER_EXECUTION_AUTHORITY",
+        "E206_EVALUATE_PRODUCTION_BATCH_BUDGET",
+        "E208_RESOLVE_PROVIDER_ADAPTER",
+        "E209_EVALUATE_PROVIDER_ADMISSION",
+        "E211_ACQUIRE_EXECUTION_LEASE",
+        "E210_EXECUTE_ONE_PROVIDER_CALL",
+        "E220_RECORD_PROVIDER_OUTPUT",
+        "E235_ROUTE_FINAL_OUTPUT_TO_QA"
+      ]
+    },
+    {
+      "scenario_id": "CHECKPOINT_RESUME",
+      "scenario_type": "RECOVERY",
+      "start_node_id": "N020_PASSPORT_COORDINATION",
+      "terminal_node_id": "N020_PASSPORT_COORDINATION",
+      "edge_ids": [
+        "E300_CHECKPOINT_FROM_COORDINATOR",
+        "E310_RESUME_AT_COORDINATOR"
+      ]
+    },
+    {
+      "scenario_id": "COLLECTOR_PACKAGE_REWORK",
+      "scenario_type": "REWORK",
+      "start_node_id": "N030_PASSPORT_COLLECTION",
+      "terminal_node_id": "N030_PASSPORT_COLLECTION",
+      "edge_ids": [
+        "E030_VALIDATE_COLLECTOR_PACKAGE",
+        "E035_REWORK_COLLECTOR_PACKAGE"
+      ]
+    },
+    {
+      "scenario_id": "PRODUCT_FACT_GAP_RETURN",
+      "scenario_type": "REWORK",
+      "start_node_id": "N050_PASSPORT_AUDIT",
+      "terminal_node_id": "N020_PASSPORT_COORDINATION",
+      "edge_ids": [
+        "E060_ROUTE_MATERIAL_GAPS",
+        "E070_APPLY_APPROVED_PASSPORT_DELTA",
+        "E080_RETURN_WRITTEN_PASSPORT_TO_COORDINATOR"
+      ]
+    },
+    {
+      "scenario_id": "CONTENT_TZ_REWORK",
+      "scenario_type": "REWORK",
+      "start_node_id": "N130_CONTENT_TZ_AUTHORING",
+      "terminal_node_id": "N130_CONTENT_TZ_AUTHORING",
+      "edge_ids": [
+        "E160_VALIDATE_CONTENT_TZ",
+        "E165_REWORK_CONTENT_TZ"
+      ]
+    },
+    {
+      "scenario_id": "PROMPT_PREFLIGHT_REWORK",
+      "scenario_type": "REWORK",
+      "start_node_id": "N160_PROMPT_PACKAGE_COMPILATION",
+      "terminal_node_id": "N160_PROMPT_PACKAGE_COMPILATION",
+      "edge_ids": [
+        "E190_VALIDATE_PROMPT_PACKAGE",
+        "E200_PREFLIGHT_AI_CREATOR",
+        "E215_RETURN_PROMPT_INPUT_DEFECT"
+      ]
+    },
+    {
+      "scenario_id": "PROVIDER_TECHNICAL_RETRY",
+      "scenario_type": "RECOVERY",
+      "start_node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "terminal_node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "edge_ids": [
+        "E205_EVALUATE_PROVIDER_EXECUTION_AUTHORITY",
+        "E206_EVALUATE_PRODUCTION_BATCH_BUDGET",
+        "E208_RESOLVE_PROVIDER_ADAPTER",
+        "E209_EVALUATE_PROVIDER_ADMISSION",
+        "E211_ACQUIRE_EXECUTION_LEASE",
+        "E210_EXECUTE_ONE_PROVIDER_CALL",
+        "E225_RETRY_TECHNICAL_PROVIDER_FAILURE"
+      ]
+    },
+    {
+      "scenario_id": "PROVIDER_AUTHORITY_PAUSE_RESUME",
+      "scenario_type": "RECOVERY",
+      "start_node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "terminal_node_id": "N190_AI_CREATOR_PROVIDER_EXECUTION",
+      "edge_ids": [
+        "E205_EVALUATE_PROVIDER_EXECUTION_AUTHORITY",
+        "E207_RESUME_AFTER_PROVIDER_AUTHORITY",
+        "E206_EVALUATE_PRODUCTION_BATCH_BUDGET",
+        "E208_RESOLVE_PROVIDER_ADAPTER",
+        "E209_EVALUATE_PROVIDER_ADMISSION",
+        "E211_ACQUIRE_EXECUTION_LEASE",
+        "E210_EXECUTE_ONE_PROVIDER_CALL"
+      ]
+    },
+    {
+      "scenario_id": "HUMAN_BATCH_CONTINUE_EXCEPTION",
+      "scenario_type": "RECOVERY",
+      "start_node_id": "N220_CONTENT_OUTPUT_QA",
+      "terminal_node_id": "N180_AI_CREATOR_PREFLIGHT",
+      "edge_ids": [
+        "E264_APPLY_CONTENT_OUTPUT_QA_POLICY",
+        "E270_REQUEST_BATCH_CONTINUE",
+        "E280_CONTINUE_BATCH_AT_PREFLIGHT"
+      ]
+    }
+  ]
+}
