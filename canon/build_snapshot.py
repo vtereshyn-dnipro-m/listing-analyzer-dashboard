@@ -64,6 +64,32 @@ EXTRA = [
     "10_Runtime_Registry/AI_DESIGN_APPROVED_PASSPORT_DELTA_AND_WRITEBACK_CONTRACT.md",
     "10_Runtime_Registry/AI_DESIGN_PASSPORT_AUDIT_RECEIPT_CONTRACT.md",
     "03_Content_TZ/05_Routing/marketplace_requirements_registry.json",
+    # Движок графа (ядро Listing Suite, 15.10.2026): реестр поставщиков
+    # фактов, контракты и схемы входа проверок, решения маршрутизатора,
+    # бюджета и квитанции перехода, сценарии теневого прогона — и эталонные
+    # скрипты, с которых движок перенесён (для сверки, не для запуска).
+    "10_Runtime_Registry/AI_DESIGN_GATE_FACT_PROVIDER_REGISTRY.json",
+    "10_Runtime_Registry/AI_DESIGN_GATE_FACT_RESOLVER_CONTRACT.md",
+    "10_Runtime_Registry/AI_DESIGN_SHADOW_RUN_CONTRACT.md",
+    "10_Runtime_Registry/AI_DESIGN_E2E_SHADOW_SCENARIOS.json",
+    "10_Runtime_Registry/ai_design_gate_input.schema.json",
+    "10_Runtime_Registry/ai_design_gate_evaluation.schema.json",
+    "10_Runtime_Registry/ai_design_gate_evidence_bundle.schema.json",
+    "10_Runtime_Registry/ai_design_gate_fact_provider_registry.schema.json",
+    "10_Runtime_Registry/ai_design_gate_input_build_manifest.schema.json",
+    "10_Runtime_Registry/ai_design_router_decision.schema.json",
+    "10_Runtime_Registry/ai_design_termination_budget_request.schema.json",
+    "10_Runtime_Registry/ai_design_termination_budget_receipt.schema.json",
+    "10_Runtime_Registry/ai_design_rework_budget_ledger.schema.json",
+    "10_Runtime_Registry/ai_design_transition_receipt.schema.json",
+    "10_Runtime_Registry/ai_design_shadow_run_report.schema.json",
+    "10_Runtime_Registry/New-AIDesignControlledRunState.ps1",
+    "10_Runtime_Registry/New-AIDesignGateInputs.ps1",
+    "10_Runtime_Registry/Invoke-AIDesignGateEvaluation.ps1",
+    "10_Runtime_Registry/New-AIDesignRouterDecision.ps1",
+    "10_Runtime_Registry/Resolve-AIDesignTerminationBudget.ps1",
+    "10_Runtime_Registry/Invoke-AIDesignStateTransition.ps1",
+    "10_Runtime_Registry/Invoke-AIDesignShadowRun.ps1",
 ]
 
 SKIP_DIRS = ("_archive", "99_Archive", "_rollback", "__pycache__", ".audit-review",

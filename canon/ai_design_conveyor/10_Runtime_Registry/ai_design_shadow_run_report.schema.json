@@ -1,0 +1,14 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://dnipro-m.local/ai-design/ai_design_shadow_run_report.schema.json","title":"AI Design Shadow Run Report","type":"object","additionalProperties":false,
+  "required":["schema_version","shadow_run_id","execution_mode","source_run_id","source_state_path","source_state_sha256","gate_inputs","gate_evaluations","router_decision","simulated_transition","legacy_comparison","external_side_effects_executed","shadow_verdict","created_at","runner_version"],
+  "properties": {
+    "schema_version":{"const":"1.0"},"shadow_run_id":{"type":"string","pattern":"^SHADOW-[A-Z0-9][A-Z0-9_-]+$"},"execution_mode":{"const":"GRAPH_SHADOW_RUN"},"source_run_id":{"type":"string","pattern":"^RUN-[A-Z0-9][A-Z0-9_-]+$"},"source_state_path":{"type":"string","minLength":1},"source_state_sha256":{"$ref":"#/$defs/sha256"},
+    "gate_inputs":{"type":"array","items":{"$ref":"#/$defs/fileBinding"}},"gate_evaluations":{"type":"array","items":{"$ref":"#/$defs/fileBinding"}},
+    "router_decision":{"type":"object","additionalProperties":false,"required":["path","sha256","outcome","selected_edge_id"],"properties":{"path":{"type":"string","minLength":1},"sha256":{"$ref":"#/$defs/sha256"},"outcome":{"enum":["EDGE_SELECTED","RUN_BLOCKED","HUMAN_ROUTE_DECISION","NO_OP_TERMINAL"]},"selected_edge_id":{"type":["string","null"]}}},
+    "simulated_transition":{"type":"object","additionalProperties":false,"required":["performed","state_path","state_sha256","receipt_path","receipt_sha256"],"properties":{"performed":{"type":"boolean"},"state_path":{"type":["string","null"]},"state_sha256":{"oneOf":[{"type":"null"},{"$ref":"#/$defs/sha256"}]},"receipt_path":{"type":["string","null"]},"receipt_sha256":{"oneOf":[{"type":"null"},{"$ref":"#/$defs/sha256"}]}}},
+    "legacy_comparison":{"type":"object","additionalProperties":false,"required":["expected_outcome","expected_edge_id","result"],"properties":{"expected_outcome":{"type":["string","null"]},"expected_edge_id":{"type":["string","null"]},"result":{"enum":["MATCH","MISMATCH","NOT_PROVIDED"]}}},
+    "external_side_effects_executed":{"const":0},"shadow_verdict":{"enum":["MATCH","DIVERGENCE","NO_REFERENCE"]},"created_at":{"type":"string","format":"date-time"},"runner_version":{"type":"string","pattern":"^[0-9]+\\.[0-9]+$"}
+  },
+  "$defs":{"sha256":{"type":"string","pattern":"^[a-fA-F0-9]{64}$"},"fileBinding":{"type":"object","additionalProperties":false,"required":["path","sha256"],"properties":{"path":{"type":"string","minLength":1},"sha256":{"$ref":"#/$defs/sha256"}}}}
+}
+
