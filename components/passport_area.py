@@ -20,6 +20,7 @@ FEATURE_DISABLED и говорит об этом вслух (ТЗ §13): кно�
 from __future__ import annotations
 
 import html
+import json
 
 import pandas as pd
 import streamlit as st
@@ -28,6 +29,8 @@ import auth
 from i18n import t
 from services import passport as pp
 from services import passport_intake as pi
+from services import passport_answers as pa
+from services.db import get_conn
 from services.passport import txt
 
 INK = "#1A1815"
@@ -465,10 +468,10 @@ def render_verifier() -> None:
 
 
 def render_question(q: pd.Series, data: dict) -> None:
-    """Карточка вопроса (ТЗ 11.3.3) и история только для чтения. Поля ответа
-    выключены до этапа 4 и говорят почему."""
+    """Карточка вопроса (ТЗ 11.3.3), история и форма ответа (ТЗ 11.4–11.6)."""
+    qid = txt(q["question_id"])
     box = st.container(border=True)
-    box.markdown(f'<div class="ls-mono" style="color:{MUTED};">{html.escape(txt(q["question_id"]))}</div>'
+    box.markdown(f'<div class="ls-mono" style="color:{MUTED};">{html.escape(qid)}</div>'
                  f'<div style="font-size:16px;font-weight:600;">{html.escape(txt(q["question_text"]))}</div>',
                  unsafe_allow_html=True)
     for key, field in (("why", "reason_text"), ("affected", "affected_object"),
@@ -476,18 +479,127 @@ def render_question(q: pd.Series, data: dict) -> None:
         val = txt(q.get(field))
         if val:
             box.markdown(f"**{t('pp.qcard.' + key)}** {html.escape(val)}")
+    if txt(q.get("question_type")) == "CONFLICT":
+        render_conflict(box, q.get("conflict"))
     answers = data.get("answers")
     hist = answers[answers["question_id"] == q["question_id"]] if answers is not None and not answers.empty else None
     if hist is not None and not hist.empty:
         box.markdown(f"**{t('pp.qcard.history')}**")
+        verdicts = data.get("verdicts")
         for _, a in hist.sort_values("answer_version").iterrows():
+            v = verdicts[verdicts["answer_id"] == a["answer_id"]] if verdicts is not None and not verdicts.empty else None
+            verdict = t("pp.verdict." + txt(v.sort_values("seq").iloc[-1]["verdict"])) if v is not None and not v.empty \
+                else t("pp.verdict.none")
+            dec = t("pp.dec." + txt(a.get("decision"))) + " · " if txt(a.get("decision")) else ""
             box.caption(t("pp.answer_line", v=int(a["answer_version"]), who=txt(a["author"]),
-                          text=txt(a.get("answer_text"))[:200]))
-    box.text_area(t("pp.answer"), key=f"pp-ans-{q['question_id']}", placeholder=t("pp.answer_ph"),
-                  disabled=True)
-    box.button(t("pp.send_answer"), key=f"pp-send-{q['question_id']}", type="primary", disabled=True,
-               help=t("pp.feature_disabled", flag="listing_suite.verifier_answers"))
-    box.caption(t("pp.feature_disabled", flag="listing_suite.verifier_answers"))
+                          text=dec + txt(a.get("answer_text"))[:200]) + f" · {verdict}")
+    render_answer_form(box, q, data)
+
+
+def render_conflict(box, raw) -> None:
+    """Обе стороны конфликта рядом (ТЗ 11.4.3): текущее и новое значение с
+    источником, scope и условиями. Что лежит в записи — то и показано."""
+    if isinstance(raw, str):
+        try:
+            raw = json.loads(raw)
+        except ValueError:
+            raw = None
+    if not isinstance(raw, dict):
+        return
+    left, right = box.columns(2)
+    for col, side in ((left, "current"), (right, "new")):
+        part = raw.get(side) or {}
+        col.markdown(f"**{t('pp.side.' + side)}**")
+        for k, v in (part.items() if isinstance(part, dict) else []):
+            col.caption(f"{html.escape(str(k))}: {html.escape(str(v))}")
+
+
+def _ans_gen(qid: str) -> int:
+    return st.session_state.setdefault(f"pp-ans-gen-{qid}", 0)
+
+
+def render_answer_form(box, q: pd.Series, data: dict) -> None:
+    """Форма ответа. Кнопка включается, только когда флаг включён и нет ни
+    одной причины отказа; причины — словами под формой."""
+    qid = txt(q["question_id"])
+    email, roles = me()
+    state = pp.user_state(q, data.get("answers"), data.get("verdicts"))
+    reg, _ = _registry_data()
+    stale = pa.is_stale(q, data.get("runs"), reg.get("objects"))
+    gen = _ans_gen(qid)
+    # Итог отправки — до проверки состояния: после удачной отправки вопрос уже
+    # «ожидает проверки», и форма не рисуется, а номер ответа сказать надо.
+    done = st.session_state.pop(f"pp-ans-done-{qid}", None)
+    if done:
+        box.success(t("pp.ans.sent", id=done))
+    if state not in pa.OPEN_STATES:
+        box.caption(t("pp.ans.closed", state=t(f"pp.qs.{state}")))
+        return
+    text = box.text_area(t("pp.answer"), key=f"pp-ans-{qid}-{gen}", placeholder=t("pp.answer_ph"))
+    decision = None
+    if txt(q.get("question_type")) == "CONFLICT":
+        if pa.can_decide(roles):
+            decision = box.segmented_control(t("pp.decision"), list(pa.DECISIONS), key=f"pp-dec-{qid}-{gen}",
+                                             format_func=lambda d: t(f"pp.dec.{d}"), selection_mode="single")
+        else:
+            box.caption(t("pp.ans.no_decision_rights"))
+    if (text or "").strip():
+        box.caption(t("pp.ans.draft"))
+    errs = pa.check(q, user_state=state, text=text, decision=decision, email=email,
+                    canonical_roles=roles, stale=stale)
+    shown = [e for e in errs if e != "EMPTY"]
+    for e in shown:
+        box.warning(t(f"pp.ans.err.{e}"))
+    on = pp.flag_on("listing_suite.verifier_answers")
+    box.caption(t("pp.ans.summary", sku=txt(q.get("sku_id")), qid=qid))
+    clicked = box.button(t("pp.send_answer"), key=f"pp-send-{qid}", type="primary",
+                         disabled=not on or bool(errs) or not auth.can("ls.content.edit"),
+                         help=None if on else t("pp.feature_disabled", flag="listing_suite.verifier_answers"))
+    if not on:
+        box.caption(t("pp.feature_disabled", flag="listing_suite.verifier_answers"))
+    if clicked:
+        _send_answer(q, text, decision)
+
+
+def _send_answer(q: pd.Series, text: str, decision: str | None) -> None:
+    """Отправка. Полномочия — в момент нажатия, а не по отрисовке; данные
+    перечитываются заново: между отрисовкой и нажатием вопрос мог закрыться,
+    а Паспорт — смениться."""
+    qid = txt(q["question_id"])
+    if not auth.require("ls.content.edit", "passport_question", qid):
+        st.error(t("auth.denied"))
+        return
+    pp.load_questions.clear()
+    pp.load_registry.clear()
+    data = pp.load_questions()
+    fresh = data["questions"]
+    fresh = fresh[fresh["question_id"] == qid] if not fresh.empty else fresh
+    if data.get("error") or fresh.empty:
+        st.error(t("pp.q_load_error"))
+        return
+    fq = fresh.iloc[0]
+    email, roles = me()
+    reg, _ = _registry_data()
+    errs = pa.check(fq, user_state=pp.user_state(fq, data["answers"], data["verdicts"]), text=text,
+                    decision=decision, email=email, canonical_roles=roles,
+                    stale=pa.is_stale(fq, data.get("runs"), reg.get("objects")))
+    if errs:
+        st.error(t(f"pp.ans.err.{errs[0]}"))
+        return
+    base = pa.latest_answer(data["answers"], qid)
+    conn = get_conn()
+    try:
+        answer_id, _replay = pa.submit(conn, fq, author=auth.current().actor, text=text, decision=decision,
+                                       base_answer_id=base["answer_id"] if base else None)
+    except Exception as e:  # noqa: BLE001 — причину видно человеку
+        st.error(t("pp.ans.save_failed", e=f"{type(e).__name__}: {e}"))
+        return
+    finally:
+        conn.close()
+    pp.load_questions.clear()
+    st.session_state[f"pp-ans-gen-{qid}"] = _ans_gen(qid) + 1      # поле пересоздаётся пустым (правило 7б)
+    st.session_state[f"pp-ans-done-{qid}"] = answer_id
+    st.rerun()
 
 
 # ---------------------------------------------------------------- вход

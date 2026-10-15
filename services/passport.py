@@ -461,7 +461,7 @@ USER_STATES = (NEEDS_ANSWER, ANSWER_REJECTED, NEEDS_CLARIFICATION, AWAITING_CHEC
 def load_questions() -> dict:
     """Вопросы (кроме неотправленных), версии ответов и вердикты по ним."""
     out = {"questions": pd.DataFrame(), "answers": pd.DataFrame(), "verdicts": pd.DataFrame(),
-           "error": None, "missing": False}
+           "runs": pd.DataFrame(), "error": None, "missing": False}
     if table_exists("listing_data.passport_questions") is False:
         out["missing"] = True
         return out
@@ -475,6 +475,10 @@ def load_questions() -> dict:
                              decision, source_artifact_ids, created_at
                         FROM passport_answers""",
         "verdicts": """SELECT answer_id, seq, verdict, reason, created_at FROM passport_answer_verdicts""",
+        # Снимок Паспорта, по которому задан вопрос, — в run_state запуска:
+        # по нему ответ на устаревший вопрос не уходит (ТЗ 11.9).
+        "runs": """SELECT run_id, run_state FROM ai_runs
+                    WHERE run_id IN (SELECT run_id FROM passport_questions WHERE status <> 'OPEN')""",
     }
     return _read_all(out, queries)
 
@@ -502,12 +506,18 @@ def user_state(q: pd.Series, answers: pd.DataFrame, verdicts: pd.DataFrame) -> s
         return RESOLVED
     if status in ("SUPERSEDED", "OUT_OF_SCOPE"):
         return CANCELLED
-    v = last_verdict(txt(q.get("question_id")), answers, verdicts)
+    qid = txt(q.get("question_id"))
+    v = last_verdict(qid, answers, verdicts)
     if v == "PARTIAL":
         return NEEDS_CLARIFICATION
     if v == "REJECTED":
         return ANSWER_REJECTED
-    if status == "SENT":
+    # Последняя версия ответа ещё не проверена — это «Ответ получен /
+    # ожидает проверки», даже пока Собиратель не перевёл вопрос из SENT
+    # (переходы вопроса фиксирует он, а не интерфейс — 06E). Иначе только что
+    # отправленный ответ снова звал бы «Ответить».
+    answered = answers is not None and not answers.empty and (answers["question_id"] == qid).any()
+    if status == "SENT" and not answered:
         return NEEDS_ANSWER
     return AWAITING_CHECK
 

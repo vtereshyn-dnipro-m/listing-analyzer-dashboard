@@ -126,6 +126,9 @@ def fake_sql(sql, con=None, params=None, **kw):
         return pd.DataFrame([{"t": None if (MODE["missing"] and "passport_" in name) else name}])
     if ("passport_" in q or "ai_runs" in q or "ai_receipts" in q) and MODE["fail"]:
         raise RuntimeError("база недоступна")
+    if "FROM ai_runs" in q and "run_state" in q:
+        # снимок Паспорта по запускам вопросов: в фикстуре запусков нет
+        return pd.DataFrame(columns=["run_id", "run_state"])
     for table, df in (("FROM passport_objects", OBJECTS), ("FROM passport_questions", QUESTIONS),
                       ("FROM passport_blocks", BLOCKS), ("FROM ai_runs", RUNS),
                       ("FROM passport_answers", ANSWERS), ("FROM passport_answer_verdicts", VERDICTS)):
