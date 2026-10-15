@@ -26,6 +26,7 @@ tests/test_feed.py — одна лента вместо трёх вкладок.
 from __future__ import annotations
 
 import pathlib
+import re
 import sys
 
 import pandas as pd
@@ -198,9 +199,18 @@ def rows_on_screen() -> set:
             for c in at.checkbox if str(getattr(c, "key", "")).startswith("pick-")}
 
 
-# --- вкладок нет
+# --- вкладок по состоянию нет
+# Закладки Синтеза есть, но по ВИДУ текста и площадке (Title AMZ, потом
+# Title LM / MM / Cr, описание, FAQ). Товар между ними не переезжает: он
+# живёт в одной ленте своей закладки, и меняется только метка состояния.
+# Запирается то, что вернуть нельзя: закладки «очередь / сгенерированные /
+# любой товар» внутри ленты.
 SRC = (ROOT / "pages/synthesis.py").read_text(encoding="utf-8")
-check("вкладки удалены из кода", "st.tabs(" not in SRC)
+_tabs = re.findall(r"st\.tabs\(\[([^\]]*)\]", SRC)
+check(f"закладки только по виду текста, по состоянию — нет ({_tabs})",
+      len(_tabs) == 1 and "synth.tab_title_amz" in _tabs[0]
+      and all(re.fullmatch(r"synth\.tab_(title_\w+|description|faq)", k)
+              for k in re.findall(r't\("([^"]+)"\)', _tabs[0])))
 check("список один: строки собираются в FEED", "FEED[" in SRC)
 
 # --- фильтры и счётчики

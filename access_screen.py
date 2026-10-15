@@ -1,4 +1,4 @@
-# ОТПЕЧАТОК ИСТОЧНИКА: 27e6069a13d08f923436b8ff4839fd597c3081fbeefc684e6e73c6a17b803c51
+# ОТПЕЧАТОК ИСТОЧНИКА: 24bcf8f31e084d625ce92c28ebd89d9db2bc5d29a9abbefb7f354224009f274c
 # access_screen.py — экран «Доступ»: один на два приложения.
 """Админка доступа (ТЗ 010): люди, роли, матрица прав, тестовый вход, журналы.
 
@@ -272,7 +272,9 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
     # Действия, которые журнал пишет сам о себе: открытие экрана, уведомления, досылы.
     # Они не рассказывают, что человек СДЕЛАЛ, и по умолчанию прячутся — иначе настоящие
     # решения тонут в шуме. Прячутся, а не выбрасываются: переключатель рядом.
-    СЛУЖЕБНЫЕ = {"admin.open", "notify_new_user", "notify_new_user_wd", "auth_mode_notify",
+    СЛУЖЕБНЫЕ = {"admin.open", "notify_new_user", "notify_new_user_wd", "notify_admit", "notify_admit_wd",
+                 "notify_card_archived",
+                 "auth_mode_notify",
                  "notify_unknown"}
 
 
@@ -899,6 +901,8 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.admin.res.first_login": "первый вход",
         "auth.admin.res.logout": "выход",
         "auth.admin.res.ok": "вход",
+        "auth.admin.res.reassigned": "адрес у другого Google-аккаунта",
+        "auth.admin.res.relogin": "повторный вход: срок входа истёк",
         "auth.admin.save": "Сохранить",
         "auth.admin.saved": "Сохранено: {n}",
         "auth.admin.sec.access": "Доступ",
@@ -927,6 +931,8 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.log.act.auth_mode": "Режим входа изменён",
         "auth.log.act.auth_mode_notify": "Уведомление о смене режима",
         "auth.log.act.auth_mode_set": "Переключал режим входа",
+        "auth.log.act.auto_admit": "Получил «Просмотр» по рабочей почте",
+        "auth.log.act.card_archived": "Карточка прежнего владельца адреса убрана в архив",
         "auth.log.act.dict.edit": "Правил справочник",
         "auth.log.act.forecast.approve": "Утверждал прогноз",
         "auth.log.act.forecast.edit": "Правил черновик прогноза",
@@ -938,6 +944,9 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.log.act.ls.content.edit": "Правил контент",
         "auth.log.act.ls.method.edit": "Менял методику",
         "auth.log.act.ls.settings.edit": "Менял настройки",
+        "auth.log.act.notify_admit": "Уведомление об автодоступе",
+        "auth.log.act.notify_admit_wd": "Уведомление об автодоступе дослано сторожем",
+        "auth.log.act.notify_card_archived": "Уведомление об архиве карточки",
         "auth.log.act.notify_new_user": "Уведомление о новом человеке",
         "auth.log.act.notify_new_user_wd": "Уведомление дослано сторожем",
         "auth.log.act.notify_unknown": "Уведомление о незнакомом входе",
@@ -1092,6 +1101,8 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.admin.res.first_login": "перший вхід",
         "auth.admin.res.logout": "вихід",
         "auth.admin.res.ok": "вхід",
+        "auth.admin.res.reassigned": "адреса в іншого Google-акаунта",
+        "auth.admin.res.relogin": "повторний вхід: строк входу сплив",
         "auth.admin.save": "Зберегти",
         "auth.admin.saved": "Збережено: {n}",
         "auth.admin.sec.access": "Доступ",
@@ -1120,6 +1131,8 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.log.act.auth_mode": "Режим входу змінено",
         "auth.log.act.auth_mode_notify": "Сповіщення про зміну режиму",
         "auth.log.act.auth_mode_set": "Перемикав режим входу",
+        "auth.log.act.auto_admit": "Отримав «Перегляд» за робочою поштою",
+        "auth.log.act.card_archived": "Картку попереднього власника адреси перенесено в архів",
         "auth.log.act.dict.edit": "Правив довідник",
         "auth.log.act.forecast.approve": "Затверджував прогноз",
         "auth.log.act.forecast.edit": "Правив чернетку прогнозу",
@@ -1131,6 +1144,9 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.log.act.ls.content.edit": "Правив контент",
         "auth.log.act.ls.method.edit": "Змінював методику",
         "auth.log.act.ls.settings.edit": "Змінював налаштування",
+        "auth.log.act.notify_admit": "Сповіщення про автодоступ",
+        "auth.log.act.notify_admit_wd": "Сповіщення про автодоступ дослано сторожем",
+        "auth.log.act.notify_card_archived": "Сповіщення про архів картки",
         "auth.log.act.notify_new_user": "Сповіщення про нову людину",
         "auth.log.act.notify_new_user_wd": "Сповіщення дослано сторожем",
         "auth.log.act.notify_unknown": "Сповіщення про незнайомий вхід",
@@ -1285,6 +1301,8 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.admin.res.first_login": "first sign-in",
         "auth.admin.res.logout": "sign-out",
         "auth.admin.res.ok": "sign-in",
+        "auth.admin.res.reassigned": "address now belongs to another Google account",
+        "auth.admin.res.relogin": "re-sign-in: sign-in expired",
         "auth.admin.save": "Save",
         "auth.admin.saved": "Saved: {n}",
         "auth.admin.sec.access": "Access",
@@ -1313,6 +1331,8 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.log.act.auth_mode": "Sign-in mode changed",
         "auth.log.act.auth_mode_notify": "Mode change notification",
         "auth.log.act.auth_mode_set": "Switched the sign-in mode",
+        "auth.log.act.auto_admit": "Got Viewer access by work email",
+        "auth.log.act.card_archived": "Previous owner's card archived",
         "auth.log.act.dict.edit": "Edited a directory",
         "auth.log.act.forecast.approve": "Approved a forecast",
         "auth.log.act.forecast.edit": "Edited a forecast draft",
@@ -1324,6 +1344,9 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.log.act.ls.content.edit": "Edited content",
         "auth.log.act.ls.method.edit": "Changed methodology",
         "auth.log.act.ls.settings.edit": "Changed settings",
+        "auth.log.act.notify_admit": "Auto-access notification",
+        "auth.log.act.notify_admit_wd": "Auto-access notification sent by the watchdog",
+        "auth.log.act.notify_card_archived": "Card archive notification",
         "auth.log.act.notify_new_user": "New person notification",
         "auth.log.act.notify_new_user_wd": "Notification sent by the watchdog",
         "auth.log.act.notify_unknown": "Unknown sign-in notification",

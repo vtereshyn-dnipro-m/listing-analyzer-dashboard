@@ -11,11 +11,16 @@ tests/test_auth_roles.py — вход и роли: что можно каждо�
   · QA-агент. Ему запрещено ВСЁ жёстко, в обход матрицы, и разрешена ровно
     видимость страниц — иначе проверять нечего. Галочка в матрице, случайно
     поставленная «Просмотру», не должна открывать роботу кнопки, тратящие деньги;
-  · пустая роль в Listing Suite. Это «доступа нет», а не «Просмотр»: карточка в
-    общем списке людей есть, а в этот продукт человек не входит;
+  · пустая роль в Listing Suite. Сама по себе это «доступа нет», а не «Просмотр»;
+  · рабочая почта @dniprom.com входит сама (решение владельца 13.10.2026): нет карточки —
+    заводится «Просмотр» в обоих продуктах, пустая роль здесь — становится «Просмотром»;
+    выключенная карточка и чужой домен не пускаются;
   · матрица из базы главнее кода, а действие, которого в базе нет, запрещено всем:
     новая кнопка не должна заработать раньше, чем кто-то решил, кому она доступна;
-  · отправка в Amazon начинается с утверждающего — контент-менеджеру она закрыта.
+  · отправка в Amazon начинается с утверждающего — контент-менеджеру она закрыта;
+  · вход старше auth_max_login_hours уходит на повторный вход через Google, а карточка
+    привязана к Google ID: адрес у другого аккаунта — прежняя карточка в архив, новый
+    человек входит «Просмотром» (14.10.2026).
 
 База подменяется целиком, сеть не трогается.
 
@@ -31,7 +36,8 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 # --- подмена базы: соединение, которое отвечает заранее заданным ---------------
-ОТВЕТЫ: dict = {"mode": 1, "matrix": [], "user": None}
+ОТВЕТЫ: dict = {"mode": 1, "matrix": [], "user": None, "bind": "ok"}
+ЗАВЕДЕНО: list = []      # почты, для которых приложение выполнило INSERT в app_users
 
 
 class _Cur:
@@ -42,8 +48,18 @@ class _Cur:
         s = " ".join(sql.split())
         if "ls_auth_enabled" in s:
             self._rows = [] if ОТВЕТЫ["mode"] is None else [(ОТВЕТЫ["mode"],)]
+        elif "app_user_bind_sub" in s:
+            r = ОТВЕТЫ["bind"]
+            if r.startswith("archived:"):
+                ОТВЕТЫ["user"] = None        # карточку унесли в архив — по почте её больше нет
+            self._rows = [(r,)]
         elif "app_permissions" in s:
             self._rows = list(ОТВЕТЫ["matrix"])
+        elif s.startswith("INSERT INTO kabinet_data.app_users"):
+            ЗАВЕДЕНО.append(params[0])
+            u = ОТВЕТЫ["user"]
+            ОТВЕТЫ["user"] = ("viewer", True, None, False) if u is None else ((u[0] or "viewer"),) + tuple(u[1:])
+            self._rows = []
         elif "app_users" in s:
             self._rows = [] if ОТВЕТЫ["user"] is None else [ОТВЕТЫ["user"]]
         elif "qa_access_enabled" in s:
@@ -220,6 +236,66 @@ auth.st.session_state = {}
 auth.st.query_params = {}
 check("истёкший срок виден в строке человека",
       bool(auth._load_user("кто@dniprom.com")["expired"]))
+
+# --- 4а. рабочая почта входит сама ---------------------------------------------
+ОТКАЗЫ: list = []
+auth._screen = lambda *a, **k: ОТКАЗЫ.append(a)
+auth._telegram = lambda text: None
+auth.notify_unknown = lambda *a, **k: None
+
+
+ВЫХОДЫ: list = []
+ВХОДЫ: list = []
+auth.st.logout = lambda: ВЫХОДЫ.append(1)
+_log_login_orig = auth._log_login
+auth._log_login = lambda email, result, reason="": ВХОДЫ.append(result)
+
+
+def войти(почта, user, возраст_ч=1.0, bind="ok"):
+    import time
+    ЗАВЕДЕНО.clear(); ОТКАЗЫ.clear(); ВЫХОДЫ.clear(); ВХОДЫ.clear()
+    сброс(mode=1, matrix=БАЗА, user=user, bind=bind)
+    auth._max_login_hours.clear()
+    auth.st.user = types.SimpleNamespace(is_logged_in=True, email=почта, name="Новый",
+                                         sub="sub-1", iat=time.time() - возраст_ч * 3600)
+    auth.guard()
+    return auth.current()
+
+
+u = войти("новый@dniprom.com", None)
+check("рабочая почта без карточки — карточка заведена", ЗАВЕДЕНО == ["новый@dniprom.com"])
+check("и человек вошёл «Просмотром», без экрана отказа", not ОТКАЗЫ and u.known and u.role == auth.VIEWER)
+
+u = войти("кто@dniprom.com", ("", True, None, False))
+check("рабочая почта с пустой ролью — получает «Просмотр»", ЗАВЕДЕНО and not ОТКАЗЫ and u.role == auth.VIEWER)
+
+u = войти("кто@dniprom.com", ("approver", True, None, False))
+check("назначенная роль не понижается", not ЗАВЕДЕНО and u.role == auth.APPROVER)
+
+u = войти("кто@dniprom.com", ("", False, None, False))
+check("выключенная карточка — отказ, роль не выдаётся", not ЗАВЕДЕНО and ОТКАЗЫ)
+
+u = войти("кто@dniprom.com", ("", True, None, True))
+check("истёкший срок — отказ, роль не выдаётся", not ЗАВЕДЕНО and ОТКАЗЫ)
+
+u = войти("чужой@gmail.com", None)
+check("чужой домен без карточки — отказ, карточка не заводится", not ЗАВЕДЕНО and ОТКАЗЫ)
+
+# --- 4б. срок входа и Google ID -------------------------------------------------
+u = войти("кто@dniprom.com", ("approver", True, None, False), возраст_ч=200)
+check("вход старше 168 ч — повторный вход через Google, внутрь не пускаем",
+      ВЫХОДЫ == [1] and "relogin" in ВХОДЫ and "ok" not in ВХОДЫ)
+
+u = войти("кто@dniprom.com", ("approver", True, None, False), возраст_ч=100)
+check("вход моложе 168 ч — без повторного входа", not ВЫХОДЫ and u.role == auth.APPROVER)
+
+u = войти("кто@dniprom.com", ("approver", True, None, False), bind="archived:кто@dniprom.com~20261014-1200")
+check("адрес у другого Google-аккаунта — роли прежнего не достаются, новый входит «Просмотром»",
+      "reassigned" in ВХОДЫ and ЗАВЕДЕНО == ["кто@dniprom.com"] and u.role == auth.VIEWER and not ОТКАЗЫ)
+
+u = войти("чужой@gmail.com", ("approver", True, None, False), bind="archived:чужой@gmail.com~20261014-1200")
+check("исключение вне домена у другого Google-аккаунта — отказ, карточка не заводится",
+      not ЗАВЕДЕНО and ОТКАЗЫ)
 
 # --- 5. список страниц и список прав — один и тот же -------------------------
 check("у каждой страницы есть право видимости",
