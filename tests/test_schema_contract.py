@@ -200,6 +200,17 @@ def unique_keys() -> set[tuple[str, tuple[str, ...]]]:
                 for cols in re.findall(r"PRIMARY\s+KEY\s*\(([^)]+)\)", chunk, re.I):
                     by_name[(tbl, f"{tbl}_pkey")] = tuple(
                         c.strip() for c in cols.split(","))
+                # ключ на самой колонке: `idempotency_key text NOT NULL
+                # UNIQUE` (passport_answers) и `answer_id text PRIMARY KEY`.
+                # Без этого ON CONFLICT по такому ключу выглядел бы ссылкой
+                # на несуществующий.
+                for line in chunk.splitlines():
+                    m = re.match(r"\s*([a-z_][\w]*)\s+\w[^,]*?\bUNIQUE\b(?!\s*\()", line, re.I)
+                    if m:
+                        by_name[(tbl, f"{tbl}_{m.group(1)}_key")] = (m.group(1),)
+                    m = re.match(r"\s*([a-z_][\w]*)\s+\w[^,]*?\bPRIMARY\s+KEY\b(?!\s*\()", line, re.I)
+                    if m:
+                        by_name[(tbl, f"{tbl}_pkey")] = (m.group(1),)
     return {(tbl, cols) for (tbl, _name), cols in by_name.items()}
 
 
