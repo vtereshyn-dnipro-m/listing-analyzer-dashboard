@@ -27,6 +27,7 @@ import streamlit as st
 import auth
 from i18n import t
 from services import passport as pp
+from services import passport_intake as pi
 from services.passport import txt
 
 INK = "#1A1815"
@@ -309,19 +310,88 @@ def render_create(r: dict) -> None:
     if r.get("duplicate_of"):
         st.warning(t("pp.duplicate", skus=", ".join(r["duplicate_of"])))
         return
+    if r.get("has_passport"):
+        st.info(t("pp.create_exists", ver=r.get("passport_version") or "—"))
+    else:
+        st.info(t("pp.create_absent"))
+    rec = render_materials(r["sku"])
+    render_readiness(r, rec)
     row = st.container(horizontal=True, gap="small")
     if r.get("has_passport"):
         # Существующий Паспорт: безопасное основное действие — «Передать новые
         # данные», разрушительное «Создать новый Паспорт» — отдельно (ТЗ 10.4).
-        st.info(t("pp.create_exists", ver=r.get("passport_version") or "—"))
         _feature_disabled(row, "pp-delta-off", t("pp.act.DELTA"), "listing_suite.source_evidence_delta", True)
         _feature_disabled(row, "pp-recreate-off", t("pp.act.RECREATE"), "listing_suite.passport_recreate", False)
     else:
-        st.info(t("pp.create_absent"))
         _feature_disabled(row, "pp-create-off", t("pp.act.CREATE"), "listing_suite.passport_create", True)
     # Подсказка выключенной кнопки видна только при наведении — причина
     # обязана стоять текстом, иначе выключенная кнопка читается поломкой.
     st.caption(t("pp.stage_disabled"))
+
+
+def render_materials(sku: str) -> dict | None:
+    """Исходные материалы (ТЗ 10.3.2) и их пооб'єктная проверка до запуска
+    по политике приёма. Копии здесь не делаются — только проверка: куда класть
+    копию (`product_root`), ещё не решено, а без копии `ACCEPTED` не бывает.
+    Поэтому в таблице — «пройдёт приём», а не «принят»."""
+    profile, why = pi.load_profile()
+    if why:
+        st.error(t("pp.msg.INTAKE_POLICY_NOT_CONFIGURED"))
+        return None
+    files = st.file_uploader(t("pp.files"), accept_multiple_files=True, key=f"pp-files-{sku}",
+                             help=t("pp.files_help"))
+    st.text_area(t("pp.comment"), key=f"pp-comment-{sku}", placeholder=t("pp.comment_ph"), height=80)
+    st.caption(t("pp.upload_limit"))
+    if not files:
+        return None
+    cands = pi.from_uploads([(f.name, f.getvalue()) for f in files], profile["max_single_file_bytes"])
+    res, snap = pi.evaluate(cands, profile, pp.known_artifacts(sku))
+    rec = pi.receipt(res, profile, snap, actor_id=auth.current().actor, sku_id=sku, selection_root=pi.UPLOAD_ROOT)
+    if snap:
+        st.error(t("pp.snapshot_rejected", reason=t(f"pp.reason.{snap}")))
+    st.dataframe(pd.DataFrame({
+        "obj": [o["original_locator"].split("/", 1)[1] for o in rec["objects"]],
+        "type": [o["detected_mime_type"] or "—" for o in rec["objects"]],
+        "size": [o["size_bytes"] for o in rec["objects"]],
+        "res": [t("pp.access.READY" if o["access_result"] == "ACCEPTED" else f"pp.access.{o['access_result']}")
+                for o in rec["objects"]],
+        "why": [t(f"pp.reason.{o['reason_code']}") if o["reason_code"] else
+                (t("pp.dup_of", id=o["duplicate_of"]) if o["duplicate_of"] else "") for o in rec["objects"]],
+    }), hide_index=True, width="stretch", column_config={
+        "obj": st.column_config.TextColumn(t("pp.icol.obj")),
+        "type": st.column_config.TextColumn(t("pp.icol.type")),
+        "size": st.column_config.NumberColumn(t("pp.icol.size")),
+        "res": st.column_config.TextColumn(t("pp.icol.res")),
+        "why": st.column_config.TextColumn(t("pp.icol.why")),
+    })
+    ready = sum(o["access_result"] == "ACCEPTED" for o in rec["objects"])
+    st.caption(t("pp.intake_counts", ok=ready, bad=rec["rejected_source_count"], dup=rec["duplicate_count"]))
+    if rec["submission_status"] == "PARTIAL_REQUIRES_CONFIRMATION":
+        st.checkbox(t("pp.partial_ok", n=ready), key=f"pp-partial-{sku}")
+    elif rec["submission_status"] == "NO_ACCEPTED_OBJECTS":
+        st.warning(t("pp.msg.NO_ACCEPTED_SOURCE_OBJECTS"))
+    return rec
+
+
+def render_readiness(r: dict, rec: dict | None) -> None:
+    """Контроль перед запуском (ТЗ 10.3.4) — по пунктам и словами: что
+    готово и чего не хватает. Кнопка не включается, пока не готово всё."""
+    sku = r["sku"]
+    has_material = bool(rec) and rec["submission_status"] in ("READY_TO_SUBMIT", "PARTIAL_REQUIRES_CONFIRMATION") \
+        and (rec["submission_status"] == "READY_TO_SUBMIT" or st.session_state.get(f"pp-partial-{sku}", False))
+    items = [
+        ("sku", True),
+        ("dup", not r.get("duplicate_of")),
+        ("fresh", r.get("fresh") == pp.CURRENT),
+        ("material", has_material),
+        ("profile", pi.load_profile()[1] is None),
+        ("storage", False),          # product_root ещё не решён
+        ("authority", False),        # профиль полномочий не привязан (BINDING_REQUIRED)
+    ]
+    st.markdown(f"**{t('pp.check_title')}**")
+    st.markdown("<div>" + "".join(
+        f'<div style="font-size:13px;color:{OK_GREEN if ok else MUTED};">{"✓" if ok else "○"} '
+        f'{html.escape(t("pp.check." + k))}</div>' for k, ok in items) + "</div>", unsafe_allow_html=True)
 
 
 def _feature_disabled(box, key: str, label: str, flag: str, primary: bool) -> None:

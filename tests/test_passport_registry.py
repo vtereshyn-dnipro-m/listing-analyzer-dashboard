@@ -371,6 +371,11 @@ check("Создание при существующем Паспорте: «Пе
 check("8. обе выключены", btns["pp-delta-off"].disabled and btns["pp-recreate-off"].disabled)
 check("8. выключенность сказана текстом (FEATURE_DISABLED)",
       any("FEATURE_DISABLED" in str(c.value) for c in at.caption))
+_md = " ".join(str(m.value) for m in at.markdown)
+check("контроль перед запуском называет, чего не хватает: product_root и полномочия",
+      "product_root" in _md and "○" in _md and "Профиль полномочий" in _md)
+check("поле материалов на месте, тип файлов браузером не режется — отказ называет проверка",
+      any(getattr(w, "key", "") == "pp-files-22220000" for w in at.get("file_uploader")))
 
 at = page(**{"pp-sku": "55550000", "pp-tab": "create"})
 btns = {b.key: b for b in at.button}
