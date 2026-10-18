@@ -13,8 +13,10 @@ tests/test_autonomy.py — схема автономной работы (AGENTS.
    и ребут Streamlit Cloud — «ждёт меня».
 3. Проверяющий — отдельный агент без права правки, с теми же границами в
    своём списке.
-4. Скрипт сводки пишет ровно одну строку в таблицу Кабинета, помечает
-   шапку продуктом и не трогает секретов приложения.
+4. Скрипт сводки помечает шапку продуктом и не трогает ничьих учётных
+   данных. Владелец 19.10.2026 запретил брать роль Кабинета из его
+   `.mcp.json`, а канал записи ещё не выбран — поэтому скрипт не
+   подключается к базе вовсе.
 
 Запуск (pytest не нужен):  python tests/test_autonomy.py
 """
@@ -104,12 +106,17 @@ for what, needle in (("канон", "canon/ai_design_conveyor/"), ("отправ
 print("4. скрипт сводки цикла")
 cr_path = ROOT / "scratchpad" / "cycle_report.py"
 src = cr_path.read_text(encoding="utf-8")
-sql = re.findall(r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\b", src)
-check(f"пишет ровно одну строку: одна вставка и больше ничего ({sql})", sql == ["INSERT"])
-check("пишет в таблицу Кабинета", "kabinet_data.agent_cycle_reports" in src)
+code = "\n".join(l for l in src.splitlines() if not l.lstrip().startswith("#"))
+code = re.sub(r'(?s)^""".*?"""', "", code)  # докстринг описывает запрет и сам содержит слова
+sql = re.findall(r"\b(INSERT|UPDATE|DELETE|DROP|ALTER|CREATE)\b", code)
+check(f"канал записи не выбран — SQL в скрипте нет ({sql})", not sql)
+check("к базе не подключается (psycopg2, connect)", not re.search(r"psycopg2|\.connect\(", code))
+# Владелец 19.10.2026: роль Кабинета из его .mcp.json не брать. Проверка видит именно
+# эту форму чтения учётных данных, а не только секреты Streamlit.
+for needle in (".mcp.json", "LAKEBASE_DSN", "KABINET_ROOT", "kabinet-dashboard", "mcpServers"):
+    check(f"чужих учётных данных не читает: нет «{needle}»", needle not in code)
 check("секретов приложения не читает (st.secrets, cfg, secrets.toml)",
-      not re.search(r"st\.secrets|\bcfg\(|secrets\.toml|dbutils\.secrets", src))
-check("строку подключения не печатает", not re.search(r"print\([^)]*dsn", src, re.I))
+      not re.search(r"st\.secrets|\bcfg\(|secrets\.toml|dbutils\.secrets|os\.environ", code))
 spec = importlib.util.spec_from_file_location("cycle_report", cr_path)
 mod = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(mod)
