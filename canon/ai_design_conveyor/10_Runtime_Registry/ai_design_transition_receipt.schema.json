@@ -1,0 +1,38 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://dnipro-m.local/ai-design/ai_design_transition_receipt.schema.json",
+  "title":"AI Design State Transition Receipt",
+  "type":"object",
+  "additionalProperties":false,
+  "required":["schema_version","transition_id","run_id","graph_version","decision_id","edge_id","source_node_id","target_node_id","input_state_path","input_state_sha256","decision_path","decision_sha256","edge_registry_sha256","output_state_path","output_state_sha256","checkpoint_id","checkpoint_payload_sha256","artifact_binding_sha256","side_effect_ledger_sha256","state_delta_applied","verdict","applied_at","writer_version"],
+  "properties": {
+    "schema_version":{"const":"1.0"},
+    "transition_id":{"type":"string","pattern":"^TRANSITION-[A-Z0-9][A-Z0-9_-]+$"},
+    "run_id":{"type":"string","pattern":"^RUN-[A-Z0-9][A-Z0-9_-]+$"},
+    "graph_version":{"type":"string","minLength":1},
+    "decision_id":{"type":"string","pattern":"^ROUTE-[A-Z0-9][A-Z0-9_-]+$"},
+    "edge_id":{"type":"string","pattern":"^E[0-9]{3}_[A-Z0-9_]+$"},
+    "source_node_id":{"type":"string","pattern":"^N[0-9]{3}_[A-Z0-9_]+$"},
+    "target_node_id":{"type":"string","pattern":"^N[0-9]{3}_[A-Z0-9_]+$"},
+    "input_state_path":{"type":"string","minLength":1},
+    "input_state_sha256":{"$ref":"#/$defs/sha256"},
+    "decision_path":{"type":"string","minLength":1},
+    "decision_sha256":{"$ref":"#/$defs/sha256"},
+    "edge_registry_sha256":{"$ref":"#/$defs/sha256"},
+    "output_state_path":{"type":"string","minLength":1},
+    "output_state_sha256":{"$ref":"#/$defs/sha256"},
+    "checkpoint_id":{"type":"string","pattern":"^CHECKPOINT-[A-Z0-9][A-Z0-9_-]+$"},
+    "checkpoint_payload_sha256":{"$ref":"#/$defs/sha256"},
+    "artifact_binding_sha256":{"$ref":"#/$defs/sha256"},
+    "side_effect_ledger_sha256":{"$ref":"#/$defs/sha256"},
+    "state_delta_applied": {
+      "type":"object","additionalProperties":false,
+      "required":["lifecycle_state","source_completed","target_activated","artifact_status_updates"],
+      "properties":{"lifecycle_state":{"type":"string","minLength":1},"source_completed":{"type":"boolean"},"target_activated":{"type":"boolean"},"artifact_status_updates":{"type":"array","items":{"type":"string","minLength":1}}}
+    },
+    "verdict":{"const":"TRANSITION_APPLIED"},
+    "applied_at":{"type":"string","format":"date-time"},
+    "writer_version":{"type":"string","pattern":"^[0-9]+\\.[0-9]+$"}
+  },
+  "$defs":{"sha256":{"type":"string","pattern":"^[a-fA-F0-9]{64}$"}}
+}

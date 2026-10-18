@@ -1,0 +1,15 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "$id":"https://dnipro-m.local/ai-design/ai_design_gate_input_build_manifest.schema.json",
+  "title":"AI Design Gate Input Build Manifest",
+  "type":"object","additionalProperties":false,
+  "required":["schema_version","build_id","run_id","run_state_sha256","active_node_ids","outputs","unresolved_fact_ids","external_side_effects_executed","created_at","builder_version"],
+  "properties":{
+    "schema_version":{"const":"1.0"},"build_id":{"type":"string","pattern":"^GATEBUILD-[A-Z0-9][A-Z0-9_-]+$"},
+    "run_id":{"type":"string","minLength":1},"run_state_sha256":{"type":"string","pattern":"^[a-fA-F0-9]{64}$"},
+    "active_node_ids":{"type":"array","uniqueItems":true,"items":{"type":"string"}},
+    "outputs":{"type":"array","items":{"type":"object","additionalProperties":false,"required":["edge_id","path","sha256","resolved_fact_ids","unresolved_fact_ids"],"properties":{"edge_id":{"type":"string"},"path":{"type":"string"},"sha256":{"type":"string","pattern":"^[a-fA-F0-9]{64}$"},"resolved_fact_ids":{"type":"array","uniqueItems":true,"items":{"type":"string"}},"unresolved_fact_ids":{"type":"array","uniqueItems":true,"items":{"type":"string"}}}}},
+    "unresolved_fact_ids":{"type":"array","uniqueItems":true,"items":{"type":"string"}},
+    "external_side_effects_executed":{"const":0},"created_at":{"type":"string","format":"date-time"},"builder_version":{"const":"1.0"}
+  }
+}

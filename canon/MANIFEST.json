@@ -2,7 +2,7 @@
  "snapshot_of": "AI Design Conveyor",
  "source_archive": "AI Design Conveyor.zip",
  "source_archive_sha256": "25c10792652396cac10fe4652749c7e0618e4d9fcc658cbaf5392d3e744fbdb6",
- "built_at": "2026-10-07T12:27:21+00:00",
+ "built_at": "2026-10-15T08:42:26+00:00",
  "rule": "byte copy, never edited; newest version only, except SHA-addressed parents",
  "files": [
   {
@@ -1182,6 +1182,12 @@
    "version": null
   },
   {
+   "path": "10_Runtime_Registry/AI_DESIGN_E2E_SHADOW_SCENARIOS.json",
+   "sha256": "b509b0842137395f27a0e054206970e7cecbf85922e13a84a70a133616b865f4",
+   "bytes": 6543,
+   "version": "1.0"
+  },
+  {
    "path": "10_Runtime_Registry/AI_DESIGN_EXECUTION_GRAPH_CONTRACT.md",
    "sha256": "0fb72c5640a54c52d29a486f7bfb7786361a4d44f102d1d9a5b9dca151e75ed8",
    "bytes": 42144,
@@ -1191,6 +1197,18 @@
    "path": "10_Runtime_Registry/AI_DESIGN_EXECUTION_LEASE_AND_IDEMPOTENCY_CONTRACT.md",
    "sha256": "ba4980349fb9c471d8f39e1d1193da22c473964a7e7f9067aa5034f16bdddf78",
    "bytes": 2335,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_GATE_FACT_PROVIDER_REGISTRY.json",
+   "sha256": "25451efcfe4fe8329661405f9a35bc281ab6853a59cbb85588e22a61ac4b8428",
+   "bytes": 69663,
+   "version": "1.0"
+  },
+  {
+   "path": "10_Runtime_Registry/AI_DESIGN_GATE_FACT_RESOLVER_CONTRACT.md",
+   "sha256": "6f4b37205a8f69306390a6e83eb903214c61ee62f3aaf194eb5da127371089d7",
+   "bytes": 3277,
    "version": null
   },
   {
@@ -1254,9 +1272,57 @@
    "version": null
   },
   {
+   "path": "10_Runtime_Registry/AI_DESIGN_SHADOW_RUN_CONTRACT.md",
+   "sha256": "b379b7d2e4b27e163b156dd30d392ef64443b63a76f1edaf84a538c89aa0a8f0",
+   "bytes": 4341,
+   "version": null
+  },
+  {
    "path": "10_Runtime_Registry/AI_DESIGN_STATE_TRANSITION_WRITER_CONTRACT.md",
    "sha256": "e72eb11cbe847d78db05652ddde7affc0dece4be681d229368c14151befc7c03",
    "bytes": 5782,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/Invoke-AIDesignGateEvaluation.ps1",
+   "sha256": "1da51a101c384158534ce996b8b8330f75b8b49c4f89950e8e75b0e6585b6f39",
+   "bytes": 9238,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/Invoke-AIDesignShadowRun.ps1",
+   "sha256": "39ab2b911df556eb01a4bce17e1d483ce973277bb6f16819fb293cf8816df6a0",
+   "bytes": 7626,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/Invoke-AIDesignStateTransition.ps1",
+   "sha256": "d21903c56c1959dec76debe0dce50e1f2a1baab832a57de0e16200ae7a8d02af",
+   "bytes": 10419,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/New-AIDesignControlledRunState.ps1",
+   "sha256": "fb98f15dbeb9b24580871a376af85524afb3e47f20bcb7e4ec9924439900fb95",
+   "bytes": 4673,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/New-AIDesignGateInputs.ps1",
+   "sha256": "7d3a8d3b4c7c14f5931ea00c86fc2bf2d88dd33d66aa7b03a5a92f761d16e744",
+   "bytes": 9255,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/New-AIDesignRouterDecision.ps1",
+   "sha256": "761a036c64b63a28a77551eb3cd669e28e0996d47e039a4f353675c3fada1a28",
+   "bytes": 6410,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/Resolve-AIDesignTerminationBudget.ps1",
+   "sha256": "a9c118194dfae3501065fe425badddc886d2fad2258874f1198a41874e95b9fc",
+   "bytes": 3952,
    "version": null
   },
   {
@@ -1269,6 +1335,36 @@
    "path": "10_Runtime_Registry/ai_design_checkpoint_acceptance_receipt.schema.json",
    "sha256": "0ac782e58e0aa1d9d6650eb71920643bca828327f33fbe9bd6ae5a2d7db2b928",
    "bytes": 4121,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_gate_evaluation.schema.json",
+   "sha256": "21aac92aa88fbc1d3800f93c923aafcbe2cd8483dacad23fa6ac0230465cc249",
+   "bytes": 3212,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_gate_evidence_bundle.schema.json",
+   "sha256": "e81412aaf6b4515bd959e80e9fe864b457cbed2302c357569a166fb05d8943ef",
+   "bytes": 3470,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_gate_fact_provider_registry.schema.json",
+   "sha256": "9aa6a56e2cae0a773e3933d1b3a96655b52a485cb30c24a003e848074c22bcf9",
+   "bytes": 2208,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_gate_input.schema.json",
+   "sha256": "5217bb63f4d79b1667639f4b46b89af0800c80a4f409661add4c5cb4e3eedef3",
+   "bytes": 2841,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_gate_input_build_manifest.schema.json",
+   "sha256": "43cdcb8ad8fd8cd7c7a36b2b1ae86b0b0e581c19fe3c9586036e1f07727ed27c",
+   "bytes": 1452,
    "version": null
   },
   {
@@ -1296,9 +1392,45 @@
    "version": null
   },
   {
+   "path": "10_Runtime_Registry/ai_design_rework_budget_ledger.schema.json",
+   "sha256": "4235c6687af6efc410f3f99ccc45c73712602e1cf31d833b10c80ecf4a820947",
+   "bytes": 2660,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_router_decision.schema.json",
+   "sha256": "e13832dd40d68d6418e92c5aedeff11358776882867b163dacbc92ea1299d2c1",
+   "bytes": 4095,
+   "version": null
+  },
+  {
    "path": "10_Runtime_Registry/ai_design_run_state.schema.json",
    "sha256": "734e63dd0119eac0d169ccd4825218d6816c03ee15e4c5c9f0b32be440eef840",
    "bytes": 14191,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_shadow_run_report.schema.json",
+   "sha256": "ff9dc91832aaf89609e91cb647fb17781784ef6de088c278b98ced6ea87e74ab",
+   "bytes": 2584,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_termination_budget_receipt.schema.json",
+   "sha256": "dcdfb0a81665f9018baf22e5e18814da436c68f708772e7b587600c7ce364c00",
+   "bytes": 717,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_termination_budget_request.schema.json",
+   "sha256": "f8616ba62b7859e70f7a1a1cd963466196f3f6e8282afef36ee05e63ac80b154",
+   "bytes": 896,
+   "version": null
+  },
+  {
+   "path": "10_Runtime_Registry/ai_design_transition_receipt.schema.json",
+   "sha256": "b7c6879bc1faa975dab3b04e1f3565213844f389f09dedd715812b0ff0b22da5",
+   "bytes": 2536,
    "version": null
   }
  ]

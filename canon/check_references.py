@@ -126,7 +126,71 @@ def run_state_gaps() -> list[str]:
     return out
 
 
-def render(rows: list[dict], gaps: list[tuple[str, str, int, int]], state: list[str]) -> str:
+GUARD_ATOM = re.compile(
+    r"^[a-z][a-z0-9_]*\s*(?:==\s*(?:true|false|-?[0-9]+(?:\.[0-9]+)?|[A-Z][A-Z0-9_]*)"
+    r"|>\s*-?[0-9]+(?:\.[0-9]+)?|\s+IN\s+\[[A-Z0-9_, ]+\]|\s+IN\s+[a-z][a-z0-9_]*)$")
+
+
+def engine_gaps() -> list[str]:
+    """Эталонные скрипты движка против своих контрактов и друг друга —
+    то, что видно по файлам, без запуска."""
+    reg = os.path.join(SNAP, "10_Runtime_Registry")
+    rd = lambda n: open(os.path.join(reg, n), encoding="utf-8").read()  # noqa: E731
+    out = []
+    contract_v = re.search(r"Версия:\s*`([0-9.]+)`", rd("AI_DESIGN_EXECUTION_GRAPH_CONTRACT.md")).group(1)
+    want = f"AI-DESIGN-GRAPH-{contract_v}"
+    pinned = {"AI_DESIGN_GATE_FACT_PROVIDER_REGISTRY.json": json.loads(rd("AI_DESIGN_GATE_FACT_PROVIDER_REGISTRY.json"))["graph_version"],
+              "AI_DESIGN_E2E_SHADOW_SCENARIOS.json": json.loads(rd("AI_DESIGN_E2E_SHADOW_SCENARIOS.json"))["graph_version"]}
+    # Скрипт присваивает версию дважды (1.8, затем 2.5) — действует последнее.
+    m = re.findall(r"graph_version='(AI-DESIGN-GRAPH-[0-9.]+)'", rd("New-AIDesignControlledRunState.ps1"))
+    if m:
+        pinned["New-AIDesignControlledRunState.ps1"] = m[-1]
+    off = {k: v for k, v in pinned.items() if v != want}
+    if off:
+        out.append(f"Контракт графа — версия `{contract_v}`, а версия графа `{want}` не совпадает в: "
+                   + ", ".join(f"`{k}` (`{v}`)" for k, v in off.items())
+                   + ". Факт `graph_version_compatible` сравнивает с реестром поставщиков и поэтому "
+                     "ложен для запуска, закреплённого по контракту, — ребро E310 закрыто.")
+    edges = json.loads(rd("AI_DESIGN_CORE_EDGE_REGISTRY.json"))["edges"]
+    bad = [(e["edge_id"], a.strip()) for e in edges for a in re.split(r"\s+AND\s+", e["guard_expression"])
+           if not GUARD_ATOM.match(a.strip())]
+    if bad:
+        out.append("Условия вне грамматики `Invoke-AIDesignGateEvaluation.ps1` (эталон бросает "
+                   "исключение, ребро не вычисляется): " + "; ".join(f"`{e}`: `{a}`" for e, a in bad) + ".")
+    providers = json.loads(rd("AI_DESIGN_GATE_FACT_PROVIDER_REGISTRY.json"))["providers"]
+    derived = [p["fact_id"] for p in providers if p["provider_kind"] == "RUN_STATE_DERIVATION"]
+    closed = set(re.findall(r"'([a-z_]+)'\{", rd("New-AIDesignGateInputs.ps1")))
+    used = {f for e in edges for f in re.findall(r"\b([a-z][a-z0-9_]*)\b", e["guard_expression"])}
+    open_ = sorted(f for f in derived if f not in closed and f in used)
+    out.append(f"Фактов вида `RUN_STATE_DERIVATION` в реестре поставщиков {len(derived)}, закрытых функций "
+               f"в `New-AIDesignGateInputs.ps1` — {len(closed & set(derived))}. Без функции и потому всегда "
+               f"UNRESOLVED ({len(open_)}): " + ", ".join(f"`{f}`" for f in open_) + ".")
+    writer = rd("Invoke-AIDesignStateTransition.ps1")
+    if "Resolve-AIDesignTerminationBudget" not in writer:
+        out.append("`Invoke-AIDesignStateTransition.ps1` не вызывает `Resolve-AIDesignTerminationBudget.ps1`, "
+                   "хотя `AI_DESIGN_STATE_TRANSITION_WRITER_CONTRACT.md` (правила 13–16) требует квитанцию "
+                   "бюджета до записи. Обратные рёбра в эталоне ничем не ограничены.")
+    if re.search(r"available_edge_ids\s*=.*-notin @\(\$next\.edge_state\.applied_edge_ids\)", writer):
+        out.append("`Invoke-AIDesignStateTransition.ps1` исключает применённые рёбра из доступных, а правило 8 "
+                   "контракта записи делает доступными все исходящие рёбра активных узлов. По эталону ребро "
+                   "переделки срабатывает один раз за запуск, и бюджет «3 переделки на ассет» недостижим.")
+    classes = sorted({e["edge_class"] for e in edges})
+    events = json.loads(rd("ai_design_termination_budget_request.schema.json"))["properties"]["event_class"]["enum"]
+    if not any("edge_class" in open(os.path.join(dp, f), encoding="utf-8", errors="ignore").read()
+               and "event_class" in open(os.path.join(dp, f), encoding="utf-8", errors="ignore").read()
+               for dp, _, fs in os.walk(SNAP) for f in fs if f.endswith((".md", ".json"))):
+        out.append("Сопоставление класса ребра (" + ", ".join(f"`{c}`" for c in classes) + ") классу события "
+                   "бюджета (" + ", ".join(f"`{c}`" for c in events) + ") в каноне не задано.")
+    schema = json.loads(rd("ai_design_run_state.schema.json"))
+    if "pinned_product_truth" in schema["required"] and \
+            "sha256" in schema["$defs"]["pinnedArtifact"]["required"]:
+        out.append("`ai_design_run_state.schema.json` требует `pinned_product_truth` с путём, версией и SHA "
+                   "существующего Паспорта — запуск первичного создания (Паспорта ещё нет) схемой не представим.")
+    return out
+
+
+def render(rows: list[dict], gaps: list[tuple[str, str, int, int]], state: list[str],
+           engine: list[str] = ()) -> str:
     out = ["# Расхождения в каноне AI Design Conveyor", "",
            "Производный отчёт `canon/check_references.py` по снимку `canon/MANIFEST.json`.",
            "Канон не правится; код берёт ФАЙЛ из снимка, а не версию из ссылки.", "",
@@ -146,11 +210,14 @@ def render(rows: list[dict], gaps: list[tuple[str, str, int, int]], state: list[
         out.append("Расхождений нет.")
     out += ["", "## 3. Схема состояния запуска", ""]
     out += [f"- {s}" for s in state] if state else ["Расхождений нет."]
+    out += ["", "## 4. Эталонные скрипты движка против контрактов", "",
+            "Движок Listing Suite (`services/graph_*.py`) следует контракту там, где скрипт с ним расходится.", ""]
+    out += [f"- {s}" for s in engine] if engine else ["Расхождений нет."]
     return "\n".join(out) + "\n"
 
 
 def report_text() -> str:
-    return render(scan(), registry_gaps(), run_state_gaps())
+    return render(scan(), registry_gaps(), run_state_gaps(), engine_gaps())
 
 
 if __name__ == "__main__":
