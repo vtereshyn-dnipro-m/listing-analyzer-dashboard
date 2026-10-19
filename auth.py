@@ -675,8 +675,16 @@ def _telegram(text: str):
         w.secrets.get_secret(scope="kabinet-alerts", key="telegram-bot-token").value).decode()
     chat = base64.b64decode(
         w.secrets.get_secret(scope="kabinet-alerts", key="telegram-chat-id").value).decode()
-    requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
-                  json={"chat_id": chat, "text": text, "parse_mode": "HTML"}, timeout=10)
+    try:
+        requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
+                      json={"chat_id": chat, "text": text, "parse_mode": "HTML"}, timeout=10)
+    except requests.RequestException as e:
+        # requests кладёт URL запроса — с токеном бота — в текст исключения, а вызывающие пишут его в общий журнал
+        # «Доступа» (вкладка «Журнал Listing Suite»), который видно на экране. Наружу — только тип ошибки и текст без
+        # токена (так же, как в Кабинете, kabinet-dashboard #329)
+        import re
+        raise RuntimeError(f"{type(e).__name__}: "
+                           + re.sub(r"bot\d+:[\w-]+", "bot<токен>", str(e))[:150]) from None
 
 
 def _admit_work_email(email, name, created: bool, sub: str = "") -> bool:
