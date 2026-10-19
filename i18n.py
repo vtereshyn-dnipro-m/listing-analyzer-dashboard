@@ -17,6 +17,7 @@ DEFAULT_LANG = "ru"
 LANGS: dict[str, dict[str, str]] = {
     "en": {
         "app.tagline": "work with Amazon listings",
+        "app.version": "Code version: {v}",
         "nav.section.work": "Work",
         "nav.section.control": "Control",
         "nav.section.settings": "Management",
@@ -1215,6 +1216,7 @@ LANGS: dict[str, dict[str, str]] = {
     },
     "ru": {
         "app.tagline": "работа с листингами Amazon",
+        "app.version": "Версия кода: {v}",
         "nav.section.work": "Работа",
         "nav.section.control": "Контроль",
         "nav.section.settings": "Управление",
@@ -2413,6 +2415,7 @@ LANGS: dict[str, dict[str, str]] = {
     },
     "uk": {
         "app.tagline": "робота з лістингами Amazon",
+        "app.version": "Версія коду: {v}",
         "nav.section.work": "Робота",
         "nav.section.control": "Контроль",
         "nav.section.settings": "Керування",
