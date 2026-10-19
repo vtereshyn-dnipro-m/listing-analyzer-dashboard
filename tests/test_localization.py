@@ -346,6 +346,11 @@ at.session_state["loc-sync-report"] = {}
 # и главное — что галочка ДЕЙСТВУЕТ, а не украшает экран
 PARSED_WITH: list = []
 fg_mod = __import__("services.figma", fromlist=["figma"])
+# Кнопка чтения выключена, пока нет FIGMA_TOKEN и FIGMA_FILE_KEY. Тест не должен
+# зависеть от того, лежат ли настоящие секреты рядом: в CI и в чистой копии их нет
+# (T-15). Сеть подменена ниже, поэтому подменяется и проверка секретов.
+_real_missing = fg_mod.missing_secrets
+fg_mod.missing_secrets = lambda: []
 _real_parse = fg_mod.parse_document
 fg_mod.fetch_document = lambda key=None: {"document": {"children": []}}
 fg_mod.parse_document = lambda doc, only_asins=None: (
@@ -390,6 +395,7 @@ _errs = " ".join(str(e.value) for e in at.error)
 check(f"обычный лимит — срок в секундах и словами ({_errs[:80]})",
       "399 секунд" in _errs and "7 мин" in _errs)
 fg_mod.fetch_document = _real_fetch
+fg_mod.missing_secrets = _real_missing
 
 # --- 6. картинки: миниатюра в списке и превью в редакторе
 # По названию товары не различаются — «Blower DCB-201BC» и «Blower
