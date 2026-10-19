@@ -98,7 +98,8 @@ check("проверяющий есть, имя pr-reviewer", meta.get("name", ""
 check(f"инструменты только на чтение ({sorted(tools)})", tools and not tools & {"Edit", "Write", "NotebookEdit", "Agent"})
 check("не правит, не мержит, не зовёт модели", all(w in rv for w in ("не правишь", "не мержишь", "не зовёшь модели")))
 for what, needle in (("канон", "canon/ai_design_conveyor/"), ("отправка в Amazon", "services/spapi.py"),
-                     ("вызовы моделей", "services/ai.py"), ("весь набор тестов", "tests/test_*.py"),
+                     ("вызовы моделей", "services/ai.py"), ("весь набор тестов", "tests/run_all.py"),
+                     ("без зелёного CI «ок» нет", "CI на последнем коммите PR не зелёный"),
                      ("вердикт первой строкой", "Проверка: ок")):
     check(f"в списке проверяющего: {what}", needle in rv)
 
