@@ -1794,6 +1794,7 @@ python tests/test_no_deprecations.py
 python tests/test_card_states.py
 python tests/test_cache_invalidation.py
 python tests/test_deploy_sync.py
+python tests/test_telegram_token_redaction.py
 python tests/test_feed.py
 python tests/test_methodology_page.py
 python tests/test_i18n_sync.py
@@ -2274,6 +2275,16 @@ JSON-схем: каждая даёт ожидаемый схемный исхо�
   те же границы;
 - скрипт сводки не подключается к базе и не читает ничьих учётных данных:
   ни `.mcp.json`, ни строки подключения, ни репозитория Кабинета.
+
+`test_telegram_token_redaction.py` — токен бота Telegram не попадает в
+текст ошибки `_telegram` (T-7, #137). `requests` кладёт URL с токеном в
+текст исключения, а `auth.py` пишет `str(e)[:120]` в журнал, который виден
+на экране «Доступ». Проверяется, что:
+
+- ошибка — `RuntimeError` с `bot<токен>` вместо токена;
+- исходное исключение не прицеплено.
+
+Мутация «`auth.py` до #137» валит все четыре проверки.
 
 `test_length_guard.py` — гарантия лимита: запас в промпте, автоповтор,
 обрезка по границе слова, отказ резать при потере must_keep.
