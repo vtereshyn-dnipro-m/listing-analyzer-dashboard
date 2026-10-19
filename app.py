@@ -10,6 +10,11 @@ import re
 
 import streamlit as st
 
+# Первой строкой, до импорта модулей проекта: после мержа Streamlit Cloud подтягивает файлы, но не перезапускает
+# процесс — модули и кэши остались бы старыми. Сменился коммит — сброс кэшей и перечитывание модулей (deploy_sync.py).
+import deploy_sync
+deploy_sync.sync()
+
 from config import APP_NAME, days_to_deadline
 import i18n as i18n_mod
 from i18n import t, lang_selector
@@ -156,6 +161,8 @@ with st.sidebar:
         st.markdown(t("sidebar.deadline", days=d))
     else:
         st.markdown(t("sidebar.deadline_passed"))
+    # версия кода: по ней видно, что мерж доехал без ребута (новый номер и подпись на языке, а не ключом)
+    st.caption(t("app.version", v=deploy_sync.version()))
 
 # ---------------------------------------------------------------- запуск
 # ВРЕМЕННО: панель замера памяти. Ставится ДО nav.run(), чтобы показать
