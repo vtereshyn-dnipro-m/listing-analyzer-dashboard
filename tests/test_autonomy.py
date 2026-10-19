@@ -214,6 +214,34 @@ try:
         [c for c in CALLS if c[0] == "execute"]) == 1)
     long = srv_mod.row("x" * 500, done="y" * 9000)
     check("длинное обрезается по пределам сообщения", len(long[0]) == srv_mod.TITLE_MAX and len(long[1]) == srv_mod.FIELD_MAX)
+
+    # Пароль не уходит агенту через текст ошибки. libpq цитирует куски строки подключения
+    # («invalid percent-encoded token: "<пароль>"») — найдено проверяющим PR #140.
+    PW = "Fake%zzPass123"
+    os.environ["LAKEBASE_DSN"] = f"postgresql://claude_code_report:{PW}@localhost:1/db"
+
+    def _bad_connect(dsn, **kw):
+        raise psycopg2.ProgrammingError(f'invalid dsn: invalid percent-encoded token: "{PW}"')
+
+    psycopg2.connect = _bad_connect
+    r = srv_mod.write_cycle_report("Цикл")
+    check(f"сбой подключения — без текста драйвера и без пароля ({r.get('error', '')[:60]})",
+          r.get("ok") is False and PW not in str(r) and "zzPass" not in str(r) and "ProgrammingError" in str(r))
+
+    class _BadCur(_Cur):
+        def execute(self, sql, params=None):
+            raise psycopg2.Error(f"permission denied; dsn {os.environ['LAKEBASE_DSN']}")
+
+    class _BadCon(_Con):
+        def cursor(self):
+            return _BadCur()
+
+    psycopg2.connect = lambda dsn, **kw: _BadCon()
+    r = srv_mod.write_cycle_report("Цикл")
+    check("сбой запроса — текст есть, пароль вырезан",
+          r.get("ok") is False and "permission denied" in r.get("error", "") and PW not in str(r) and "zzPass" not in str(r))
+    kv = srv_mod.secret_parts("host=h user=u password=Abc%41def dbname=d")
+    check("пароль находится и в форме key=value, и раскодированным", "Abc%41def" in kv and "AbcAdef" in kv)
 finally:
     psycopg2.connect = _real_connect
     os.environ.pop("LAKEBASE_DSN", None)
@@ -234,19 +262,35 @@ cols = re.search(r"CREATE TABLE IF NOT EXISTS listing_data\.agent_cycle_reports 
 names = [c.strip().split()[0] for c in re.split(r",\s*\n", cols.group(1)) if c.strip()] if cols else []
 check(f"таблица той же формы, что у Кабинета ({names})",
       names == ["id", "created_at", "title", "done", "merged", "waiting", "problems", "sent_at", "send_error", "attempts"])
-agent_grants = re.findall(r"GRANT ([^;]*?) TO claude_code_report", mig_code, re.S)
-flat = " ".join(" ".join(g.split()) for g in agent_grants)
-check(f"роли агента — вставка пяти колонок, последовательность и схема, больше ничего ({len(agent_grants)})",
-      "INSERT (title, done, merged, waiting, problems)" in flat
-      and not any(w in flat for w in ("SELECT", "UPDATE", "sent_at", "ALL")))
-check("приложению права схемы по умолчанию сняты", 'FROM "583bf6d1-6cd0-4a89-9c44-b387ec5c21cb"' in mig_code)
+# Права сверяются НА РАВЕНСТВО со всем набором GRANT/REVOKE файла, а не поиском запрещённых слов:
+# лишний грант любой формы (вся таблица, другая таблица, членство в роли, имя в кавычках) должен
+# валить тест. Так их нашёл проверяющий PR #140: шесть мутаций из семи прошли слова-запреты.
+APP, KAB = "583bf6d1-6cd0-4a89-9c44-b387ec5c21cb", "b1698364-6ec5-4240-8cd6-e06dd6e60856"
+
+
+def acl(sql_text: str) -> set:
+    code = "\n".join(l.split("--")[0] for l in sql_text.splitlines())
+    stmts = re.findall(r"\b(?:GRANT|REVOKE)\b[^;]*;", code)
+    return {" ".join(s.replace('"', "").rstrip(";").split()) for s in stmts}
+
+
+T, SEQ = "listing_data.agent_cycle_reports", "listing_data.agent_cycle_reports_id_seq"
+want_mig = {f"REVOKE ALL ON {T} FROM {APP}",
+            f"REVOKE ALL ON SEQUENCE {SEQ} FROM {APP}",
+            "GRANT USAGE ON SCHEMA listing_data TO claude_code_report",
+            f"GRANT INSERT (title, done, merged, waiting, problems) ON {T} TO claude_code_report",
+            f"GRANT USAGE ON SEQUENCE {SEQ} TO claude_code_report"}
+got_mig = acl(mig)
+check(f"права в миграции — ровно ожидаемые (лишние: {sorted(got_mig - want_mig)}, нет: {sorted(want_mig - got_mig)})",
+      got_mig == want_mig)
+check("нет ALTER DEFAULT PRIVILEGES и смены владельца", not re.search(r"(?i)ALTER\s+(DEFAULT|TABLE[^;]*OWNER)", mig_code))
 kg = (ROOT / "migrations" / "2026-10-19_agent_cycle_reports_kabinet_grants.sql").read_text(encoding="utf-8")
-kg_code = " ".join("\n".join(l.split("--")[0] for l in kg.splitlines()).split())
-kab = re.findall(r'GRANT (.*?) TO "b1698364-6ec5-4240-8cd6-e06dd6e60856"', kg_code)
-check(f"задаче Кабинета — чтение и отметка отправки, без правки текста ({kab})",
-      "SELECT ON listing_data.agent_cycle_reports" in kab
-      and "UPDATE (sent_at, send_error, attempts) ON listing_data.agent_cycle_reports" in kab
-      and not any(w in " ".join(kab) for w in ("INSERT", "title", "ALL")))
+want_kg = {f"GRANT USAGE ON SCHEMA listing_data TO {KAB}",
+           f"GRANT SELECT ON {T} TO {KAB}",
+           f"GRANT UPDATE (sent_at, send_error, attempts) ON {T} TO {KAB}"}
+got_kg = acl(kg)
+check(f"права задачи Кабинета — ровно ожидаемые (лишние: {sorted(got_kg - want_kg)}, нет: {sorted(want_kg - got_kg)})",
+      got_kg == want_kg)
 check("файл прав Кабинета помечен «применять вместе с PR Кабинета»", "НЕ ПРИМЕНЯТЬ ОТДЕЛЬНО" in kg)
 
 print()

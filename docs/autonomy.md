@@ -167,7 +167,9 @@
 3. Владелец добавляет в локальный `.mcp.json` сервер `ls-cycle-report`:
    команда та же, что у `lakebase-listing` (`uv run --script`), скрипт
    `mcp_servers/cycle_report.py`, в `env` — `LAKEBASE_DSN` роли
-   `claude_code_report`.
+   `claude_code_report`. Пароль в URI — процентным кодированием (`%` →
+   `%25`, `@` → `%40`): иначе libpq строку не разберёт. Сервер в этом
+   случае текст драйвера не показывает — в нём был бы пароль.
 4. PR Кабинета (задача отправки со вторым источником) и вместе с ним
    `migrations/2026-10-19_agent_cycle_reports_kabinet_grants.sql`.
 5. Пробная сводка: агент вызывает `write_cycle_report` с шапкой

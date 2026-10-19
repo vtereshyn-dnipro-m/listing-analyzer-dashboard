@@ -24,6 +24,8 @@ RETURNING: он требует права на чтение.
 Отправляет сводку в бот задача Кабинета «Kabinet - Agent Cycle Report» (docs/autonomy.md).
 """
 import os
+import re
+from urllib.parse import unquote
 
 import psycopg2
 from fastmcp import FastMCP
@@ -71,17 +73,39 @@ def write_cycle_report(title: str, done: str = "", merged: str = "", waiting: st
     dsn = os.environ.get("LAKEBASE_DSN")
     if not dsn:
         return {"ok": False, "error": "у сервера ls-cycle-report нет LAKEBASE_DSN — его подключение заводит владелец (docs/autonomy.md, «Как включить»)"}
+    # Сбой ПОДКЛЮЧЕНИЯ наружу идёт без текста драйвера: libpq цитирует в нём куски строки подключения,
+    # и при неверно закодированном пароле в ответ агенту ушёл бы пароль целиком
+    # («invalid percent-encoded token: "<пароль>"» — проверено проверяющим PR #140).
     try:
         con = psycopg2.connect(dsn, connect_timeout=20)
-        try:
-            with con, con.cursor() as cur:
-                cur.execute(INSERT_SQL, values)
-        finally:
-            con.close()
-    except Exception as e:  # noqa: BLE001 — наружу первая строка, без трассировки и без DSN
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "error": f"подключиться не удалось ({type(e).__name__}"
+                                      f"{', код ' + e.pgcode if getattr(e, 'pgcode', None) else ''}); "
+                                      "текст драйвера не показывается — в нём бывает строка подключения. "
+                                      "Проверить подключение сервера ls-cycle-report у владельца "
+                                      "(пароль в URI — процентным кодированием)"}
+    try:
+        with con, con.cursor() as cur:
+            cur.execute(INSERT_SQL, values)
+    except Exception as e:  # noqa: BLE001 — наружу первая строка, без трассировки
         first = str(e).strip().splitlines()[0] if str(e).strip() else type(e).__name__
-        return {"ok": False, "error": first}
+        return {"ok": False, "error": scrub(first, dsn)}
+    finally:
+        con.close()
     return {"ok": True, "title": values[0]}
+
+
+def secret_parts(dsn: str) -> list[str]:
+    """Пароль из строки подключения в обеих формах (URI и key=value), как есть и раскодированный."""
+    found = re.findall(r"://[^:/@\s]+:([^@\s]+)@", dsn) + re.findall(r"\bpassword\s*=\s*'?([^'\s]+)", dsn)
+    return sorted({p for v in found for p in (v, unquote(v)) if len(p) >= 4}, key=len, reverse=True)
+
+
+def scrub(text: str, dsn: str) -> str:
+    """Страховка для ошибок запроса: в них строки подключения быть не должно, но если вдруг — не наружу."""
+    for part in secret_parts(dsn):
+        text = text.replace(part, "<скрыто>")
+    return text
 
 
 if __name__ == "__main__":
