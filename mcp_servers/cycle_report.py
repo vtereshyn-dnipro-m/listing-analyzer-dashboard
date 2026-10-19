@@ -97,7 +97,8 @@ def write_cycle_report(title: str, done: str = "", merged: str = "", waiting: st
 
 def secret_parts(dsn: str) -> list[str]:
     """Пароль из строки подключения в обеих формах (URI и key=value), как есть и раскодированный."""
-    found = re.findall(r"://[^:/@\s]+:([^@\s]+)@", dsn) + re.findall(r"\bpassword\s*=\s*'?([^'\s]+)", dsn)
+    found = re.findall(r"://[^:/@\s]+:([^@\s]+)@", dsn)
+    found += [a or b for a, b in re.findall(r"\bpassword\s*=\s*(?:'((?:[^'\\]|\\.)*)'|(\S+))", dsn)]
     return sorted({p for v in found for p in (v, unquote(v)) if len(p) >= 4}, key=len, reverse=True)
 
 

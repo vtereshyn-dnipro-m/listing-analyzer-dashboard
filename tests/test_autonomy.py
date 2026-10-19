@@ -242,6 +242,7 @@ try:
           r.get("ok") is False and "permission denied" in r.get("error", "") and PW not in str(r) and "zzPass" not in str(r))
     kv = srv_mod.secret_parts("host=h user=u password=Abc%41def dbname=d")
     check("пароль находится и в форме key=value, и раскодированным", "Abc%41def" in kv and "AbcAdef" in kv)
+    check("пароль в кавычках с пробелами — целиком", "a b c" in srv_mod.secret_parts("host=h password='a b c' dbname=d"))
 finally:
     psycopg2.connect = _real_connect
     os.environ.pop("LAKEBASE_DSN", None)
@@ -270,7 +271,7 @@ APP, KAB = "583bf6d1-6cd0-4a89-9c44-b387ec5c21cb", "b1698364-6ec5-4240-8cd6-e06d
 
 def acl(sql_text: str) -> set:
     code = "\n".join(l.split("--")[0] for l in sql_text.splitlines())
-    stmts = re.findall(r"\b(?:GRANT|REVOKE)\b[^;]*;", code)
+    stmts = re.findall(r"\b(?:GRANT|REVOKE)\b[^;]*;", code, re.I)  # Postgres регистр не различает
     return {" ".join(s.replace('"', "").rstrip(";").split()) for s in stmts}
 
 
@@ -283,7 +284,12 @@ want_mig = {f"REVOKE ALL ON {T} FROM {APP}",
 got_mig = acl(mig)
 check(f"права в миграции — ровно ожидаемые (лишние: {sorted(got_mig - want_mig)}, нет: {sorted(want_mig - got_mig)})",
       got_mig == want_mig)
-check("нет ALTER DEFAULT PRIVILEGES и смены владельца", not re.search(r"(?i)ALTER\s+(DEFAULT|TABLE[^;]*OWNER)", mig_code))
+# Права выдаются и мимо GRANT: членство старым синтаксисом (ALTER GROUP … ADD USER), атрибуты роли,
+# права по умолчанию, смена владельца, новая роль. Ничего из этого в этих файлах быть не должно.
+_other = r"(?i)\bALTER\s+(DEFAULT|TABLE[^;]*OWNER|ROLE|GROUP|USER)\b|\bCREATE\s+(ROLE|USER|GROUP)\b"
+check("нет прав мимо GRANT: ALTER ROLE/GROUP/USER/DEFAULT, CREATE ROLE, смена владельца",
+      not re.search(_other, mig_code) and not re.search(_other, "\n".join(l.split("--")[0] for l in
+          (ROOT / "migrations" / "2026-10-19_agent_cycle_reports_kabinet_grants.sql").read_text(encoding="utf-8").splitlines())))
 kg = (ROOT / "migrations" / "2026-10-19_agent_cycle_reports_kabinet_grants.sql").read_text(encoding="utf-8")
 want_kg = {f"GRANT USAGE ON SCHEMA listing_data TO {KAB}",
            f"GRANT SELECT ON {T} TO {KAB}",
