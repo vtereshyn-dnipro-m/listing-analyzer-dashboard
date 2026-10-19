@@ -1,16 +1,16 @@
-"""Сводка цикла автономной работы Listing Suite — для того же бота, что у Кабинета.
+"""Предпросмотр сводки цикла автономной работы Listing Suite — без записи.
 
-Схема — docs/autonomy.md. КАНАЛ ЗАПИСИ ЕЩЁ НЕ ВЫБРАН (TASKS.md, T-1): роль Кабинета на запись из его `.mcp.json`
-владелец брать запретил (19.10.2026), а свою роль или таблицу заводит он сам. Поэтому скрипт пока только СОБИРАЕТ
-сводку и печатает её — в базу не пишет и ни к чему не подключается:
+Схема — docs/autonomy.md. ЗАПИСЬ идёт не отсюда, а инструментом `write_cycle_report` MCP-сервера
+`ls-cycle-report` (mcp_servers/cycle_report.py): строку подключения держит процесс сервера, агент её не видит
+(вариант Б, решение владельца 19.10.2026). Этот скрипт только собирает сводку тем же правилом и печатает её —
+в базу не пишет и ни к чему не подключается:
 
     python3 scratchpad/cycle_report.py --title "Цикл 19.10 14:00" \
         --done "T-3: PR #140 открыт, проверка ок" --merged "#141 docs: факт про BSR" \
         --waiting "мержи #140; ответ Ярослава про product_root" --problems ""
 
 Шапка получает приставку «Listing Suite · », чтобы в общем боте сводки двух продуктов не путались. Пустые поля в
-сообщение не попадают. Агент кладёт напечатанное в ответ владельцу. Когда канал выберут, запись добавится сюда
-отдельным PR («ждёт меня»).
+сообщение не попадают.
 """
 import argparse
 import json
@@ -32,7 +32,7 @@ def main(argv=None) -> int:
     ap.add_argument("--title", required=True)
     for k in FIELDS:
         ap.add_argument(f"--{k}", default="")
-    ap.add_argument("--dry-run", action="store_true", help="то же, что без флага: канал записи не выбран")
+    ap.add_argument("--dry-run", action="store_true", help="то же, что без флага: скрипт только печатает, запись — write_cycle_report")
     a = ap.parse_args(argv)
     print(json.dumps(row(a), ensure_ascii=False, indent=1))
     return 0
