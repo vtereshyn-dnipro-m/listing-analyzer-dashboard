@@ -346,7 +346,11 @@ check("бренд дважды — можно", "WORD_REPEATED" not in cs("DNIPR
 for s in ("DNIPRO-M Taladro 0 - 1700rpm", "DNIPRO-M Amoladora Ø230mm / 22,23mm", "DNIPRO-M Sierra 0 – 4500rpm",
           "DNIPRO-M Fresadora 6 - 8 mm", "DNIPRO-M Fresadora 6 - 8 mm, Maletín",
           "DNIPRO-M Taladro 0 - 450 / 0 - 1700rpm", "DNIPRO-M Taladro 0 - 450rpm / 0 - 1700rpm",
-          "DNIPRO-M Discos Ø125mm / Ø230mm", "DNIPRO-M Taladro 0 - 1700rpm, Maletín"):
+          "DNIPRO-M Discos Ø125mm / Ø230mm", "DNIPRO-M Taladro 0 - 1700rpm, Maletín",
+          # единицы вне шаблона и обрамление — тоже диапазоны (проверяющий #144)
+          "DNIPRO-M Sierra Circular Ø165mm, Inclinación 0 - 45°", "DNIPRO-M Martillo 0 - 4800bpm",
+          "DNIPRO-M Sierra Caladora 0 - 3000spm", "DNIPRO-M Taladro (0 - 1700rpm)", "DNIPRO-M Taladro 0 - 1700rpm.",
+          "DNIPRO-M Taladro 0 / 2, Baterías"):
     check(f"«{s}» — диапазон или размер, не разделитель", "SEPARATOR" not in cs(s))
 # Граница частей: слово с любой стороны, код модели, «2x», разные единицы, длинное тире
 for s in ("DNIPRO-M Amoladora 2400W - Kit", "DNIPRO-M Amoladora / Kit 2", "DNIPRO-M Taladro 60Nm - 2 Baterías",
@@ -354,8 +358,10 @@ for s in ("DNIPRO-M Amoladora 2400W - Kit", "DNIPRO-M Amoladora / Kit 2", "DNIPR
           "DNIPRO-M Amoladora - 2400W", "DNIPRO-M Amoladora DGA-201M - 125mm", "DNIPRO-M Amoladora M14 - 125mm",
           "DNIPRO-M Taladro BP-260 - 4Ah", "DNIPRO-M Taladro 60Nm - 2x Baterías",
           "DNIPRO-M Taladro 60Nm / 2x Baterías 4Ah", "DNIPRO-M Amoladora 2400W - 230mm", "DNIPRO-M Taladro 60Nm - 2Ah",
-          "DNIPRO-M Taladro 20 / 2 Baterías", "DNIPRO-M Taladro 0 — 1700rpm"):
+          "DNIPRO-M Taladro 20 / 2 Baterías", "DNIPRO-M Taladro 0 — 1700rpm", "DNIPRO-M Amoladora 2400W - 230 mm",
+          "DNIPRO-M Taladro 2x - 60Nm"):
     check(f"«{s}» — разделитель частей, нарушение", "SEPARATOR" in cs(s))
+check("висящий дефис в конце — не разделитель « - »", "SEPARATOR" not in cs("DNIPRO-M Amoladora Kit -"))
 
 # Пять пилотных товаров: наброски из плана (не вывод модели) по шаблону владельца
 print("3. пять пилотных товаров (наброски из плана)")

@@ -228,12 +228,21 @@ BRAND_POSITIONS = (None, "start", "anywhere", "absent")
 # Величина в характеристиках: необязательный «Ø», число, необязательная
 # единица — целым словом. «DGA-201M», «M14», «BP-260», «2x» величинами не
 # являются (как и в _LB): иначе граница частей проходила бы как диапазон.
-_MEASURE = re.compile(rf"Ø?({_NUM})({_UNIT_ALT})?", re.I)
+# Единицы диапазона шире шаблона: наклон «0 - 45°», удары «0 - 4800bpm»,
+# ходы «0 - 3000spm», колебания «opm», проценты (проверяющий #144).
+RANGE_UNITS = {u for u in UNITS} | {"°", "bpm", "spm", "opm", "ipm", "%"}
+_RANGE_UNIT_ALT = "|".join(re.escape(u) for u in sorted(RANGE_UNITS, key=len, reverse=True))
+_MEASURE = re.compile(rf"Ø?({_NUM})({_RANGE_UNIT_ALT})?", re.I)
+
+
+def _bare(token: str) -> str:
+    """Слово без обрамления: скобки, хвостовые точка, запятая, точка с запятой."""
+    return token.lstrip("(").rstrip(").,;")
 
 
 def _measure(token: str):
-    """(есть ли величина, единица или None) для слова без хвостовой запятой."""
-    m = _MEASURE.fullmatch(token.rstrip(",;"))
+    """(есть ли величина, единица или None) для слова без обрамления."""
+    m = _MEASURE.fullmatch(_bare(token))
     return (bool(m), (m.group(2) or "").lower() or None) if m else (False, None)
 
 
@@ -250,8 +259,10 @@ def _separates_parts(title: str, sep: str) -> bool:
 
     Ограничение: «2 en 1 - 500W» читается как диапазон «1 - 500W» — по тексту
     его не отличить от «0 - 1700rpm»."""
+    if sep not in title:
+        return False        # «Kit -» в конце — висящий дефис, а не « - »
     if sep not in RANGE_SEPARATORS:
-        return sep in title
+        return True
     tok, mark = title.split(), sep.strip()
     for i, t in enumerate(tok):
         if t != mark:
@@ -260,9 +271,9 @@ def _separates_parts(title: str, sep: str) -> bool:
             return True
         lok, lunit = _measure(tok[i - 1])
         rok, runit = _measure(tok[i + 1])
-        if rok and runit is None and not tok[i + 1].endswith((",", ";")):
-            nxt = tok[i + 2].rstrip(",;") if i + 2 < len(tok) else None
-            if nxt is not None and nxt.lower() in UNITS:
+        if rok and runit is None and not tok[i + 1].endswith((",", ";", ")", ".")):
+            nxt = _bare(tok[i + 2]) if i + 2 < len(tok) else None
+            if nxt is not None and nxt.lower() in RANGE_UNITS:
                 runit = nxt.lower()
             elif nxt is not None and nxt not in {s.strip() for s in RANGE_SEPARATORS}:
                 rok = False
