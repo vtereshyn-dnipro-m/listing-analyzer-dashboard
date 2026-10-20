@@ -156,12 +156,9 @@ _SPACED = re.compile(rf"{_LB}({_NUM})\s+({_UNIT_ALT})\b", re.I)
 # Число вплотную к единице — для проверки регистра и разделителя тысяч.
 _TIGHT = re.compile(rf"{_LB}({_NUM})({_UNIT_ALT})\b", re.I)
 _THOUSANDS = re.compile(r"^\d{1,3}(?:[.,]\d{3})+$")
-# Тысячи через пробел: «10 000rpm», «2 000 W» — частая запись в ES и FR.
-# Узко, иначе склеиваются соседние числа (проверяющий #143): «GL-240 230mm»
-# читалось как «240230mm», «Kit de 2 230mm» — как «2230mm». Поэтому:
-# только единицы, где тысячи правдоподобны (rpm, W), и первая группа не
-# продолжает код модели — перед ней не дефис и не буква/цифра.
-_SPACE_THOUSANDS = re.compile(rf"{_LB}(?<!-)(\d{{1,3}}(?: \d{{3}})+)\s*(rpm|w)\b", re.I)
+# Тысяч через ПРОБЕЛ («10 000rpm») правило не ловит намеренно: по одному
+# тексту не отличить «1 500W» от «2 en 1 500W», «1/3 300W» или «Pack 2 100W»
+# (проверяющий #143). Тысячи через точку и запятую ловятся (UNIT_THOUSANDS).
 # Сетевое напряжение — никогда, ни у кого: 220V, 230 V, 220-240V.
 _MAINS = re.compile(rf"{_LB}2[234]0\s*(?:[-–/]\s*2[234]0\s*)?V\b", re.I)
 # Любой вольтаж: «20V», «12 V», «18,5V».
@@ -264,19 +261,14 @@ def check(title: str, highlights: str = "", *, kind: str = TOOL, model: str | No
             for m in _VOLT.finditer(text):
                 if not any(s <= m.start() < e for s, e in mains):
                     add("TOOL_VOLTAGE", fld, m.group(0))
-        thousands = [m.span() for m in _SPACE_THOUSANDS.finditer(text)]
         for m in _SPACED.finditer(text):
-            # «10 000 rpm» называется один раз — тысячами, а не ещё и «000 rpm».
-            if not any(s <= m.start() < e for s, e in thousands):
-                add("UNIT_SPACING", fld, m.group(0))
+            add("UNIT_SPACING", fld, m.group(0))
         for m in _TIGHT.finditer(text):
             num, unit = m.group(1), m.group(2)
             if unit != UNITS[unit.lower()]:
                 add("UNIT_CASE", fld, f"{m.group(0)} → {num}{UNITS[unit.lower()]}")
             if _THOUSANDS.match(num):
                 add("UNIT_THOUSANDS", fld, f"{m.group(0)} → {re.sub(r'[.,]', '', num)}{UNITS[unit.lower()]}")
-        for m in _SPACE_THOUSANDS.finditer(text):
-            add("UNIT_THOUSANDS", fld, f"{m.group(0)} → {m.group(1).replace(' ', '')}{UNITS[m.group(2).lower()]}")
         for m in _DIAM_SPACE.finditer(text):
             add("DIAMETER_SPACING", fld, m.group(0))
 

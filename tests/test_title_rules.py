@@ -282,13 +282,11 @@ check("«Ø230 mm» — пробел перед единицей ловится"
 check("«Ø230MM» — регистр ловится", "UNIT_CASE" in cs("Amoladora Ø230MM"))
 check("«Ø2.300mm» — тысячи ловятся", "UNIT_THOUSANDS" in cs("Disco Ø2.300mm"))
 check("после запятой без пробела число проверяется: «2000W,60NM»", "UNIT_CASE" in cs("Taladro 2000W,60NM"))
-check("тысячи через пробел: «10 000rpm» и «2 000 W»",
-      "UNIT_THOUSANDS" in cs("Amoladora 10 000rpm") and "UNIT_THOUSANDS" in cs("Amoladora 2 000 W"))
-check("«10 000 rpm» названо один раз — тысячами, без «000 rpm»",
-      [v.code for v in tr.check("Amoladora 10 000 rpm")] == ["UNIT_THOUSANDS"])
-# Соседние числа не склеиваются (проверяющий #143): код модели + диаметр, количество + размер
+# Тысячи через пробел не ловятся намеренно: соседние числа не отличить от тысяч
+# (проверяющий #143). Ни одна из этих строк не должна давать «тысячи».
 for s in ("Amoladora GL-240 230mm", "Juego 10 125mm discos", "Kit de 2 230mm", "Pack 5 115mm discos de corte",
-          "Sierra DSC-201BC 165mm", "Kit 2 1500W"):
+          "Sierra DSC-201BC 165mm", "Kit 2 1500W", "Taladro 2 en 1 500W", "Lijadora 1/3 300W", "Pack 2 100W",
+          "Amoladora GL-240 900W"):
     check(f"«{s}» — не тысячи", "UNIT_THOUSANDS" not in cs(s))
 check("неизвестное поле в tool_voltage_in — отказ, а не молча выключенное правило",
       raises(lambda: tr.check("Taladro 20V", rules=tr.Ruleset(tool_voltage_in=("highlight",)))))
