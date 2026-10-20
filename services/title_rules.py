@@ -156,8 +156,12 @@ _SPACED = re.compile(rf"{_LB}({_NUM})\s+({_UNIT_ALT})\b", re.I)
 # Число вплотную к единице — для проверки регистра и разделителя тысяч.
 _TIGHT = re.compile(rf"{_LB}({_NUM})({_UNIT_ALT})\b", re.I)
 _THOUSANDS = re.compile(r"^\d{1,3}(?:[.,]\d{3})+$")
-# Тысячи через пробел: «10 000rpm», «10 000 rpm» — частая запись в ES и FR.
-_SPACE_THOUSANDS = re.compile(rf"{_LB}(\d{{1,3}}(?: \d{{3}})+)\s*({_UNIT_ALT})\b", re.I)
+# Тысячи через пробел: «10 000rpm», «2 000 W» — частая запись в ES и FR.
+# Узко, иначе склеиваются соседние числа (проверяющий #143): «GL-240 230mm»
+# читалось как «240230mm», «Kit de 2 230mm» — как «2230mm». Поэтому:
+# только единицы, где тысячи правдоподобны (rpm, W), и первая группа не
+# продолжает код модели — перед ней не дефис и не буква/цифра.
+_SPACE_THOUSANDS = re.compile(rf"{_LB}(?<!-)(\d{{1,3}}(?: \d{{3}})+)\s*(rpm|w)\b", re.I)
 # Сетевое напряжение — никогда, ни у кого: 220V, 230 V, 220-240V.
 _MAINS = re.compile(rf"{_LB}2[234]0\s*(?:[-–/]\s*2[234]0\s*)?V\b", re.I)
 # Любой вольтаж: «20V», «12 V», «18,5V».
@@ -231,6 +235,9 @@ def check(title: str, highlights: str = "", *, kind: str = TOOL, model: str | No
         raise ValueError(f"brand_position: {rules.brand_position!r}, ждём одно из {BRAND_POSITIONS}")
     if kind not in (TOOL, POWER_PACK):
         raise ValueError(f"kind: {kind!r}, ждём {TOOL!r} или {POWER_PACK!r}")
+    if not set(rules.tool_voltage_in) <= {"title", "highlights"}:
+        # Опечатка («highlight») молча выключила бы правило в обоих полях.
+        raise ValueError(f"tool_voltage_in: {rules.tool_voltage_in!r}, ждём поля из ('title', 'highlights')")
     if rules.separator not in (",",) + ALT_SEPARATORS:
         raise ValueError(f"separator: {rules.separator!r}, ждём «,» или одно из {ALT_SEPARATORS}")
     title, highlights = str(title or ""), str(highlights or "")
@@ -257,8 +264,11 @@ def check(title: str, highlights: str = "", *, kind: str = TOOL, model: str | No
             for m in _VOLT.finditer(text):
                 if not any(s <= m.start() < e for s, e in mains):
                     add("TOOL_VOLTAGE", fld, m.group(0))
+        thousands = [m.span() for m in _SPACE_THOUSANDS.finditer(text)]
         for m in _SPACED.finditer(text):
-            add("UNIT_SPACING", fld, m.group(0))
+            # «10 000 rpm» называется один раз — тысячами, а не ещё и «000 rpm».
+            if not any(s <= m.start() < e for s, e in thousands):
+                add("UNIT_SPACING", fld, m.group(0))
         for m in _TIGHT.finditer(text):
             num, unit = m.group(1), m.group(2)
             if unit != UNITS[unit.lower()]:

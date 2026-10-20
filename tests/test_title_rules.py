@@ -282,7 +282,16 @@ check("«Ø230 mm» — пробел перед единицей ловится"
 check("«Ø230MM» — регистр ловится", "UNIT_CASE" in cs("Amoladora Ø230MM"))
 check("«Ø2.300mm» — тысячи ловятся", "UNIT_THOUSANDS" in cs("Disco Ø2.300mm"))
 check("после запятой без пробела число проверяется: «2000W,60NM»", "UNIT_CASE" in cs("Taladro 2000W,60NM"))
-check("тысячи через пробел: «10 000rpm»", "UNIT_THOUSANDS" in cs("Amoladora 10 000rpm"))
+check("тысячи через пробел: «10 000rpm» и «2 000 W»",
+      "UNIT_THOUSANDS" in cs("Amoladora 10 000rpm") and "UNIT_THOUSANDS" in cs("Amoladora 2 000 W"))
+check("«10 000 rpm» названо один раз — тысячами, без «000 rpm»",
+      [v.code for v in tr.check("Amoladora 10 000 rpm")] == ["UNIT_THOUSANDS"])
+# Соседние числа не склеиваются (проверяющий #143): код модели + диаметр, количество + размер
+for s in ("Amoladora GL-240 230mm", "Juego 10 125mm discos", "Kit de 2 230mm", "Pack 5 115mm discos de corte",
+          "Sierra DSC-201BC 165mm", "Kit 2 1500W"):
+    check(f"«{s}» — не тысячи", "UNIT_THOUSANDS" not in cs(s))
+check("неизвестное поле в tool_voltage_in — отказ, а не молча выключенное правило",
+      raises(lambda: tr.check("Taladro 20V", rules=tr.Ruleset(tool_voltage_in=("highlight",)))))
 check("каждое «Ø » названо", sum(v.code == "DIAMETER_SPACING" for v in tr.check("Ø 230mm y Ø 125mm")) == 2)
 check("вплотную «Ø230mm» с верным форматом не даёт ничего", cs("Amoladora Ø230mm 6500rpm 2400W") == [])
 # Разделитель — работающий параметр
