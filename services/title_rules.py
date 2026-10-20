@@ -19,12 +19,12 @@ services/title_rules.py — правила тайтла и Item Highlights ко�
    вольтажа аккумулятора у инструмента (у аккумуляторов и зарядок — можно),
    разделитель — запятая, Highlights «Model <модель>: …».
 
-**Длина и позиция бренда — параметры, а не константы.** Владелец (20.10.2026)
-не решил их до подтверждения в Seller Central: 75 знаков объявлены Amazon
-с 27.07.2026, но Amazon на .es вырезал бренд из начала тайтла (живая
-отправка 29.08.2026), и методология с v7 ставит первой ключевую фразу.
-По умолчанию позиция бренда НЕ проверяется (`brand_position=None`): правило,
-которое ещё не утверждено, не должно валить тайтлы.
+**Подтверждено владельцем 21.10.2026 по Seller Central ES** (GYTR6SYGFA5E3EQC):
+тайтл ≤ 75 знаков — константа `TITLE_LIMIT`, не параметр; запрещены
+`! $ ? _ { } ^ ¬ ¦`; слово не больше двух раз, бренд тоже. Бренд «DNIPRO-M»
+первым — по умолчанию (`brand_position="start"`, рекомендация Amazon); другие
+позиции — параметром. Вольтаж инструмента — нарушение только в тайтле.
+Диапазоны и размеры между величинами через « - » и « / » — можно.
 
 Нарушение — код (`Violation.code`), а не текст: подписи на трёх языках даст
 экран через `i18n`, а Диагнозу код нужен как `rule_id`-подобный признак.
@@ -225,24 +225,48 @@ class Violation:
 BRAND_POSITIONS = (None, "start", "anywhere", "absent")
 
 
+# Величина в характеристиках: необязательный «Ø», число, необязательная
+# единица — целым словом. «DGA-201M», «M14», «BP-260», «2x» величинами не
+# являются (как и в _LB): иначе граница частей проходила бы как диапазон.
+_MEASURE = re.compile(rf"Ø?({_NUM})({_UNIT_ALT})?", re.I)
+
+
+def _measure(token: str):
+    """(есть ли величина, единица или None) для слова без хвостовой запятой."""
+    m = _MEASURE.fullmatch(token.rstrip(",;"))
+    return (bool(m), (m.group(2) or "").lower() or None) if m else (False, None)
+
+
 def _separates_parts(title: str, sep: str) -> bool:
     """Есть ли в тайтле `sep` как разделитель частей, а не как диапазон или
-    размер между двумя числами («0 - 1700rpm», «Ø230mm / 22,23mm»)."""
-    start = 0
-    while (i := title.find(sep, start)) >= 0:
-        start = i + len(sep)
-        if sep not in RANGE_SEPARATORS:
+    размер между двумя величинами (решение владельца 21.10.2026).
+
+    Диапазон — величина слева и величина справа, обе целым словом:
+    «0 - 1700rpm», «Ø230mm / 22,23mm», «6 - 8 mm», две скорости дрели
+    «0 - 450 / 0 - 1700rpm». Голое число справа — величина, только если за ним
+    идёт единица, следующий разделитель диапазона или конец части. Иначе
+    («60Nm - 2 Baterías») это следующая часть тайтла. Единицы с двух сторон, если
+    есть обе, совпадают: «2400W - 230mm» — две характеристики, а не диапазон.
+
+    Ограничение: «2 en 1 - 500W» читается как диапазон «1 - 500W» — по тексту
+    его не отличить от «0 - 1700rpm»."""
+    if sep not in RANGE_SEPARATORS:
+        return sep in title
+    tok, mark = title.split(), sep.strip()
+    for i, t in enumerate(tok):
+        if t != mark:
+            continue
+        if i == 0 or i + 1 >= len(tok):
             return True
-        left = (title[:i].split()[-1:] or [""])[0]
-        rest = title[i + len(sep):].split()
-        right = rest[0] if rest else ""
-        # Справа — величина: число с единицей («1700rpm», «22,23mm») или голое
-        # число, за которым идёт единица («20 mm»). «60Nm - 2 Baterías» — это уже
-        # следующая часть тайтла, а не диапазон.
-        bare = re.fullmatch(r"\d+(?:[.,]\d+)*", right)
-        measure = bool(re.search(r"\d", right)) and (
-            not bare or (len(rest) > 1 and rest[1].lower() in UNITS))
-        if not (re.search(r"\d", left) and measure):
+        lok, lunit = _measure(tok[i - 1])
+        rok, runit = _measure(tok[i + 1])
+        if rok and runit is None and not tok[i + 1].endswith((",", ";")):
+            nxt = tok[i + 2].rstrip(",;") if i + 2 < len(tok) else None
+            if nxt is not None and nxt.lower() in UNITS:
+                runit = nxt.lower()
+            elif nxt is not None and nxt not in {s.strip() for s in RANGE_SEPARATORS}:
+                rok = False
+        if not (lok and rok) or (lunit and runit and lunit != runit):
             return True
     return False
 

@@ -12,11 +12,11 @@ tests/test_title_rules.py — общий модуль правил тайтла 
    (загружены из страницы так же, как в `test_length_guard.py`), совпадают с
    эталоном при лимитах из настроек. И копий не осталось: страница и `seo` не
    определяют эти функции сами.
-2. **Правила пилота — кодом, с параметрами.** Каждое нарушение (длина,
-   символы, «|», повторы, 220V, вольтаж у инструмента, формат единиц, Ø,
-   бренд, префикс Highlights) ловится, а верный текст проходит. Длина и
-   позиция бренда — параметры: владелец их ещё не решил, и по умолчанию бренд
-   не проверяется вовсе.
+2. **Правила пилота — кодом.** Каждое нарушение (длина, символы, «|»,
+   повторы, 220V, вольтаж у инструмента, формат единиц, Ø, бренд, разделитель,
+   префикс Highlights) ловится, а верный текст проходит. Подтверждённое
+   владельцем 21.10.2026 заперто: 75 жёстко, бренд первым по умолчанию,
+   вольтаж инструмента только в тайтле, диапазоны между величинами — можно.
 
 Запуск (pytest не нужен):  python tests/test_title_rules.py
 """
@@ -301,7 +301,7 @@ check("дефис в коде модели разделителем не счи�
 check("при разделителе « - » он разрешён, а запятая не проверяется",
       cs("DNIPRO-M Amoladora 2400W - Kit, Maletín", rules=tr.Ruleset(separator=" - ")) == [])
 check("неизвестный разделитель — отказ", raises(lambda: tr.check(GOOD, rules=tr.Ruleset(separator="|"))))
-# Вольтаж инструмента в Highlights — параметр (вопрос владельцу)
+# Вольтаж инструмента: только в тайтле (решение 21.10), строгий вариант — параметром
 HL20 = "Model CD-200BC: compatible con baterías 20V"
 check("по умолчанию вольтаж инструмента в Highlights можно (21.10), в тайтле — нет",
       "TOOL_VOLTAGE" not in cs("DNIPRO-M Taladro 60Nm", HL20, model="CD-200BC")
@@ -344,10 +344,17 @@ check("бренд тоже считается в повторах: «dnipro» т
 check("бренд дважды — можно", "WORD_REPEATED" not in cs("DNIPRO-M Amoladora, kit Dnipro"))
 # Диапазоны и размеры между числами — не разделитель частей (21.10)
 for s in ("DNIPRO-M Taladro 0 - 1700rpm", "DNIPRO-M Amoladora Ø230mm / 22,23mm", "DNIPRO-M Sierra 0 – 4500rpm",
-          "DNIPRO-M Fresadora 6 - 8 mm"):
+          "DNIPRO-M Fresadora 6 - 8 mm", "DNIPRO-M Fresadora 6 - 8 mm, Maletín",
+          "DNIPRO-M Taladro 0 - 450 / 0 - 1700rpm", "DNIPRO-M Taladro 0 - 450rpm / 0 - 1700rpm",
+          "DNIPRO-M Discos Ø125mm / Ø230mm", "DNIPRO-M Taladro 0 - 1700rpm, Maletín"):
     check(f"«{s}» — диапазон или размер, не разделитель", "SEPARATOR" not in cs(s))
+# Граница частей: слово с любой стороны, код модели, «2x», разные единицы, длинное тире
 for s in ("DNIPRO-M Amoladora 2400W - Kit", "DNIPRO-M Amoladora / Kit 2", "DNIPRO-M Taladro 60Nm - 2 Baterías",
-          "DNIPRO-M Taladro; 2 Baterías", "DNIPRO-M Taladro 0 - 1700rpm - Maletín"):
+          "DNIPRO-M Taladro; 2 Baterías", "DNIPRO-M Taladro 0 - 1700rpm - Maletín",
+          "DNIPRO-M Amoladora - 2400W", "DNIPRO-M Amoladora DGA-201M - 125mm", "DNIPRO-M Amoladora M14 - 125mm",
+          "DNIPRO-M Taladro BP-260 - 4Ah", "DNIPRO-M Taladro 60Nm - 2x Baterías",
+          "DNIPRO-M Taladro 60Nm / 2x Baterías 4Ah", "DNIPRO-M Amoladora 2400W - 230mm", "DNIPRO-M Taladro 60Nm - 2Ah",
+          "DNIPRO-M Taladro 20 / 2 Baterías", "DNIPRO-M Taladro 0 — 1700rpm"):
     check(f"«{s}» — разделитель частей, нарушение", "SEPARATOR" in cs(s))
 
 # Пять пилотных товаров: наброски из плана (не вывод модели) по шаблону владельца
