@@ -48,7 +48,7 @@ from services.flatfile import (
 import auth
 from services import title_rules
 from services.title_rules import (
-    FORBIDDEN_CHARS, trim_to_word, keeps_all, forbidden_chars, repeated_words,
+    trim_to_word, keeps_all, forbidden_chars, repeated_words,
 )
 from services.spapi import (
     missing_secrets, marketplace_meta, push_title, log_push, load_pushes,

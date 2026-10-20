@@ -133,12 +133,19 @@ CRAFTED = [
     "Sierra Circular! a Batería? $99 {x} ^y ¬z ¦w ®™© _",
     "trailing sep ·", "ends with dash -", "single" + "x" * 80,
     "Dnipro-M Akku-Winkelschleifer 20V 125mm 10.000 U/min mit Akku und Ladegerät, M14",
+    # Кириллица с ё, каждое стоп-слово трижды, двухбуквенные слова: без них
+    # набор не видел мутаций алфавита, стоп-слов и `len(w) > 2` (проверяющий #143).
+    "Шуруповёрт шуруповёрт ШУРУПОВЁРТ ёлка ёлка ёлка дрель Дрель дрель",
+    " ".join(w for w in ("de", "con", "para", "y", "el", "la", "und", "mit", "für", "et", "avec", "e", "per")
+             for _ in range(3)),
+    "kit de 2 baterías, kit de 2 cargadores, en lo alto, en lo bajo, en lo medio",
 ]
 rnd = random.Random(20261020)
-ALPH = "abcdeñüá ÄÖ 0123456789,.-|/·—–!?$_{}^¬¦®©™ "
+ALPH = "abcdeñüá ÄÖ ёжЁ 0123456789,.-|/·—–!?$_{}^¬¦®©™ "
 RANDOM = ["".join(rnd.choice(ALPH) for _ in range(rnd.randint(0, 140))) for _ in range(400)]
 CORPUS = CRAFTED + RANDOM
-PHRASES = ["amoladora angular", "martillo", "20V", "sds plus", "x", "", "ñandú", "taladro atornillador 60nm"]
+PHRASES = ["amoladora angular", "martillo", "20V", "sds plus", "x", "", "ñandú", "taladro atornillador 60nm",
+           "kit de 2", "en lo", "шуруповёрт дрель", "de"]
 
 # ========================================== 1. Синтез ведёт себя так же
 print("1. перенос проверок без изменения поведения")
@@ -270,12 +277,37 @@ check("разделитель тысяч: 10.000rpm → 10000rpm", "UNIT_THOUSAN
 check("десятичная запятая не принимается за тысячи: 2,8J", "UNIT_THOUSANDS" not in cs("Martillo 2,8J"))
 check("Ø через пробел — нарушение", "DIAMETER_SPACING" in cs("Amoladora Ø 230mm"))
 check("Ø вплотную — можно", "DIAMETER_SPACING" not in cs("Amoladora Ø230mm"))
+# Число сразу после Ø тоже проверяется (проверяющий #143: «Ø» попадал в \w)
+check("«Ø230 mm» — пробел перед единицей ловится", "UNIT_SPACING" in cs("Amoladora Ø230 mm"))
+check("«Ø230MM» — регистр ловится", "UNIT_CASE" in cs("Amoladora Ø230MM"))
+check("«Ø2.300mm» — тысячи ловятся", "UNIT_THOUSANDS" in cs("Disco Ø2.300mm"))
+check("после запятой без пробела число проверяется: «2000W,60NM»", "UNIT_CASE" in cs("Taladro 2000W,60NM"))
+check("тысячи через пробел: «10 000rpm»", "UNIT_THOUSANDS" in cs("Amoladora 10 000rpm"))
+check("каждое «Ø » названо", sum(v.code == "DIAMETER_SPACING" for v in tr.check("Ø 230mm y Ø 125mm")) == 2)
+check("вплотную «Ø230mm» с верным форматом не даёт ничего", cs("Amoladora Ø230mm 6500rpm 2400W") == [])
+# Разделитель — работающий параметр
+check("« - » при разделителе-запятой — нарушение", "SEPARATOR" in cs("Amoladora 2400W - Kit"))
+check("« / » и «;» — тоже", "SEPARATOR" in cs("Amoladora / Kit") and "SEPARATOR" in cs("Amoladora; Kit"))
+check("дефис в коде модели разделителем не считается", "SEPARATOR" not in cs("Amoladora DGA-201M SDS-Plus"))
+check("при разделителе « - » он разрешён, а запятая не проверяется",
+      cs("Amoladora 2400W - Kit, Maletín", rules=tr.Ruleset(separator=" - ")) == [])
+check("неизвестный разделитель — отказ", raises(lambda: tr.check(GOOD, rules=tr.Ruleset(separator="|"))))
+# Вольтаж инструмента в Highlights — параметр (вопрос владельцу)
+HL20 = "Model CD-200BC: compatible con baterías 20V"
+check("по умолчанию вольтаж инструмента запрещён и в Highlights",
+      "TOOL_VOLTAGE" in cs("Taladro 60Nm", HL20, model="CD-200BC"))
+check("с tool_voltage_in=('title',) в Highlights можно, в тайтле — нет",
+      "TOOL_VOLTAGE" not in cs("Taladro 60Nm", HL20, model="CD-200BC", rules=tr.Ruleset(tool_voltage_in=("title",)))
+      and "TOOL_VOLTAGE" in cs("Taladro 20V", rules=tr.Ruleset(tool_voltage_in=("title",))))
 
 START = tr.Ruleset(brand_position="start")
 check("бренд в начале: «DNIPRO-M Amoladora» проходит", "BRAND_NOT_FIRST" not in cs("DNIPRO-M " + GOOD, rules=START))
 check("бренд не в начале — нарушение", "BRAND_NOT_FIRST" in cs("Amoladora DNIPRO-M 2400W", rules=START))
-check("«Dnipro-M» вместо «DNIPRO-M» — отдельный код регистра",
-      {"BRAND_NOT_FIRST", "BRAND_CASE"} <= set(cs("Dnipro-M Amoladora", rules=START)))
+check("«Dnipro-M» в начале вместо «DNIPRO-M» — только код регистра, не «не первым»",
+      cs("Dnipro-M Amoladora", rules=START) == ["BRAND_CASE"])
+check("«DNIPRO-M-Amoladora» — бренд в начале, регистр верный", cs("DNIPRO-M-Amoladora", rules=START) == [])
+check("«бренда быть не должно» — в любом регистре: «Dnipro-M amoladora» ловится",
+      "BRAND_PRESENT" in cs("Dnipro-M amoladora", rules=tr.Ruleset(brand_position="absent")))
 check("бренд где угодно", "BRAND_MISSING" in cs(GOOD, rules=tr.Ruleset(brand_position="anywhere")))
 check("бренда быть не должно (методология v7)",
       "BRAND_PRESENT" in cs("DNIPRO-M " + GOOD, rules=tr.Ruleset(brand_position="absent")))

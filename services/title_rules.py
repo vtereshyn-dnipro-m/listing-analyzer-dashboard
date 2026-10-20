@@ -143,17 +143,31 @@ UNITS = {"w": "W", "kw": "kW", "nm": "Nm", "mm": "mm", "cm": "cm", "rpm": "rpm",
          "j": "J", "ah": "Ah", "v": "V", "bar": "bar", "kg": "kg"}
 _UNIT_ALT = "|".join(sorted(UNITS, key=len, reverse=True))
 _NUM = r"\d+(?:[.,]\d+)*"
+# Начало числа: перед ним не буква и не цифра — чтобы «M14», «BP-260» и
+# «DHR-202BC» не читались как величины, — и не «цифра + точка/запятая»,
+# чтобы «1,7J» было одним числом. «Ø», «ø» и «×» буквой НЕ считаются (с re.I
+# «Ø» совпадает и с «ø», поэтому из класса убраны обе): «Ø230 mm» —
+# как раз то, что надо проверять (замечание проверяющего #143: `\w` включает Ø,
+# и число после него не проверялось вовсе). Запятая без пробела тоже не мешает:
+# «2000W,60Nm» — два числа.
+_LB = r"(?<![A-Za-z0-9_\u00C0-\u00D6\u00D9-\u00F6\u00F9-\u00FF\u0400-\u04FF])(?<!\d[.,])"
 # Число и единица через пробел: «2000 W». Единица — целым словом.
-_SPACED = re.compile(rf"(?<![\w.,])({_NUM})\s+({_UNIT_ALT})\b", re.I)
+_SPACED = re.compile(rf"{_LB}({_NUM})\s+({_UNIT_ALT})\b", re.I)
 # Число вплотную к единице — для проверки регистра и разделителя тысяч.
-_TIGHT = re.compile(rf"(?<![\w.,])({_NUM})({_UNIT_ALT})\b", re.I)
+_TIGHT = re.compile(rf"{_LB}({_NUM})({_UNIT_ALT})\b", re.I)
 _THOUSANDS = re.compile(r"^\d{1,3}(?:[.,]\d{3})+$")
+# Тысячи через пробел: «10 000rpm», «10 000 rpm» — частая запись в ES и FR.
+_SPACE_THOUSANDS = re.compile(rf"{_LB}(\d{{1,3}}(?: \d{{3}})+)\s*({_UNIT_ALT})\b", re.I)
 # Сетевое напряжение — никогда, ни у кого: 220V, 230 V, 220-240V.
-_MAINS = re.compile(r"(?<![\w.,])2[234]0\s*(?:[-–/]\s*2[234]0\s*)?V\b", re.I)
+_MAINS = re.compile(rf"{_LB}2[234]0\s*(?:[-–/]\s*2[234]0\s*)?V\b", re.I)
 # Любой вольтаж: «20V», «12 V», «18,5V».
-_VOLT = re.compile(rf"(?<![\w.,])({_NUM})\s*V\b", re.I)
+_VOLT = re.compile(rf"{_LB}({_NUM})\s*V\b", re.I)
 # Ø и число через пробел: «Ø 230mm».
-_DIAM_SPACE = re.compile(r"Ø\s+\d")
+_DIAM_SPACE = re.compile(r"Ø\s+\d+(?:[.,]\d+)*")
+# Разделители частей шаблона, кроме выбранного. Дефис без пробелов
+# («SDS-Plus», «DGA-201M») разделителем не считается. Запятая не
+# проверяется никогда: это и перечисление внутри части.
+ALT_SEPARATORS = (" - ", " – ", " — ", " / ", ";")
 
 # Разделитель частей шаблона — запятая (владелец, 20.10.2026). Вертикальная
 # черта и её родственники запрещены: «|» Amazon сам ставит между тайтлом и
@@ -169,7 +183,12 @@ class Ruleset:
         None      — не проверяется (по умолчанию, пока не решено);
         "start"   — тайтл начинается с бренда, регистр как в `brand`;
         "anywhere"— бренд где-то в тайтле, регистр как в `brand`;
-        "absent"  — бренда в тайтле нет (методология v7: Amazon его вырезает).
+        "absent"  — бренда в тайтле нет ни в каком регистре (методология v7:
+                    Amazon его вырезает).
+
+    `separator` — разделитель частей шаблона; остальные из `ALT_SEPARATORS`
+    в тайтле — нарушение `SEPARATOR`. Вертикальная черта запрещена всегда
+    (`forbidden`).
     """
     title_limit: int = 75
     highlight_limit: int = 125
@@ -179,6 +198,10 @@ class Ruleset:
     forbidden: frozenset = field(default_factory=lambda: frozenset(PILOT_FORBIDDEN))
     max_word_repeats: int = 2
     highlight_prefix: str = "Model {model}: "
+    # Где вольтаж у инструмента — нарушение. Решение «у инструмента никогда»
+    # (20.10.2026) по умолчанию держится строго, в обоих полях. Нужна ли
+    # совместимость «baterías 20V» в Highlights — вопрос владельцу.
+    tool_voltage_in: tuple = ("title", "highlights")
 
 
 @dataclass(frozen=True)
@@ -191,9 +214,10 @@ class Violation:
 BRAND_POSITIONS = (None, "start", "anywhere", "absent")
 
 
-def _brand_in(text: str, brand: str) -> int:
-    """Позиция бренда в тексте с точным регистром, целым словом; -1 — нет."""
-    m = re.search(rf"(?<![\w-]){re.escape(brand)}(?![\w-])", text)
+def _brand_in(text: str, brand: str, *, any_case: bool = False) -> int:
+    """Позиция бренда целым словом; -1 — нет. «DNIPRO-MX» — не бренд,
+    «DNIPRO-M-Amoladora» — бренд (за ним дефис, а не буква)."""
+    m = re.search(rf"(?<![\w-]){re.escape(brand)}(?!\w)", text, re.I if any_case else 0)
     return m.start() if m else -1
 
 
@@ -207,6 +231,8 @@ def check(title: str, highlights: str = "", *, kind: str = TOOL, model: str | No
         raise ValueError(f"brand_position: {rules.brand_position!r}, ждём одно из {BRAND_POSITIONS}")
     if kind not in (TOOL, POWER_PACK):
         raise ValueError(f"kind: {kind!r}, ждём {TOOL!r} или {POWER_PACK!r}")
+    if rules.separator not in (",",) + ALT_SEPARATORS:
+        raise ValueError(f"separator: {rules.separator!r}, ждём «,» или одно из {ALT_SEPARATORS}")
     title, highlights = str(title or ""), str(highlights or "")
     out: list[Violation] = []
 
@@ -226,7 +252,7 @@ def check(title: str, highlights: str = "", *, kind: str = TOOL, model: str | No
             add("FORBIDDEN_CHAR", fld, " ".join(bad))
         for m in _MAINS.finditer(text):
             add("MAINS_VOLTAGE", fld, m.group(0))
-        if kind == TOOL:
+        if kind == TOOL and fld in rules.tool_voltage_in:
             mains = {m.span() for m in _MAINS.finditer(text)}
             for m in _VOLT.finditer(text):
                 if not any(s <= m.start() < e for s, e in mains):
@@ -239,26 +265,38 @@ def check(title: str, highlights: str = "", *, kind: str = TOOL, model: str | No
                 add("UNIT_CASE", fld, f"{m.group(0)} → {num}{UNITS[unit.lower()]}")
             if _THOUSANDS.match(num):
                 add("UNIT_THOUSANDS", fld, f"{m.group(0)} → {re.sub(r'[.,]', '', num)}{UNITS[unit.lower()]}")
-        if _DIAM_SPACE.search(text):
-            add("DIAMETER_SPACING", fld, _DIAM_SPACE.search(text).group(0))
+        for m in _SPACE_THOUSANDS.finditer(text):
+            add("UNIT_THOUSANDS", fld, f"{m.group(0)} → {m.group(1).replace(' ', '')}{UNITS[m.group(2).lower()]}")
+        for m in _DIAM_SPACE.finditer(text):
+            add("DIAMETER_SPACING", fld, m.group(0))
+
+    alt = [s for s in ALT_SEPARATORS if s != rules.separator and s in title]
+    if alt:
+        add("SEPARATOR", "title", f"{', '.join(repr(s) for s in alt)} → {rules.separator!r}")
 
     rep = repeated_words(title, rules.max_word_repeats)
     if rep:
         add("WORD_REPEATED", "title", ", ".join(rep))
 
     if rules.brand_position:
-        pos = _brand_in(title, rules.brand)
-        if rules.brand_position == "start" and pos != 0:
-            add("BRAND_NOT_FIRST", "title", rules.brand)
-        elif rules.brand_position == "anywhere" and pos < 0:
-            add("BRAND_MISSING", "title", rules.brand)
-        elif rules.brand_position == "absent" and pos >= 0:
-            add("BRAND_PRESENT", "title", rules.brand)
+        exact = _brand_in(title, rules.brand)
+        anyc = _brand_in(title, rules.brand, any_case=True)
         # Бренд в другом регистре («Dnipro-M» при «DNIPRO-M») — отдельный код:
-        # это не «нет бренда», а «бренд написан не так».
-        if rules.brand_position in ("start", "anywhere") and pos < 0 and \
-                re.search(re.escape(rules.brand), title, re.I):
-            add("BRAND_CASE", "title", rules.brand)
+        # это не «нет бренда» и не «не первым», а «бренд написан не так».
+        if rules.brand_position == "start":
+            if anyc != 0:
+                add("BRAND_NOT_FIRST", "title", rules.brand)
+            elif exact != 0:
+                add("BRAND_CASE", "title", rules.brand)
+        elif rules.brand_position == "anywhere":
+            if anyc < 0:
+                add("BRAND_MISSING", "title", rules.brand)
+            elif exact < 0:
+                add("BRAND_CASE", "title", rules.brand)
+        # «Бренда быть не должно» — в любом регистре: в живых тайтлах он
+        # «Dnipro-M», и Amazon вырезает его независимо от регистра.
+        elif rules.brand_position == "absent" and anyc >= 0:
+            add("BRAND_PRESENT", "title", rules.brand)
 
     if model is not None and highlights:
         prefix = rules.highlight_prefix.format(model=model)
