@@ -46,6 +46,10 @@ from services.flatfile import (
     build_csv_export,
 )
 import auth
+from services import title_rules
+from services.title_rules import (
+    trim_to_word, keeps_all, forbidden_chars, repeated_words,
+)
 from services.spapi import (
     missing_secrets, marketplace_meta, push_title, log_push, load_pushes,
     issues_text,
@@ -70,7 +74,6 @@ TITLE_PROVIDER, TITLE_MODEL = task_config("title_split")
 TITLE_LIMIT = get_int("limit.title", _TL_DEFAULT)
 HIGHLIGHTS_LIMIT = get_int("limit.highlights", _HL_DEFAULT)
 
-FORBIDDEN_CHARS = set("!$?_{}^¬¦®©™")
 ACCENT = "#E8590C"
 INK = "#1A1815"
 MUTED = "#57534A"
@@ -379,61 +382,17 @@ LENGTH_MARGIN = 2      # запас к лимиту, который просим
 MAX_ATTEMPTS = 3       # первая попытка + два автоповтора
 
 
-def trim_to_word(text: str, limit: int) -> str:
-    """Обрезка строго по границе слова, никогда посреди слова.
-
-    Хвостовую пунктуацию и разделители убираем: «…1650W ·» выглядит
-    как обрыв, а не как законченный тайтл."""
-    if len(text) <= limit:
-        return text
-    cut = text[:limit + 1]
-    if " " in cut:
-        cut = cut[:cut.rindex(" ")]
-    else:
-        cut = cut[:limit]           # одно слово длиннее лимита — режем как есть
-    return cut.rstrip(" ,;·—–-|/")
-
-
-def keeps_all(text: str, hl: str, keep: list[str]) -> bool:
-    """Все must_keep-фразы по-прежнему на месте (в title или highlights)."""
-    combined = f"{text} {hl}"
-    return all(phrase_present(p, combined) for p in keep)
-
-
+# Обрезка, сохранность фраз и лимиты — общий модуль `services/title_rules.py`:
+# те же проверки нужны Генератору текстов и Диагнозу. Здесь — только привязка
+# к лимитам из настроек (`limit.title`, `limit.highlights`).
 def enforce_limits(res: dict, must_keep: list[str]) -> tuple[dict, dict]:
-    """Последний рубеж: режем сами, но только если не теряем must_keep.
-
-    Возвращает (результат, отметки). Если обрезка убивает обязательную
-    фразу — НЕ режем: пусть человек правит руками, это честнее, чем
-    молча выбросить фразу, по которой идут покупки."""
-    marks = {"trimmed": [], "over": []}
-    out = dict(res)
-    for field, limit, key in (("title", TITLE_LIMIT, "title"),
-                              ("highlights", HIGHLIGHTS_LIMIT, "highlights")):
-        val = str(out.get(field) or "")
-        if len(val) <= limit:
-            continue
-        cand = trim_to_word(val, limit)
-        probe = dict(out)
-        probe[field] = cand
-        if cand and keeps_all(str(probe.get("title") or ""),
-                              str(probe.get("highlights") or ""), must_keep):
-            out[field] = cand
-            marks["trimmed"].append(key)
-        else:
-            marks["over"].append(key)
-    return out, marks
+    """Последний рубеж: режем сами, но только если не теряем must_keep."""
+    return title_rules.enforce_limits(res, must_keep, TITLE_LIMIT, HIGHLIGHTS_LIMIT)
 
 
 def over_limits(res: dict) -> list[str]:
     """Какие поля не влезли в лимит — для решения о повторе."""
-    bad = []
-    if len(str(res.get("title") or "")) > TITLE_LIMIT:
-        bad.append(f"title {len(str(res.get('title') or ''))}/{TITLE_LIMIT}")
-    if len(str(res.get("highlights") or "")) > HIGHLIGHTS_LIMIT:
-        bad.append("highlights "
-                   f"{len(str(res.get('highlights') or ''))}/{HIGHLIGHTS_LIMIT}")
-    return bad
+    return title_rules.over_limits(res, TITLE_LIMIT, HIGHLIGHTS_LIMIT)
 
 
 def retry_note(res: dict) -> str:
@@ -524,15 +483,12 @@ def run_checks(new_title: str, new_hl: str,
     checks.append((len(new_hl) <= HIGHLIGHTS_LIMIT,
                    t("chk.hl_len", n=len(new_hl), min=HIGHLIGHTS_LIMIT)))
 
-    bad_chars = sorted({c for c in new_title if c in FORBIDDEN_CHARS})
+    bad_chars = forbidden_chars(new_title)
     checks.append((not bad_chars,
                    t("chk.forbidden_chars") + ": " + (" ".join(bad_chars)
                     if bad_chars else t("chk.none"))))
 
-    words = re.findall(r"[a-zA-Zа-яА-ЯёЁáéíóúñüÁÉÍÓÚÑÜäöüßÄÖÜ0-9]+", new_title.lower())
-    stop = {"de", "con", "para", "y", "el", "la", "und", "mit", "für", "et", "avec", "e", "con", "per"}
-    over_words = sorted({w for w in words
-                         if len(w) > 2 and w not in stop and words.count(w) > 2})
+    over_words = repeated_words(new_title)
     checks.append((not over_words,
                    t("chk.word_repeats") + ": " + (", ".join(over_words)
                     if over_words else t("chk.none"))))
