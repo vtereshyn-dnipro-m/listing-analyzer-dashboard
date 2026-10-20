@@ -21,6 +21,7 @@ import streamlit as st
 
 from services import cache
 from services.db import get_conn, get_engine
+from services.title_rules import norm_text, phrase_present  # noqa: F401 — phrase_present берут отсюда
 
 TIERS = ["must_keep", "preferred", "compress", "forbid"]
 TIER_LABEL = {
@@ -117,10 +118,9 @@ def load_sqp(asin: str, marketplace: str, weeks: int = 4) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-def _norm(s: str) -> str:
-    s = str(s).lower()
-    s = re.sub(r"[^\w\s]", " ", s)
-    return re.sub(r"\s+", " ", s).strip()
+# Нормализация и «фраза на месте» — в общем модуле правил тайтла: ими же
+# проверяет сохранность фраз Синтез и Генератор текстов.
+_norm = norm_text
 
 
 def guess_tier(row: pd.Series, product_title: str) -> str:
@@ -175,15 +175,6 @@ def compress_phrase(text: str) -> str:
     for pattern, repl in COMPRESSIONS:
         out = re.sub(pattern, repl, out, flags=re.I)
     return re.sub(r"\s{2,}", " ", out).strip()
-
-
-def phrase_present(phrase: str, text: str) -> bool:
-    """Фраза считается сохранённой, если все её значимые слова есть в тексте."""
-    t = _norm(text)
-    words = [w for w in _norm(phrase).split() if len(w) > 2]
-    if not words:
-        return False
-    return all(w in t for w in words)
 
 
 def coverage(df: pd.DataFrame, title: str, highlights: str = "") -> dict:
