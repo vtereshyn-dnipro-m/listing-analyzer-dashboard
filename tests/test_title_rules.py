@@ -247,13 +247,14 @@ def cs(title, hl="", **kw):
     return tr.codes(tr.check(title, hl, **kw))
 
 
-GOOD = "Amoladora Angular 2400W Ø230mm 6500rpm M14, Giratoria, Soft Start"
-check(f"верный тайтл проходит ({cs(GOOD)})", cs(GOOD) == [])
-check("по умолчанию бренд не проверяется (позиция не решена)", tr.Ruleset().brand_position is None and cs(GOOD) == [])
-check("длина — параметр: 75 по умолчанию",
-      "TITLE_TOO_LONG" in cs("x" * 76) and "TITLE_TOO_LONG" not in cs("x" * 75))
-check("длина — параметр: при 200 тот же тайтл проходит",
-      "TITLE_TOO_LONG" not in cs("x" * 76, rules=tr.Ruleset(title_limit=200)))
+GOOD = "DNIPRO-M Amoladora Angular 2400W Ø230mm 6500rpm M14, Giratoria"
+check(f"верный тайтл проходит ({cs(GOOD)}, {len(GOOD)} знаков)", cs(GOOD) == [] and len(GOOD) <= 75)
+check("по умолчанию бренд проверяется первым (решение 21.10)",
+      tr.Ruleset().brand_position == "start" and "BRAND_NOT_FIRST" in cs("Amoladora Angular 2400W"))
+check("длина тайтла — 75 жёстко (Seller Central ES, 21.10)",
+      tr.TITLE_LIMIT == 75 and "TITLE_TOO_LONG" in cs("DNIPRO-M " + "x" * 67)
+      and "TITLE_TOO_LONG" not in cs("DNIPRO-M " + "x" * 66))
+check("длину тайтла параметром не поменять", raises(lambda: tr.Ruleset(title_limit=200)))
 check("Highlights > 125 — нарушение", "HIGHLIGHTS_TOO_LONG" in cs(GOOD, "h" * 126))
 check("«|» запрещён (разделитель — запятая)", "FORBIDDEN_CHAR" in cs("Amoladora 2400W | Kit"))
 check("«│» и «¦» тоже", "FORBIDDEN_CHAR" in cs("Amoladora │ Kit") and "FORBIDDEN_CHAR" in cs("Amoladora ¦ Kit"))
@@ -267,10 +268,11 @@ check("220V — нарушение даже у аккумулятора", "MAINS
 check("вольтаж аккумулятора у инструмента — нарушение", "TOOL_VOLTAGE" in cs("Martillo Perforador 20V 50Nm"))
 check("и с пробелом «12 V»", "TOOL_VOLTAGE" in cs("Taladro 12 V 30Nm"))
 check("у аккумулятора и зарядки вольтаж можно",
-      cs("Batería BP-260 20V 6Ah", kind=tr.POWER_PACK) == [] and cs("Cargador FC-230 20V", kind=tr.POWER_PACK) == [])
+      cs("DNIPRO-M Batería BP-260 20V 6Ah", kind=tr.POWER_PACK) == []
+      and cs("DNIPRO-M Cargador FC-230 20V", kind=tr.POWER_PACK) == [])
 check("220V не считается дважды как вольтаж инструмента",
-      tr.codes(tr.check("Amoladora 220V")) == ["MAINS_VOLTAGE"])
-check("модель «BP-260», «FC-230», «M14» — не вольтаж и не единица", cs("Batería BP-260, Cargador FC-230, M14") == [])
+      tr.codes(tr.check("DNIPRO-M Amoladora 220V")) == ["MAINS_VOLTAGE"])
+check("модель «BP-260», «FC-230», «M14» — не вольтаж и не единица", cs("DNIPRO-M Batería BP-260, Cargador FC-230, M14") == [])
 check("число и единица через пробел — нарушение", "UNIT_SPACING" in cs("Amoladora 2400 W 230 mm"))
 check("регистр единицы: RPM → rpm, NM → Nm", "UNIT_CASE" in cs("Amoladora 6500RPM") and "UNIT_CASE" in cs("Taladro 60NM"))
 check("разделитель тысяч: 10.000rpm → 10000rpm", "UNIT_THOUSANDS" in cs("Amoladora 10.000rpm"))
@@ -291,33 +293,34 @@ for s in ("Amoladora GL-240 230mm", "Juego 10 125mm discos", "Kit de 2 230mm", "
 check("неизвестное поле в tool_voltage_in — отказ, а не молча выключенное правило",
       raises(lambda: tr.check("Taladro 20V", rules=tr.Ruleset(tool_voltage_in=("highlight",)))))
 check("каждое «Ø » названо", sum(v.code == "DIAMETER_SPACING" for v in tr.check("Ø 230mm y Ø 125mm")) == 2)
-check("вплотную «Ø230mm» с верным форматом не даёт ничего", cs("Amoladora Ø230mm 6500rpm 2400W") == [])
+check("вплотную «Ø230mm» с верным форматом не даёт ничего", cs("DNIPRO-M Amoladora Ø230mm 6500rpm 2400W") == [])
 # Разделитель — работающий параметр
 check("« - » при разделителе-запятой — нарушение", "SEPARATOR" in cs("Amoladora 2400W - Kit"))
 check("« / » и «;» — тоже", "SEPARATOR" in cs("Amoladora / Kit") and "SEPARATOR" in cs("Amoladora; Kit"))
 check("дефис в коде модели разделителем не считается", "SEPARATOR" not in cs("Amoladora DGA-201M SDS-Plus"))
 check("при разделителе « - » он разрешён, а запятая не проверяется",
-      cs("Amoladora 2400W - Kit, Maletín", rules=tr.Ruleset(separator=" - ")) == [])
+      cs("DNIPRO-M Amoladora 2400W - Kit, Maletín", rules=tr.Ruleset(separator=" - ")) == [])
 check("неизвестный разделитель — отказ", raises(lambda: tr.check(GOOD, rules=tr.Ruleset(separator="|"))))
 # Вольтаж инструмента в Highlights — параметр (вопрос владельцу)
 HL20 = "Model CD-200BC: compatible con baterías 20V"
-check("по умолчанию вольтаж инструмента запрещён и в Highlights",
-      "TOOL_VOLTAGE" in cs("Taladro 60Nm", HL20, model="CD-200BC"))
-check("с tool_voltage_in=('title',) в Highlights можно, в тайтле — нет",
-      "TOOL_VOLTAGE" not in cs("Taladro 60Nm", HL20, model="CD-200BC", rules=tr.Ruleset(tool_voltage_in=("title",)))
-      and "TOOL_VOLTAGE" in cs("Taladro 20V", rules=tr.Ruleset(tool_voltage_in=("title",))))
+check("по умолчанию вольтаж инструмента в Highlights можно (21.10), в тайтле — нет",
+      "TOOL_VOLTAGE" not in cs("DNIPRO-M Taladro 60Nm", HL20, model="CD-200BC")
+      and "TOOL_VOLTAGE" in cs("DNIPRO-M Taladro 20V"))
+check("строгий вариант параметром: и в Highlights нельзя",
+      "TOOL_VOLTAGE" in cs("DNIPRO-M Taladro 60Nm", HL20, model="CD-200BC",
+                           rules=tr.Ruleset(tool_voltage_in=("title", "highlights"))))
 
 START = tr.Ruleset(brand_position="start")
-check("бренд в начале: «DNIPRO-M Amoladora» проходит", "BRAND_NOT_FIRST" not in cs("DNIPRO-M " + GOOD, rules=START))
+check("бренд в начале: «DNIPRO-M Amoladora» проходит", "BRAND_NOT_FIRST" not in cs(GOOD, rules=START))
 check("бренд не в начале — нарушение", "BRAND_NOT_FIRST" in cs("Amoladora DNIPRO-M 2400W", rules=START))
 check("«Dnipro-M» в начале вместо «DNIPRO-M» — только код регистра, не «не первым»",
       cs("Dnipro-M Amoladora", rules=START) == ["BRAND_CASE"])
 check("«DNIPRO-M-Amoladora» — бренд в начале, регистр верный", cs("DNIPRO-M-Amoladora", rules=START) == [])
 check("«бренда быть не должно» — в любом регистре: «Dnipro-M amoladora» ловится",
       "BRAND_PRESENT" in cs("Dnipro-M amoladora", rules=tr.Ruleset(brand_position="absent")))
-check("бренд где угодно", "BRAND_MISSING" in cs(GOOD, rules=tr.Ruleset(brand_position="anywhere")))
+check("бренд где угодно", "BRAND_MISSING" in cs("Amoladora 2400W", rules=tr.Ruleset(brand_position="anywhere")))
 check("бренда быть не должно (методология v7)",
-      "BRAND_PRESENT" in cs("DNIPRO-M " + GOOD, rules=tr.Ruleset(brand_position="absent")))
+      "BRAND_PRESENT" in cs(GOOD, rules=tr.Ruleset(brand_position="absent")))
 check("бренд целым словом: «DNIPRO-MX» — не бренд", "BRAND_NOT_FIRST" in cs("DNIPRO-MX Amoladora", rules=START))
 check("неизвестная позиция бренда — отказ, а не молчаливое «не проверять»",
       raises(lambda: tr.check(GOOD, rules=tr.Ruleset(brand_position="first"))))
@@ -330,7 +333,22 @@ check("префикс — параметр", "HIGHLIGHTS_PREFIX" not in cs(
     GOOD, "Modelo DGA-201M - Ø125mm", model="DGA-201M", rules=tr.Ruleset(highlight_prefix="Modelo {model} - ")))
 check("модель не задана — префикс не проверяется", "HIGHLIGHTS_PREFIX" not in cs(GOOD, "Ø125mm"))
 check("те же правила символов и единиц — в Highlights",
-      {"FORBIDDEN_CHAR", "TOOL_VOLTAGE"} <= set(cs(GOOD, "Model X: 20V | 6Ah", model="X")))
+      {"FORBIDDEN_CHAR", "TOOL_VOLTAGE"} <= set(cs(GOOD, "Model X: 20V | 6Ah", model="X",
+                                                   rules=tr.Ruleset(tool_voltage_in=("title", "highlights")))))
+# Подтверждено 21.10 (Seller Central ES): запрещённые символы и бренд в повторах
+check("официальный список ! $ ? _ { } ^ ¬ ¦ — весь запрещён",
+      set("!$?_{}^¬¦") <= tr.FORBIDDEN_CHARS and all("FORBIDDEN_CHAR" in cs(f"DNIPRO-M Amoladora {c} 2400W")
+                                                       for c in "!$?_{}^¬¦"))
+check("бренд тоже считается в повторах: «dnipro» трижды — нарушение",
+      "WORD_REPEATED" in cs("DNIPRO-M Amoladora Dnipro-M, kit dnipro"))
+check("бренд дважды — можно", "WORD_REPEATED" not in cs("DNIPRO-M Amoladora, kit Dnipro"))
+# Диапазоны и размеры между числами — не разделитель частей (21.10)
+for s in ("DNIPRO-M Taladro 0 - 1700rpm", "DNIPRO-M Amoladora Ø230mm / 22,23mm", "DNIPRO-M Sierra 0 – 4500rpm",
+          "DNIPRO-M Fresadora 6 - 8 mm"):
+    check(f"«{s}» — диапазон или размер, не разделитель", "SEPARATOR" not in cs(s))
+for s in ("DNIPRO-M Amoladora 2400W - Kit", "DNIPRO-M Amoladora / Kit 2", "DNIPRO-M Taladro 60Nm - 2 Baterías",
+          "DNIPRO-M Taladro; 2 Baterías", "DNIPRO-M Taladro 0 - 1700rpm - Maletín"):
+    check(f"«{s}» — разделитель частей, нарушение", "SEPARATOR" in cs(s))
 
 # Пять пилотных товаров: наброски из плана (не вывод модели) по шаблону владельца
 print("3. пять пилотных товаров (наброски из плана)")

@@ -169,6 +169,16 @@ _DIAM_SPACE = re.compile(r"Ø\s+\d+(?:[.,]\d+)*")
 # («SDS-Plus», «DGA-201M») разделителем не считается. Запятая не
 # проверяется никогда: это и перечисление внутри части.
 ALT_SEPARATORS = (" - ", " – ", " — ", " / ", ";")
+# Между двумя числами « - », « – » и « / » — не разделитель частей, а диапазон
+# или размер в характеристиках: «0 - 1700rpm», «Ø230mm / 22,23mm». Разрешено
+# владельцем 21.10.2026. Числом считается слово с цифрой (и «Ø230mm»).
+RANGE_SEPARATORS = (" - ", " – ", " / ")
+
+# Длина тайтла — 75 знаков с пробелами, жёстко, не параметр: подтверждено
+# владельцем по Seller Central ES (GYTR6SYGFA5E3EQC, 21.10.2026) — все не-медиа
+# категории. Запрещённые символы там же: ! $ ? _ { } ^ ¬ ¦ (они в
+# FORBIDDEN_CHARS), слово не больше двух раз — и бренд тоже.
+TITLE_LIMIT = 75
 
 # Разделитель частей шаблона — запятая (владелец, 20.10.2026). Вертикальная
 # черта и её родственники запрещены: «|» Amazon сам ставит между тайтлом и
@@ -178,10 +188,12 @@ PILOT_FORBIDDEN = FORBIDDEN_CHARS | set("|│┃¦")
 
 @dataclass(frozen=True)
 class Ruleset:
-    """Параметры правил. Всё, что владелец ещё не решил, — здесь, а не в коде.
+    """Параметры правил. Длины тайтла среди них нет: 75 — константа
+    `TITLE_LIMIT`, подтверждено владельцем 21.10.2026.
 
-    `brand_position`:
-        None      — не проверяется (по умолчанию, пока не решено);
+    `brand_position` (по умолчанию "start" — рекомендация Amazon, решение
+    владельца 21.10.2026):
+        None      — не проверяется;
         "start"   — тайтл начинается с бренда, регистр как в `brand`;
         "anywhere"— бренд где-то в тайтле, регистр как в `brand`;
         "absent"  — бренда в тайтле нет ни в каком регистре (методология v7:
@@ -191,18 +203,16 @@ class Ruleset:
     в тайтле — нарушение `SEPARATOR`. Вертикальная черта запрещена всегда
     (`forbidden`).
     """
-    title_limit: int = 75
     highlight_limit: int = 125
     brand: str = "DNIPRO-M"
-    brand_position: str | None = None
+    brand_position: str | None = "start"
     separator: str = ","
     forbidden: frozenset = field(default_factory=lambda: frozenset(PILOT_FORBIDDEN))
     max_word_repeats: int = 2
     highlight_prefix: str = "Model {model}: "
-    # Где вольтаж у инструмента — нарушение. Решение «у инструмента никогда»
-    # (20.10.2026) по умолчанию держится строго, в обоих полях. Нужна ли
-    # совместимость «baterías 20V» в Highlights — вопрос владельцу.
-    tool_voltage_in: tuple = ("title", "highlights")
+    # Где вольтаж у инструмента — нарушение. Только тайтл: в Highlights
+    # совместимость «compatible con baterías 20V» можно (владелец, 21.10.2026).
+    tool_voltage_in: tuple = ("title",)
 
 
 @dataclass(frozen=True)
@@ -213,6 +223,28 @@ class Violation:
 
 
 BRAND_POSITIONS = (None, "start", "anywhere", "absent")
+
+
+def _separates_parts(title: str, sep: str) -> bool:
+    """Есть ли в тайтле `sep` как разделитель частей, а не как диапазон или
+    размер между двумя числами («0 - 1700rpm», «Ø230mm / 22,23mm»)."""
+    start = 0
+    while (i := title.find(sep, start)) >= 0:
+        start = i + len(sep)
+        if sep not in RANGE_SEPARATORS:
+            return True
+        left = (title[:i].split()[-1:] or [""])[0]
+        rest = title[i + len(sep):].split()
+        right = rest[0] if rest else ""
+        # Справа — величина: число с единицей («1700rpm», «22,23mm») или голое
+        # число, за которым идёт единица («20 mm»). «60Nm - 2 Baterías» — это уже
+        # следующая часть тайтла, а не диапазон.
+        bare = re.fullmatch(r"\d+(?:[.,]\d+)*", right)
+        measure = bool(re.search(r"\d", right)) and (
+            not bare or (len(rest) > 1 and rest[1].lower() in UNITS))
+        if not (re.search(r"\d", left) and measure):
+            return True
+    return False
 
 
 def _brand_in(text: str, brand: str, *, any_case: bool = False) -> int:
@@ -243,8 +275,8 @@ def check(title: str, highlights: str = "", *, kind: str = TOOL, model: str | No
     def add(code, fld, detail=""):
         out.append(Violation(code, fld, detail))
 
-    if len(title) > rules.title_limit:
-        add("TITLE_TOO_LONG", "title", f"{len(title)}/{rules.title_limit}")
+    if len(title) > TITLE_LIMIT:
+        add("TITLE_TOO_LONG", "title", f"{len(title)}/{TITLE_LIMIT}")
     if len(highlights) > rules.highlight_limit:
         add("HIGHLIGHTS_TOO_LONG", "highlights", f"{len(highlights)}/{rules.highlight_limit}")
 
@@ -272,7 +304,7 @@ def check(title: str, highlights: str = "", *, kind: str = TOOL, model: str | No
         for m in _DIAM_SPACE.finditer(text):
             add("DIAMETER_SPACING", fld, m.group(0))
 
-    alt = [s for s in ALT_SEPARATORS if s != rules.separator and s in title]
+    alt = [s for s in ALT_SEPARATORS if s != rules.separator and _separates_parts(title, s)]
     if alt:
         add("SEPARATOR", "title", f"{', '.join(repr(s) for s in alt)} → {rules.separator!r}")
 
