@@ -227,6 +227,56 @@ def build_keyword_table(asin: str, marketplace: str,
     return df.sort_values("weight", ascending=False)
 
 
+def load_sqp_for_asins(asins: list[str], marketplace: str, weeks: int = 8) -> pd.DataFrame:
+    """Агрегат SQP по НЕСКОЛЬКИМ ASIN — ключи по типу товара (пилот «Генератор
+    текстов», решение владельца 20.10.2026: ключи по типу со всех наших ASIN).
+
+    Объём запроса — максимум за период (он общий для рынка, а не для ASIN),
+    показы, клики и покупки — суммой по всем ASIN. `asins` — сколько наших
+    товаров видели этот запрос. Сбой чтения — как у `load_sqp`: пустой ответ и
+    причина в `sqp_error()`."""
+    if not asins:
+        _remember_sqp_error(None)
+        return pd.DataFrame()
+    try:
+        df = pd.read_sql(
+            """
+            SELECT search_query,
+                   max(search_query_volume)   AS volume,
+                   sum(impressions_asin)      AS impressions,
+                   sum(clicks_asin)           AS clicks,
+                   sum(purchases_asin)        AS purchases,
+                   count(DISTINCT asin)       AS asins
+            FROM sqp_reports
+            WHERE asin = ANY(%(asins)s) AND marketplace = %(mp)s
+              AND reporting_date >= current_date - %(days)s
+            GROUP BY search_query
+            ORDER BY max(search_query_volume) DESC NULLS LAST
+            """,
+            get_engine(), params={"asins": list(asins), "mp": marketplace, "days": weeks * 7},
+        )
+        _remember_sqp_error(None)
+        return df
+    except Exception as e:
+        _remember_sqp_error(e)
+        return pd.DataFrame()
+
+
+def build_type_keyword_table(asins: list[str], marketplace: str, product_title: str,
+                             weeks: int = 8, top_n: int = 30) -> pd.DataFrame:
+    """Ключи по типу товара: тот же разбор, что у `build_keyword_table`
+    (`guess_tier` — чужие бренды и нерелевантное в forbid), но по всем нашим
+    ASIN одного типа и по объёму поиска."""
+    df = load_sqp_for_asins(asins, marketplace, weeks)
+    if df.empty:
+        return df
+    df = df.head(top_n).copy()
+    df["tier"] = df.apply(lambda r: guess_tier(r, product_title), axis=1)
+    df["weight"] = df.apply(phrase_weight, axis=1)
+    df["in_title"] = df["search_query"].apply(lambda q: phrase_present(q, product_title))
+    return df
+
+
 def save_overrides(asin: str, marketplace: str, rows: list[dict]) -> None:
     """Сохраняет ручные правки типов фраз."""
     conn = get_conn()

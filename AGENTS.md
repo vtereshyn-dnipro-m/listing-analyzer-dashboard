@@ -1362,6 +1362,12 @@ Anthropic она уходит блоком с `cache_control: ephemeral` и пр
   проверяются намеренно: «1 500W» не отличить от «2 en 1 500W» или
   «Pack 2 100W».
 
+### `services/product_specs.py` — характеристики товара для тайтла (21.10.2026)
+Шаг 2 пилота «Генератор текстов»: характеристики из атрибутов каталога (с проверкой
+единицы) и текста последнего удачного снапшота, у каждого значения источник,
+расхождения — `conflicts`, недостающее — `missing`. Тип — по первому слову тайтла.
+Подробно и открытые вопросы к таблице типов — [docs/product-specs.md](docs/product-specs.md).
+
 ### `services/seo.py`
 Поисковый вес фраз и Coverage Score. Четыре типа фраз: `must_keep` (есть
 покупки), `preferred` (есть клики), `compress` (только показы), `forbid`
@@ -1369,6 +1375,11 @@ Anthropic она уходит блоком с `cache_control: ephemeral` и пр
 участия ИИ; вес = покупки×200 + клики×10 + показы×0.05 + volume×0.001.
 Coverage считается кодом: доля сохранённого веса от общего (кроме forbid).
 Также — безопасные сжатия (`1500 mAh` → `1.5 Ah`, `milímetros` → `mm`).
+Ключи по ТИПУ товара для пилота — `build_type_keyword_table(asins, …)`.
+Источник — SQP со всех наших ASIN того же типа: объём — максимум, показы,
+клики и покупки — суммой, `asins` — сколько наших товаров видели запрос.
+Разбор тот же `guess_tier`, чужие бренды уходят в forbid (решение
+20.10.2026).
 Таблицы: `sqp_reports` (чтение), `protected_keywords` (запись ручных правок).
 
 ### `services/search.py`
@@ -1874,6 +1885,7 @@ python tests/test_cache_invalidation.py
 python tests/test_deploy_sync.py
 python tests/test_telegram_token_redaction.py
 python tests/test_title_rules.py
+python tests/test_product_specs.py
 python tests/test_feed.py
 python tests/test_methodology_page.py
 python tests/test_i18n_sync.py
@@ -1905,6 +1917,9 @@ python tests/test_autonomy.py
 python tests/test_syntax.py
 python tests/test_imports.py
 ```
+
+`tests/fixture_pilot.py` — не тест, а данные пяти пилотных товаров ES в форме
+базы: атрибуты SP-API, тайтл и поля снапшота, снятые чтением 20–21.10.2026.
 
 `tests/fixture_template.py` — не тест, а общая миниатюра шаблона Amazon
 для двух наборов сразу: импортировать один тест из другого нельзя,
@@ -2384,6 +2399,10 @@ JSON-схем: каждая даёт ожидаемый схемный исхо�
 `len(w) > 2`, «Ø» как буква, бренд по умолчанию, 80 вместо 75, вольтаж по
 умолчанию в обоих полях, диапазоны не распознаются, любое число справа —
 диапазон.
+
+`test_product_specs.py` — характеристики товара для тайтла: тип, источники,
+единицы, сетевое напряжение, модель, загрузчики. Подробно —
+[docs/product-specs.md](docs/product-specs.md).
 
 `test_length_guard.py` — гарантия лимита: запас в промпте, автоповтор,
 обрезка по границе слова, отказ резать при потере must_keep.
