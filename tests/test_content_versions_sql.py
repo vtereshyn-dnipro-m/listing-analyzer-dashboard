@@ -232,7 +232,7 @@ for fn, sha in BODY_SHA.items():
 # сознательная правка числа здесь при любой правке файла.
 FILE_SHA = {
     MIG.name: "1bbdd697d02937c1235949bad72b0fd712daba4e03b01be28936a9662bea33b7",
-    KAB.name: "8f4f545103005aae35a8a4d01ce4d41308e986e979f7acd0b1343bf804f5547f",
+    KAB.name: "4f5ecc43e5dfe51b38e9e4dfea18f3a06ced2e93523267ad9f1eefe0daa23bb0",
 }
 for path in (MIG, KAB):
     raw = path.read_bytes()

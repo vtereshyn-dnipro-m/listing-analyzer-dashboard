@@ -308,7 +308,8 @@ check("лишних прав видимости нет",
       == {"ls.page." + k for k, *_ in auth.PAGES})
 
 # --- 6. роль пилота «Генератор текстов» (21.10.2026) -------------------------
-# Видит ОДНУ страницу и ни одного действия; сам генератор — только она и админ.
+# Видит ОДНУ страницу и одно действие — ls.textgen.accept; сам генератор и это
+# действие — только она и админ.
 ДЕЙСТВИЯ = ("ls.admin", "ls.content.edit", "ls.amazon.push", "ls.method.edit",
             "ls.settings.edit")
 for матрица, где in (([], "по коду"),
@@ -318,21 +319,31 @@ for матрица, где in (([], "по коду"),
     check(f"пилот видит генератор ({где})", auth.can("ls.page.textgen"))
     check(f"и больше ни одной страницы ({где})",
           not any(auth.can(a) for a in auth.PAGE_ACTIONS if a != "ls.page.textgen"))
-    check(f"и ни одного действия ({где})", not any(auth.can(a) for a in ДЕЙСТВИЯ))
+    check(f"и ни одного прежнего действия ({где})", not any(auth.can(a) for a in ДЕЙСТВИЯ))
+    check(f"принимает тексты и грузит паспорт ({где})", auth.can("ls.textgen.accept"))
     сброс(mode=1, matrix=матрица)
     как(auth.ADMIN)
     check(f"администратор видит генератор ({где})", auth.can("ls.page.textgen"))
+    check(f"администратор принимает тексты ({где})", auth.can("ls.textgen.accept"))
     for роль in (auth.VIEWER, auth.CONTENT_MANAGER, auth.APPROVER):
         сброс(mode=1, matrix=матрица)
         как(роль)
         check(f"{роль} генератор не видит ({где})", not auth.can("ls.page.textgen"))
+        check(f"{роль} тексты не принимает ({где})", not auth.can("ls.textgen.accept"))
         check(f"{роль} прочие страницы видит, как раньше ({где})",
               auth.can("ls.page.synthesis") and auth.can("ls.page.content"))
+
+check("в матрице кода у пилота ровно страница генератора и ls.textgen.accept",
+      {a for a, роли in auth._MATRIX.items() if auth.TEXTGEN in роли} == {"ls.page.textgen", "ls.textgen.accept"})
 
 # до SQL-файла строки ls.page.textgen в базе нет — генератор не видит никто
 сброс(mode=1, matrix=[r for r in БАЗА if r[0] != "ls.page.textgen"])
 как(auth.ADMIN)
 check("без строки в базе генератор не видит даже администратор", not auth.can("ls.page.textgen"))
+# до SQL права ls.textgen.accept строки в базе нет — кнопки выключены у всех
+сброс(mode=1, matrix=[(a, r) for a, роли in auth._MATRIX.items() for r in роли if a != "ls.textgen.accept"])
+как(auth.ADMIN)
+check("без строки ls.textgen.accept в базе не принимает даже администратор", not auth.can("ls.textgen.accept"))
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS
