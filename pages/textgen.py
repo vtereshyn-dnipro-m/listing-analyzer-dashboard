@@ -230,10 +230,14 @@ if pp_header:
         st.caption(t("tg.pp.denied_hint"))
     if st.button(t("tg.pp.save"), type="primary", disabled=not may, key="tg-pp-save"):
         if auth.require("ls.textgen.accept", object_type="passport", object_id=pp_header["passport_id"]):
-            store = pc.volume_store()
+            try:
+                store = pc.volume_store()
+            except pc.CopyError as e:
+                store = False
+                st.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
             if store is None:
                 st.error(t("tg.pp.no_store"))
-            else:
+            elif store:
                 from services.db import get_conn
                 try:
                     conn = get_conn()

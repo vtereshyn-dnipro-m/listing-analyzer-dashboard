@@ -148,9 +148,13 @@ class VolumeStore(ArtifactStore):
 
 
 def volume_store() -> VolumeStore | None:
-    """Том по секретам приложения; None — нет секции [databricks] (локально)."""
+    """Том по секретам приложения; None — нет секции [databricks] (локально).
+    Сбой создания клиента — CopyError, а не трейсбек страницы."""
     from services import collector
-    w = collector.client()
+    try:
+        w = collector.client()
+    except Exception as e:  # noqa: BLE001
+        raise CopyError("STORE_UNAVAILABLE", f"{type(e).__name__}: {str(e)[:160]}") from None
     return VolumeStore(w) if w is not None else None
 
 
@@ -163,15 +167,30 @@ def register(data: bytes, origin_name: str, *, actor: str, store: ArtifactStore,
     sha = hashlib.sha256(data).hexdigest()
     sku, pid, ver = h["sku_id"], h["passport_id"], int(h["passport_version"])
     aid = artifact_id(h)
+    # Таблица общая с приёмом материалов Паспорта (этап 3): все запросы — только по
+    # копиям docx в этом томе, чужие строки не трогаются и за дубль не считаются.
+    mine = " AND mime_type = %s AND archived_locator LIKE %s"
+    scope = (MIME, ROOT + "/%")
     with conn, conn.cursor() as cur:
+        # Две блокировки: SKU (версии одного товара) и id паспорта (один id —
+        # один товар). Порядок всегда один, взаимной блокировки нет.
         cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("passport_copy:" + sku,))
+        cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", ("passport_copy_id:" + pid,))
         cur.execute("SELECT source_artifact_id, archived_locator FROM passport_source_artifacts"
-                    " WHERE sku_id = %s AND sha256 = %s ORDER BY recorded_at LIMIT 1", (sku, sha))
+                    " WHERE sku_id = %s AND sha256 = %s" + mine + " ORDER BY recorded_at LIMIT 1",
+                    (sku, sha) + scope)
         dup = cur.fetchone()
         if dup:
             return Outcome("DUPLICATE", dup[0], dup[1], h)
+        # Тот же id паспорта у другого SKU — до записи в том: иначе копия легла бы
+        # в папку товара, а строка упала бы на первичном ключе (проверка #161).
+        cur.execute("SELECT sku_id FROM passport_source_artifacts WHERE passport_id = %s"
+                    " AND sku_id <> %s" + mine + " LIMIT 1", (pid, sku) + scope)
+        other = cur.fetchone()
+        if other:
+            raise CopyError("PASSPORT_OTHER_SKU", f"{pid} → {other[0]}")
         cur.execute("SELECT source_artifact_id, archived_locator FROM passport_source_artifacts"
-                    " WHERE sku_id = %s AND passport_id = %s", (sku, pid))
+                    " WHERE sku_id = %s AND passport_id = %s" + mine, (sku, pid) + scope)
         known = [(r[0], version_of(r[1])) for r in cur.fetchall()]
         if any(v == ver for _, v in known) or any(a == aid for a, _ in known):
             raise CopyError("VERSION_TAKEN", f"{pid} v{ver}")
@@ -196,7 +215,8 @@ def register(data: bytes, origin_name: str, *, actor: str, store: ArtifactStore,
              MIME, len(data), sha, actor))
         cur.execute("UPDATE passport_source_artifacts SET lifecycle = 'OLD'"
                     " WHERE sku_id = %s AND passport_id = %s AND lifecycle = 'ACTIVE'"
-                    " AND source_artifact_id <> %s RETURNING source_artifact_id", (sku, pid, aid))
+                    " AND source_artifact_id <> %s" + mine + " RETURNING source_artifact_id",
+                    (sku, pid, aid) + scope)
         old = [r[0] for r in cur.fetchall()]
     return Outcome("REGISTERED", aid, loc, h, old)
 

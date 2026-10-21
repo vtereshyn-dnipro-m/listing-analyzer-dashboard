@@ -51,6 +51,8 @@ def refused(fn, code: str) -> bool:
         fn()
     except pc.CopyError as e:
         return e.code == code
+    except Exception:  # noqa: BLE001 — чужое исключение = не тот отказ, а не падение теста
+        return False
     return False
 
 
@@ -113,6 +115,7 @@ class FakeDB:
     def __init__(self):
         self.rows: list[dict] = []
         self.log: list[str] = []
+        self.locks: list[str] = []
         self.fail_insert = False
 
     def cursor(self):
@@ -141,15 +144,25 @@ class FakeCursor:
     def execute(self, sql, p=()):
         db = self.db
         db.log.append(sql.split()[0] + " " + sql.split()[1])
+        # Фильтр «только копии docx в томе» читается из самого запроса: нет его —
+        # чужие строки приёма попадают в выборку, как попали бы в базе.
+        def scoped(r, tail):
+            if "mime_type = %s AND archived_locator LIKE %s" not in sql:
+                return True
+            mime, like = tail
+            return r.get("mime_type") == mime and (r.get("archived_locator") or "").startswith(like[:-1])
         if "pg_advisory_xact_lock" in sql:
-            db.lock = p[0]
+            db.locks.append(p[0])
             self.res = [(None,)]
         elif sql.startswith("SELECT") and "sha256 = %s" in sql:
             self.res = [(r["source_artifact_id"], r["archived_locator"]) for r in db.rows
-                        if r["sku_id"] == p[0] and r["sha256"] == p[1]][:1]
+                        if r["sku_id"] == p[0] and r["sha256"] == p[1] and scoped(r, p[2:])][:1]
+        elif sql.startswith("SELECT sku_id"):
+            self.res = [(r["sku_id"],) for r in db.rows
+                        if r["passport_id"] == p[0] and r["sku_id"] != p[1] and scoped(r, p[2:])][:1]
         elif sql.startswith("SELECT") and "passport_id = %s" in sql:
             self.res = [(r["source_artifact_id"], r["archived_locator"]) for r in db.rows
-                        if r["sku_id"] == p[0] and r["passport_id"] == p[1]]
+                        if r["sku_id"] == p[0] and r["passport_id"] == p[1] and scoped(r, p[2:])]
         elif sql.startswith("INSERT"):
             if db.fail_insert:
                 raise RuntimeError("connection reset")
@@ -167,7 +180,7 @@ class FakeCursor:
             out = []
             for r in db.rows:
                 if r["sku_id"] == p[0] and r["passport_id"] == p[1] and r["lifecycle"] == old \
-                        and r["source_artifact_id"] != p[2]:
+                        and r["source_artifact_id"] != p[2] and scoped(r, p[3:]):
                     r["lifecycle"] = new
                     out.append((r["source_artifact_id"],))
             self.res = out
@@ -182,6 +195,8 @@ class FakeCursor:
 
 
 class CountingStore(MemoryStore):
+    """Том в памяти с локаторами, как у настоящего: под корнем тома."""
+
     def __init__(self):
         super().__init__()
         self.puts = 0
@@ -191,7 +206,7 @@ class CountingStore(MemoryStore):
         self.puts += 1
         if self.fail_put:
             raise OSError("volume is read-only")
-        return super().put(path, data)
+        return super().put(pc.ROOT + "/" + path, data)
 
     def get(self, locator):
         b = super().get(locator)
@@ -199,13 +214,20 @@ class CountingStore(MemoryStore):
 
 
 db, store = FakeDB(), CountingStore()
+# Чужая строка той же таблицы — материал приёма Паспорта (этап 3): тот же SKU и
+# паспорт, тот же SHA, ACTIVE. Её нельзя ни принять за дубль, ни увести в OLD.
+FOREIGN = {"source_artifact_id": "SRC-photo-1", "sku_id": "99601000-B", "passport_id": "PASS-99601000-B-001",
+           "run_id": None, "origin_locator": "photo.jpg", "archived_locator": "99601000-B/артефакти/2026-10-21/photo.jpg",
+           "file_name": "photo.jpg", "mime_type": "image/jpeg", "bytes": 1, "sha256": hashlib.sha256(V2).hexdigest(),
+           "access_result": "ACCEPTED", "lifecycle": "ACTIVE", "registered_by": "intake"}
+db.rows.append(dict(FOREIGN))
 reg = lambda data, s=None: pc.register(data, "Паспорт.docx", actor="v.tereshyn@dniprom.com",  # noqa: E731
                                         store=s or store, conn=db)
 
 r = reg(V2)
-row = db.rows[0] if db.rows else {}
-check("первая загрузка — REGISTERED, копия по пути",
-      r.status == "REGISTERED" and r.locator == pc.copy_path(h) and store.files.get(r.locator) == V2)
+row = db.rows[1] if len(db.rows) > 1 else {}
+check("первая загрузка — REGISTERED (строка приёма с тем же SHA — не дубль), копия по пути",
+      r.status == "REGISTERED" and r.locator == pc.ROOT + "/" + pc.copy_path(h) and store.files.get(r.locator) == V2)
 check("строка: id, SKU, паспорт, run_id, SHA, размер, тип, автор, ACTIVE",
       row.get("source_artifact_id") == "DOCX-PASS-99601000-B-001-v2" and row.get("sku_id") == "99601000-B"
       and row.get("passport_id") == "PASS-99601000-B-001" and row.get("run_id") == "RUN-99601000-B-001"
@@ -213,21 +235,26 @@ check("строка: id, SKU, паспорт, run_id, SHA, размер, тип,
       and row.get("mime_type") == pc.MIME and row.get("registered_by") == "v.tereshyn@dniprom.com"
       and row.get("lifecycle") == "ACTIVE" and row.get("access_result") == "ACCEPTED"
       and row.get("origin_locator") == "Паспорт.docx")
-check("запись под блокировкой SKU, первым запросом", db.log[0].startswith("SELECT pg_advisory_xact_lock")
-      and db.lock == "passport_copy:99601000-B")
+check("запись под блокировками SKU и id паспорта, первыми запросами",
+      db.log[0].startswith("SELECT pg_advisory_xact_lock") and db.log[1].startswith("SELECT pg_advisory_xact_lock")
+      and db.locks[:2] == ["passport_copy:99601000-B", "passport_copy_id:PASS-99601000-B-001"])
 
 puts = store.puts
 r = reg(V2)
 check("тот же файл — DUPLICATE, без второй строки и без записи в том",
-      r.status == "DUPLICATE" and len(db.rows) == 1 and store.puts == puts)
+      r.status == "DUPLICATE" and len(db.rows) == 2 and store.puts == puts)
 check("другой файл на ту же версию — VERSION_TAKEN, ничего не записано",
-      refused(lambda: reg(V2b), "VERSION_TAKEN") and len(db.rows) == 1 and store.puts == puts)
+      refused(lambda: reg(V2b), "VERSION_TAKEN") and len(db.rows) == 2 and store.puts == puts)
+OTHER = docx(header("2", sku="99601000-B-4"))
+check("тот же id паспорта у другого SKU — PASSPORT_OTHER_SKU до записи в том",
+      refused(lambda: reg(OTHER), "PASSPORT_OTHER_SKU") and len(db.rows) == 2 and store.puts == puts)
 
 r = reg(V3)
 check("новая версия — REGISTERED, прежняя копия в OLD",
       r.status == "REGISTERED" and r.superseded == ["DOCX-PASS-99601000-B-001-v2"]
-      and [x["lifecycle"] for x in db.rows] == ["OLD", "ACTIVE"])
-check("старая версия после новой — VERSION_OLDER", refused(lambda: reg(V1), "VERSION_OLDER") and len(db.rows) == 2)
+      and [x["lifecycle"] for x in db.rows] == ["ACTIVE", "OLD", "ACTIVE"])
+check("строка приёма не тронута", db.rows[0] == FOREIGN)
+check("старая версия после новой — VERSION_OLDER", refused(lambda: reg(V1), "VERSION_OLDER") and len(db.rows) == 3)
 
 # сбои тома: в базе ничего
 db2, s2 = FakeDB(), CountingStore()
