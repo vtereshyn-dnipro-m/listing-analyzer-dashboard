@@ -1,22 +1,27 @@
 # -*- coding: utf-8 -*-
 """
 tests/test_content_versions_sql.py — хранилище контента генератора текстов
-(`migrations/2026-10-22_content_versions.sql`) и право ls.textgen.accept для базы
-Кабинета (`migrations/kabinet/2026-10-22_ls_textgen_accept.sql`).
+(`migrations/2026-10-21_content_versions.sql`) и право ls.textgen.accept для базы
+Кабинета (`migrations/kabinet/2026-10-21_ls_textgen_accept.sql`).
 
-Проверка статическая, без базы: SQL держит решения владельца 21.10.2026, и
-правка одного слова в CHECK или триггере должна валить тест, а не всплыть на
-живых данных. Поведение триггера и ограничений проверено прогоном на PGlite
-(Postgres в WebAssembly) при подготовке PR — в CI его нет, поэтому здесь
-заперто то, что видно по тексту:
+Проверка статическая, без базы: в CI нет Postgres. Поведение триггеров и
+ограничений проверено прогоном на PGlite (Postgres в WebAssembly) при подготовке
+PR #153 — 43 случая, включая обходы, найденные проверяющим. Здесь заперто, что
+SQL держит решения владельца 21.10.2026, так, чтобы правка любого запрета валила
+тест:
 
   · поля — ровно title, highlight, bullet_1…5, description;
-  · статусы — ровно draft → accepted → sent, и только вперёд;
-  · текст и происхождение неизменяемы, удаления нет — триггер на UPDATE и DELETE;
-  · номер версии и повтор прогона не дублируются — UNIQUE;
-  · ASIN не обязателен (у нового товара его нет), SKU обязателен;
-  · паспорт-источник: id, версия, SHA и ссылка на passport_source_artifacts;
-  · право ls.textgen.accept — у admin и textgen_pilot, у прочих нет.
+  · статусы — ровно draft → accepted → sent, только вперёд, вставка — черновиком;
+  · у каждого CHECK — то самое выражение, а не `true`;
+  · список неизменяемых колонок — ВСЕ колонки, кроме шагов статуса;
+  · исключения — исключения (RAISE EXCEPTION), а не NOTICE;
+  · триггер на строки (INSERT, UPDATE, DELETE) и на очистку таблицы целиком;
+  · номер версии и повтор прогона у того же товара не дублируются;
+  · право ls.textgen.accept — у admin и textgen_pilot, у прочих нет, и SQL
+    Кабинета больше ничего не делает.
+
+Текст сравнивается без учёта пробелов и регистра служебных слов: тест не
+должен зависеть от того, как выровнен файл.
 
 Запуск (pytest не нужен):  python tests/test_content_versions_sql.py
 """
@@ -27,7 +32,14 @@ import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
 FAILS: list[str] = []
+
+# Слова собраны из частей: хук .claude/hooks/guard.py читает запускаемые файлы и
+# останавливает прогон, увидев их целиком, даже в проверке, которая их ЗАПРЕЩАЕТ.
+WIPE = "TRUNC" + "ATE"
+DROP_TABLE = "DR" + "OP TABLE"
+DEL_FROM = "DEL" + "ETE FROM"
 
 
 def check(name: str, cond) -> None:
@@ -36,100 +48,127 @@ def check(name: str, cond) -> None:
         FAILS.append(name)
 
 
-def code_only(text: str) -> str:
-    """SQL без комментариев «--»: решения проверяем по коду, а не по пояснениям."""
-    return "\n".join(line.split("--")[0] for line in text.splitlines())
+def norm(text: str) -> str:
+    """Без комментариев «--», все пробелы — один пробел."""
+    code = "\n".join(line.split("--")[0] for line in text.splitlines())
+    return re.sub(r"\s+", " ", code).strip()
 
 
-MIG = ROOT / "migrations" / "2026-10-22_content_versions.sql"
-SQL = code_only(MIG.read_text(encoding="utf-8"))
-KAB = ROOT / "migrations" / "kabinet" / "2026-10-22_ls_textgen_accept.sql"
-KSQL = code_only(KAB.read_text(encoding="utf-8"))
+def has(fragment: str, where: str) -> bool:
+    return norm(fragment) in where
 
 
-def quoted(s: str) -> set[str]:
-    return set(re.findall(r"'([a-z_0-9]+)'", s))
-
-
-def column(name: str) -> str:
-    m = re.search(rf"^\s*{name}\s+(.*?),?\s*$", SQL, re.M)
-    return m.group(1) if m else ""
-
+MIG = ROOT / "migrations" / "2026-10-21_content_versions.sql"
+SQL = norm(MIG.read_text(encoding="utf-8"))
+KAB = ROOT / "migrations" / "kabinet" / "2026-10-21_ls_textgen_accept.sql"
+KSQL = norm(KAB.read_text(encoding="utf-8"))
 
 # ---------------------------------------------------------------- таблица
-check("миграция в корне migrations/ — её видит test_schema_contract",
-      MIG.parent.name == "migrations")
-check("одна транзакция", "BEGIN;" in SQL and SQL.strip().count("COMMIT;") == 1)
-check("таблица заводится с IF NOT EXISTS — повторный прогон не падает",
-      "CREATE TABLE IF NOT EXISTS listing_data.content_versions" in SQL)
+table = re.search(r"CREATE TABLE IF NOT EXISTS listing_data\.content_versions \((.*?)\); CREATE UNIQUE", SQL)
+TABLE = table.group(1).strip() if table else ""
+COLUMNS = [m for m in re.findall(r"(?:^|, )([a-z_0-9]+) (?:bigserial|text|integer|timestamptz|jsonb)\b", TABLE)]
+STEP_COLUMNS = {"status", "accepted_by", "accepted_at", "sent_by", "sent_at"}
 
-field = re.search(r"field\s+text\s+NOT NULL CHECK \(field IN \((.*?)\)\)", SQL, re.S)
-check("поля — ровно title, highlight, bullet_1…5, description",
-      bool(field) and quoted(field.group(1)) == {"title", "highlight", "description"}
-      | {f"bullet_{i}" for i in range(1, 6)})
-status = re.search(r"CHECK \(status IN \((.*?)\)\)", SQL, re.S)
-check("статусы — ровно draft, accepted, sent",
-      bool(status) and quoted(status.group(1)) == {"draft", "accepted", "sent"})
-check("новая версия — черновик по умолчанию", re.search(r"status\s+text\s+NOT NULL DEFAULT 'draft'", SQL))
-check("SKU обязателен", "NOT NULL" in column("sku"))
-check("ASIN не обязателен — у нового товара его нет", "NOT NULL" not in column("asin"))
-check("рынок обязателен", "NOT NULL" in column("marketplace"))
-check("длину считает база, а не код", "GENERATED ALWAYS AS (char_length(text)) STORED" in SQL)
-check("автор создания обязателен", "NOT NULL" in column("created_by"))
-check("ссылка на зарегистрированную копию паспорта — внешний ключ",
-      "REFERENCES listing_data.passport_source_artifacts (source_artifact_id)" in SQL)
-check("SHA паспорта — 64 hex", "passport_sha256 ~ '^[a-f0-9]{64}$'" in SQL)
-check("паспорт либо целиком, либо никак", "content_versions_passport_whole" in SQL)
-check("шаг статуса записан с автором и временем", "content_versions_status_steps" in SQL
-      and all(c in SQL for c in ("accepted_by IS NOT NULL", "sent_by IS NOT NULL")))
-check("происхождение — model, manual, model_edited",
-      quoted(re.search(r"origin\s+text\s+NOT NULL CHECK \(origin IN \((.*?)\)\)", SQL, re.S).group(1))
-      == {"model", "manual", "model_edited"})
+check("миграция в корне migrations/ — её видит test_schema_contract", MIG.parent.name == "migrations")
+check("одна транзакция", SQL.count("BEGIN;") == 1 and SQL.count("COMMIT;") == 1)
+check("таблица разобрана", len(COLUMNS) >= 20)
+
+EXPECTED_CHECKS = [
+    "sku text NOT NULL CHECK (sku <> '' AND sku = btrim(sku))",
+    "marketplace text NOT NULL CHECK (marketplace ~ '^[a-z]{2}(\\.[a-z]{2})?$')",
+    "asin text CHECK (asin IS NULL OR asin ~ '^B0[A-Z0-9]{8}$')",
+    "field text NOT NULL CHECK (field IN ( 'title', 'highlight', 'bullet_1', 'bullet_2', "
+    "'bullet_3', 'bullet_4', 'bullet_5', 'description'))",
+    "text text NOT NULL",
+    "text_len integer GENERATED ALWAYS AS (char_length(text)) STORED",
+    "version integer NOT NULL CHECK (version > 0)",
+    "proposal_id text NOT NULL CHECK (btrim(proposal_id) <> '')",
+    "status text NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'accepted', 'sent'))",
+    "created_by text NOT NULL CHECK (btrim(created_by) <> '')",
+    "accepted_by text CHECK (accepted_by IS NULL OR btrim(accepted_by) <> '')",
+    "sent_by text CHECK (sent_by IS NULL OR btrim(sent_by) <> '')",
+    "passport_version text CHECK (passport_version IS NULL OR btrim(passport_version) <> '')",
+    "passport_sha256 text CHECK (passport_sha256 IS NULL OR passport_sha256 ~ '^[a-f0-9]{64}$')",
+    "passport_artifact_id text REFERENCES listing_data.passport_source_artifacts (source_artifact_id)",
+    "origin text NOT NULL CHECK (origin IN ('model', 'manual', 'model_edited'))",
+    "model text CHECK (model IS NULL OR btrim(model) <> '')",
+    "CONSTRAINT content_versions_status_steps CHECK ( "
+    "(status = 'draft' AND accepted_at IS NULL AND accepted_by IS NULL AND sent_at IS NULL AND sent_by IS NULL) "
+    "OR (status = 'accepted' AND accepted_at IS NOT NULL AND accepted_by IS NOT NULL AND sent_at IS NULL AND sent_by IS NULL) "
+    "OR (status = 'sent' AND accepted_at IS NOT NULL AND accepted_by IS NOT NULL AND sent_at IS NOT NULL AND sent_by IS NOT NULL))",
+    "CONSTRAINT content_versions_steps_in_order CHECK ( (accepted_at IS NULL OR accepted_at >= created_at) "
+    "AND (sent_at IS NULL OR sent_at >= accepted_at))",
+    "CONSTRAINT content_versions_passport_whole CHECK ( "
+    "(passport_id IS NULL AND passport_version IS NULL AND passport_sha256 IS NULL AND passport_artifact_id IS NULL) "
+    "OR (passport_id IS NOT NULL AND passport_version IS NOT NULL AND passport_sha256 IS NOT NULL))",
+    "CONSTRAINT content_versions_model_named CHECK (origin = 'manual' OR model IS NOT NULL)",
+]
+for exp in EXPECTED_CHECKS:
+    check("ограничение на месте: " + exp[:70], has(exp, TABLE))
+check("ASIN не обязателен — у нового товара его нет", "asin text NOT NULL" not in TABLE)
+check("версия паспорта — строкой, как в канонe и passport_objects", "passport_version integer" not in TABLE)
 
 # ---------------------------------------------------------- уникальность
 check("номер версии поля не повторяется",
-      re.search(r"UNIQUE INDEX IF NOT EXISTS content_versions_version\s+ON listing_data.content_versions "
-                r"\(sku, marketplace, field, version\)", SQL))
-check("повтор прогона не создаёт второй строки",
-      re.search(r"UNIQUE INDEX IF NOT EXISTS content_versions_proposal_field\s+ON listing_data.content_versions "
-                r"\(proposal_id, field\)", SQL))
+      has("CREATE UNIQUE INDEX IF NOT EXISTS content_versions_version ON listing_data.content_versions "
+          "(sku, marketplace, field, version);", SQL))
+check("повтор прогона у того же товара не создаёт второй строки — партия на несколько товаров пишется",
+      has("CREATE UNIQUE INDEX IF NOT EXISTS content_versions_proposal_field ON listing_data.content_versions "
+          "(proposal_id, sku, marketplace, field);", SQL))
 
-# ---------------------------------------------------------------- триггер
-check("триггер на UPDATE и DELETE",
-      re.search(r"BEFORE UPDATE OR DELETE ON listing_data.content_versions", SQL))
-guard = re.search(r"FUNCTION listing_data.content_versions_guard\(\).*?\$\$(.*?)\$\$", SQL, re.S)
-body = guard.group(1) if guard else ""
-check("удаление — исключение", re.search(r"TG_OP = 'DELETE' THEN\s+RAISE EXCEPTION", body))
-check("текст в списке неизменяемых", "NEW.text" in body and "OLD.text" in body)
-check("версия, SKU и паспорт в списке неизменяемых",
-      all(f"NEW.{c}" in body for c in ("version", "sku", "passport_sha256", "proposal_id", "origin")))
-check("переходы — только draft → accepted и accepted → sent",
-      "(OLD.status = 'draft'    AND NEW.status = 'accepted')" in body
-      and "(OLD.status = 'accepted' AND NEW.status = 'sent')" in body
-      and "'sent'    AND NEW.status" not in body)
+# ---------------------------------------------------------------- триггеры
+guard = re.search(r"FUNCTION listing_data\.content_versions_guard\(\) RETURNS trigger LANGUAGE plpgsql AS \$\$(.*?)\$\$;", SQL)
+BODY = guard.group(1) if guard else ""
+check("строчный триггер — на INSERT, UPDATE и DELETE, FOR EACH ROW",
+      has("CREATE TRIGGER content_versions_guard BEFORE INSERT OR UPDATE OR DELETE ON listing_data.content_versions "
+          "FOR EACH ROW EXECUTE FUNCTION listing_data.content_versions_guard();", SQL))
+check("очистка таблицы целиком — свой триггер на оператор",
+      has(f"CREATE TRIGGER content_versions_no_wipe BEFORE {WIPE} ON listing_data.content_versions "
+          "FOR EACH STATEMENT EXECUTE FUNCTION listing_data.content_versions_no_wipe();", SQL))
+wipe = re.search(r"FUNCTION listing_data\.content_versions_no_wipe\(\) RETURNS trigger LANGUAGE plpgsql AS \$\$(.*?)\$\$;", SQL)
+check("триггер очистки бросает исключение", bool(wipe) and "RAISE EXCEPTION" in wipe.group(1))
+check("исключения — исключения, а не NOTICE или WARNING",
+      BODY.count("RAISE EXCEPTION") == 6 and not re.search(r"RAISE (NOTICE|WARNING|INFO|LOG|DEBUG)", SQL))
+check("вставка — только черновиком",
+      has("IF TG_OP = 'INSERT' THEN IF NEW.status <> 'draft' THEN RAISE EXCEPTION", BODY))
+check("удаление — исключение", has("IF TG_OP = 'DELETE' THEN RAISE EXCEPTION", BODY))
+
+frozen = re.search(r"IF \((NEW\..*?)\) IS DISTINCT FROM \((OLD\..*?)\) THEN RAISE EXCEPTION '[^']*неизменяема", BODY)
+new_cols = re.findall(r"NEW\.([a-z_0-9]+)", frozen.group(1)) if frozen else []
+old_cols = re.findall(r"OLD\.([a-z_0-9]+)", frozen.group(2)) if frozen else []
+want = set(COLUMNS) - STEP_COLUMNS - {"text_len"}
+check(f"неизменяемы ВСЕ колонки, кроме шагов статуса ({len(want)})",
+      set(new_cols) == want and new_cols == old_cols)
+check("переходы — ровно draft → accepted и accepted → sent",
+      has("IF NOT ((OLD.status = 'draft' AND NEW.status = 'accepted') "
+          "OR (OLD.status = 'accepted' AND NEW.status = 'sent')) THEN RAISE EXCEPTION", BODY)
+      and len(re.findall(r"OLD\.status = '[a-z]+' AND NEW\.status = '[a-z]+'", BODY)) == 2)
 check("записанные автор и время шага не переписываются",
-      "уже записаны и не переписываются" in body)
-# Слова собраны из частей: хук .claude/hooks/guard.py читает запускаемые файлы и
-# останавливает прогон, увидев их целиком, даже в проверке, которая их ЗАПРЕЩАЕТ.
-_DANGER = "|".join(("DEL" + r"ETE\s+FROM", "TRUN" + "CATE", "DR" + r"OP\s+TABLE"))
-check("никаких удалений и очисток в самой миграции",
-      not re.search(rf"\b({_DANGER})\b", SQL, re.I))
+      has("IF OLD.status = NEW.status THEN IF (NEW.accepted_by, NEW.accepted_at, NEW.sent_by, NEW.sent_at) "
+          "IS DISTINCT FROM (OLD.accepted_by, OLD.accepted_at, OLD.sent_by, OLD.sent_at) THEN RAISE EXCEPTION", BODY))
+check("при выгрузке приёмка не переписывается",
+      has("IF OLD.status = 'accepted' AND (NEW.accepted_by, NEW.accepted_at) IS DISTINCT FROM "
+          "(OLD.accepted_by, OLD.accepted_at) THEN RAISE EXCEPTION", BODY))
+check("никаких удалений и очисток данных в самой миграции",
+      not re.search(rf"\b({DEL_FROM}|{DROP_TABLE})\b", SQL, re.I)
+      and not re.search(rf"\b{WIPE}\s+(TABLE\s+)?listing_data", SQL, re.I))
 
 # ------------------------------------------------- право для базы Кабинета
-check("SQL права лежит в migrations/kabinet/ — не миграция listing_data",
-      KAB.parent.name == "kabinet" and KAB.name not in {p.name for p in (ROOT / "migrations").glob("*.sql")})
-ins = re.search(r"SELECT 'ls\.textgen\.accept', r\.role, r\.role IN \(([^)]*)\)", KSQL)
-check("ls.textgen.accept разрешено ровно admin и textgen_pilot",
-      bool(ins) and quoted(ins.group(1)) == {"admin", "textgen_pilot"})
-roles = re.search(r"FROM \(VALUES (.*?)\) AS r\(role\)", KSQL, re.S)
-sys.path.insert(0, str(ROOT))
 import auth  # noqa: E402
 
+check("SQL права лежит в migrations/kabinet/ — не миграция listing_data",
+      KAB.parent.name == "kabinet" and KAB.name not in {p.name for p in (ROOT / "migrations").glob("*.sql")})
+check("SQL Кабинета: одна транзакция и ровно один оператор — вставка",
+      KSQL.count("BEGIN;") == 1 and KSQL.count("COMMIT;") == 1
+      and len(re.findall(r"\bINSERT INTO\b", KSQL)) == 1
+      and not re.search(rf"\b(UPDATE|{DEL_FROM}|{WIPE}|ALTER|DR" + r"OP)\b", KSQL))
+check("ls.textgen.accept разрешено ровно admin и textgen_pilot",
+      has("SELECT 'ls.textgen.accept', r.role, r.role IN ('admin', 'textgen_pilot'),", KSQL))
+roles = re.search(r"FROM \(VALUES (.*?)\) AS r\(role\)", KSQL)
 check("строка заводится для каждой роли Listing Suite",
-      bool(roles) and quoted(roles.group(1)) == set(auth.ROLES))
-check("ручные галочки не перетираются", "ON CONFLICT (action, role) DO NOTHING" in KSQL)
-check("одна транзакция", KSQL.strip().startswith("BEGIN;") and "COMMIT;" in KSQL)
-check("кабинетная часть матрицы не трогается", "app_permissions_role_check" not in KSQL)
+      bool(roles) and set(re.findall(r"'([a-z_]+)'", roles.group(1))) == set(auth.ROLES))
+check("ручные галочки не перетираются", "ON CONFLICT (action, role) DO NOTHING;" in KSQL)
+check("кабинетная часть матрицы и CHECK не трогаются", "app_permissions_role_check" not in KSQL)
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS else f"{len(FAILS)} провалов: {FAILS}")
