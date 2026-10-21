@@ -83,9 +83,12 @@ CI проверяющий «ок» не ставит. Каждое такое с
     владелец;
   - на удалении данных и `DROP` (см. «Никогда сам»).
 
-  Единственное исключение — пересоздание триггера: `DROP TRIGGER IF EXISTS X`
-  при `CREATE TRIGGER X` в том же файле. Это исключение — на подтверждение
-  владельцу;
+  Единственное исключение — пересоздание триггера: `DROP TRIGGER IF EXISTS X ON T`
+  при `CREATE TRIGGER X … ON T` настоящим оператором того же файла до `COMMIT` —
+  то же имя на той же таблице. Это исключение — на подтверждение владельцу.
+  Чего скрипт не видит: команду, собранную строкой в `EXECUTE '…'`, и
+  выключение защиты без `DROP` (`ALTER TABLE … DISABLE TRIGGER`, замена функции
+  триггера) — поэтому применяется только файл, прошедший ревью PR;
 - правка `scratchpad/apply_migration.py` — он пишет в базу, поэтому не «сам»;
 - **ребут Streamlit Cloud** — делает владелец; агент только напоминает;
 - обновление снимка канона прогоном `canon/build_snapshot.py` по новому
@@ -1948,6 +1951,7 @@ python tests/test_passport_intake.py
 python tests/test_passport_answers.py
 python tests/test_graph_engine.py
 python tests/test_autonomy.py
+python tests/test_apply_migration.py
 python tests/test_syntax.py
 python tests/test_imports.py
 ```
@@ -2405,6 +2409,9 @@ JSON-схем: каждая даёт ожидаемый схемный исхо�
   те же границы;
 - скрипт сводки не подключается к базе и не читает ничьих учётных данных:
   ни `.mcp.json`, ни строки подключения, ни репозитория Кабинета.
+
+`test_apply_migration.py` — отказы `scratchpad/apply_migration.py`, без базы;
+что заперто — в [docs/autonomy.md](docs/autonomy.md).
 
 `test_telegram_token_redaction.py` — токен бота Telegram не попадает в
 текст ошибки `_telegram` (T-7, #137). `requests` кладёт URL с токеном в
