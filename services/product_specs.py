@@ -325,16 +325,19 @@ def kit_items(attrs: dict, model: str | None, type_re: str | None) -> list[str]:
 _MODEL_RE = re.compile(r"\b([A-Z]{1,4}-\d{2,4}[A-Z]{0,4})\b")
 
 
-# Артикул вместо модели: у 33 из 267 товаров ES в `model_name` стоит «80588000»
-# или «99655000-C». В префикс Highlights «Model …: » он не годится.
-_ARTICLE_RE = re.compile(r"^\d{5,}(?:-\w+)?$")
-
-
 def model_of(attrs: dict, title: str) -> str | None:
-    name = _first_text(attrs, "model_name")
-    if name and not _ARTICLE_RE.match(name):
-        return name
-    return model_from_title(title) or name
+    """Код модели для префикса Highlights «Model …: ».
+
+    `model_name` берётся, только если в нём есть код модели. На ES там часто
+    другое: артикул («80588000», «99655000-C», «S2_48091000» — 61 из 267),
+    слова («Taladro atornillador»), обрывок кода («201HBC») или код вместе с
+    брендом («Dnipro-M GS-100S» — берётся «GS-100S»: «Dnipro-M» под шаблон
+    кода не подходит). Иначе — код из тайтла. Нет и там — None: экран
+    говорит «модели нет», а не подставляет артикул."""
+    m = _MODEL_RE.search(_first_text(attrs, "model_name") or "")
+    if m:
+        return m.group(1)
+    return model_from_title(title)
 
 
 def model_from_title(title: str, brand: str = "Dnipro-M") -> str | None:
@@ -436,6 +439,7 @@ def load(asin: str, marketplace: str) -> tuple[dict | None, str | None]:
     при сбое нет: «нет характеристик» и «не прочиталось» — разные ответы."""
     import pandas as pd
 
+    from services.cells import cell_text
     from services.db import get_engine
     try:
         snap = pd.read_sql(
@@ -454,7 +458,7 @@ def load(asin: str, marketplace: str) -> tuple[dict | None, str | None]:
     araw = attrs.iloc[0]["raw"] if not attrs.empty else None
     ptype = attrs.iloc[0]["product_type"] if not attrs.empty else None
     return {
-        "title": str(snap.iloc[0]["title"]) if not snap.empty else "",
+        "title": cell_text(snap.iloc[0], "title") if not snap.empty else "",
         "attributes": (araw or {}).get("attributes") if isinstance(araw, dict) else {},
         "amazon_type": ptype if isinstance(ptype, str) else None,
         "product_information": (raw or {}).get("product_information") if isinstance(raw, dict) else {},

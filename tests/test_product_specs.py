@@ -101,8 +101,8 @@ check(f"DHR-202BC: аккумулятор 4 Ah в атрибуте против 
       len(DHR.conflicts) == 1 and DHR.conflicts[0][0] == "capacity_ah"
       and DHR.conflicts[0][1].value == 4.0 and DHR.conflicts[0][2].value == 6.0)
 check("у остальных расхождений нет", not any(r.conflicts for r in (DGA, GL, DSC, CD)))
-check(f"модель: из атрибута, а у GL-240 — из тайтла ({[r.model for r in (DGA, GL, DHR)]})",
-      DGA.model == "DGA-201M" and GL.model == "GL-240" and DHR.model == "DHR-202BC ULTRA")
+check(f"модель: код из атрибута (серия «ULTRA» не код), а у GL-240 — из тайтла ({[r.model for r in (DGA, GL, DHR)]})",
+      DGA.model == "DGA-201M" and GL.model == "GL-240" and DHR.model == "DHR-202BC")
 check(f"сетевой / аккумуляторный ({[r.corded for r in (DGA, GL, DHR, DSC, CD)]})",
       [r.corded for r in (DGA, GL, DHR, DSC, CD)] == [False, True, False, False, False])
 
@@ -168,6 +168,10 @@ check("сетевое напряжение не характеристика: «
       "voltage_v" not in ps.from_text("Cargador FC-124, 230V 4A")
       and "voltage_v" not in ps.from_text("Entrada 230-240V"))
 check("а «20V» и «2000 mAh» — 20 и не Ah", ps.from_text("Batería 20V 2000 mAh") == {"voltage_v": 20.0})
+check("сеть первой не прячет вольтаж аккумулятора дальше: «230V … baterías 20V» — 20",
+      ps.from_text("Cargador FC-230 entrada 230V, para baterías 20V").get("voltage_v") == 20.0)
+check("кусок большего числа мощностью не читается: «121.200W» — нет мощности",
+      "power_w" not in ps.from_text("Potencia 121.200W"))
 FC124 = ps.extract("B0DG62R81C", "es", title="Cargador Dnipro-M FC-124, 230V 4A", amazon_type="BATTERY_CHARGER")
 check(f"у зарядки FC-124 в тайтл не идёт 230V ({ps.title_parts(FC124)})", "230V" not in ps.title_parts(FC124))
 
@@ -192,14 +196,26 @@ check("сетевое напряжение в атрибуте у зарядки
 
 # =================================================== 6б. модель
 print("6б. модель")
+check("артикул с префиксом («S2_48091000») — модель из тайтла",
+      ps.model_of({"model_name": texts("S2_48091000")}, "Martillo Perforador Dnipro-M DHR-203BCV Ultra 20V")
+      == "DHR-203BCV")
+check("слова вместо модели («Taladro atornillador») и обрывок («201HBC») — из тайтла",
+      ps.model_of({"model_name": texts("Taladro atornillador")}, "Taladro Dnipro-M CD-201HBC Compact") == "CD-201HBC"
+      and ps.model_of({"model_name": texts("201HBC")}, "Taladro Dnipro-M CD-201HBC Compact") == "CD-201HBC")
+check("бренд внутри model_name снимается: «Dnipro-M GS-100S» — GS-100S",
+      ps.model_of({"model_name": texts("Dnipro-M GS-100S")}, "Amoladora") == "GS-100S")
+GS = ps.extract("X", "es", title="Amoladora Angular Dnipro-M GS-100S 850W 125mm",
+                attributes={"model_name": texts("Dnipro-M GS-100S"),
+                            "included_components": texts("Amoladora", "Maletín Dnipro-M", "10 discos")})
+check(f"и набор не режется по слову бренда ({GS.kit})", "Maletín Dnipro-M" in GS.kit)
 check("артикул в model_name («80588000») — модель из тайтла",
       ps.model_of({"model_name": texts("80588000")}, "Sierra Dnipro-M DSC-201BC") == "DSC-201BC")
 check("артикул с суффиксом («99655000-C») — тоже из тайтла",
       ps.model_of({"model_name": texts("99655000-C")}, "Taladro Dnipro-M CD-202BC") == "CD-202BC")
 check("настоящая модель из атрибута главнее тайтла",
       ps.model_of({"model_name": texts("DGA-201M")}, "Amoladora DGA-200") == "DGA-201M")
-check("в тайтле модели нет — остаётся то, что есть",
-      ps.model_of({"model_name": texts("80588000")}, "Sierra") == "80588000")
+check("в тайтле модели нет — None, а не артикул (B0GZVVR14H «83418000»)",
+      ps.model_of({"model_name": texts("83418000")}, "Cortacésped Eléctrico Dnipro-M 1800W") is None)
 check("«Modelo DHR-202BC» не даёт ни J, ни W", ps.from_text("Modelo DHR-202BC M14") == {})
 
 # =========================================================== 7. чтение
