@@ -35,7 +35,7 @@ SCOPE_IDS = [
     "common", "title_split", "bullets", "highlights", "description",
     "aplus", "photo_brief", "video_brief", "ai_grade",
     "keyword_research", "review_analysis", "competitor_teardown",
-    "ppc_negatives",
+    "ppc_negatives", "textgen",
 ]
 
 scope = st.selectbox(

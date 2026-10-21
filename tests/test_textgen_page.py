@@ -99,6 +99,13 @@ seo.sqp_error = lambda: None
 for _name in ("generate_json", "_call_gemini", "_call_anthropic"):
     setattr(ai, _name, lambda *a, _n=_name, **k: STATE["ai_calls"].append(_n))
 
+# Генерация по паспорту: по умолчанию сохранённых паспортов нет — блок молчит.
+# Сценарии генерации подменяют это ниже.
+from services import textgen as tg  # noqa: E402
+
+GEN = {"copies": (pd.DataFrame(), None)}
+tg.active_copies = lambda: GEN["copies"]
+
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
 
@@ -269,7 +276,12 @@ for lang in ("uk", "en"):
 check("модель не вызвана ни разу", STATE["ai_calls"] == [])
 
 # ================================================================ статика страницы
-check("страница не импортирует слой модели", not re.search(r"services\s+import\s+ai\b|services\.ai\b", SRC))
+# Слой модели страница берёт ТОЛЬКО чтобы передать его генерации по нажатию:
+# сама она модель не зовёт (решение владельца 21.10.2026 — «Сгенерировать»).
+check("модель зовётся только через tg.generate по кнопке, под ls.textgen.accept",
+      SRC.count("ai.generate_json") == 1 and "ai_call=ai.generate_json" in SRC
+      and SRC.count("tg.generate(") == 1
+      and SRC.index('auth.require("ls.textgen.accept", object_type="textgen"') < SRC.index("tg.generate("))
 # Пишет страница ровно одно — копию паспорта, через services/passport_copies.py
 # и только после проверки права в момент нажатия (tests/test_passport_copies.py).
 check("страница сама SQL не пишет и в Amazon не ходит", not re.search(r"\bINSERT\b|\bUPDATE\b|spapi", SRC))
@@ -450,6 +462,115 @@ FLOW["calls"] = []
 at = run()
 check("без права «Сохранить» выключена", at.button(key="tg-pp-save").disabled)
 auth.can, auth.require = _can, _req
+
+# ======================================================= генерация по паспорту
+# Кнопка «Сгенерировать» (решение владельца 21.10.2026): право ls.textgen.accept,
+# лимиты — кнопка выключается с объяснением; модель зовётся только через
+# tg.generate по нажатию. База, том и модель подменены.
+_db.table_exists = lambda name: True
+METHOD = {"text": "методология textgen", "ver": 1}
+
+
+def _safe_read(sql, params=None):
+    if "synthesis_skill" in sql:
+        if not METHOD["text"]:
+            return pd.DataFrame(), None
+        return pd.DataFrame([{"skill_text": METHOD["text"], "version": METHOD["ver"]}]), None
+    return pd.DataFrame(), None
+
+
+_db.safe_read = _safe_read
+GEN["copies"] = (pd.DataFrame([{"source_artifact_id": "DOCX-PASS-99601000-B-001-v2", "sku_id": "99601000-B",
+                                "passport_id": "PASS-99601000-B-001", "sha256": "0" * 64,
+                                "archived_locator": "/Volumes/dnipro_m/listing_data/passports/x.docx",
+                                "recorded_at": "2026-10-21"}]), None)
+GEN.update(usage=tg.Usage(), calls=[], latest=(pd.DataFrame(), None))
+tg.usage_now = lambda sku: (GEN["usage"], None)
+tg.latest = lambda sku, mp: GEN["latest"]
+
+
+def _generate(**kw):
+    GEN["calls"].append(kw)
+    return tg.Result("OK", proposal_id="TG-7", cost_usd=0.031)
+
+
+tg.generate = _generate
+_task_config = ai.task_config
+ai.task_config = lambda task: ("anthropic", "claude-sonnet-5")
+
+
+def _warn(at):
+    return "\n".join(str(w.value) for w in at.warning)
+
+
+at = run()
+btn = at.button(key="tg-gen-go")
+check("генерация: кнопка есть и включена при методологии, цене и запасе лимита", not btn.disabled)
+check("генерация: расход за сегодня назван у кнопки",
+      lab("tg.gen.usage", n=0, n_max=10, a=0.0, a_max=1.0, b=0.0, b_max=10.0) in texts_of(at))
+btn.click().run()
+check("нажатие — ровно один вызов генерации, модель — слой ai, автор и рынок переданы",
+      len(GEN["calls"]) == 1 and GEN["calls"][0]["ai_call"] is ai.generate_json
+      and GEN["calls"][0]["sku"] == "99601000-B" and GEN["calls"][0]["marketplace"] == "es"
+      and GEN["calls"][0]["method"] == ("методология textgen", 1))
+check("итог генерации назван", any("TG-7" in str(x.value) for x in at.success))
+check("настоящая модель при этом не вызывалась", STATE["ai_calls"] == [])
+
+GEN["usage"] = tg.Usage(calls_sku=10)
+at = run()
+check("лимит 10 вызовов на товар — кнопка выключена и сказано почему",
+      at.button(key="tg-gen-go").disabled and lab("tg.gen.err.LIMIT_CALLS", detail="10/10") in _warn(at))
+GEN["usage"] = tg.Usage(usd_pilot=9.99)
+at = run()
+check("лимит $10 на пилот (с оценкой следующего вызова) — кнопка выключена",
+      at.button(key="tg-gen-go").disabled and "$10" in _warn(at))
+GEN["usage"] = tg.Usage()
+METHOD["text"] = ""
+_st.cache_data.clear()       # методология кэшируется страницей на 120 с
+at = run()
+check("методологии textgen нет — кнопка выключена и названо, где заполнить",
+      at.button(key="tg-gen-go").disabled and lab("tg.gen.err.NO_METHOD", detail="textgen") in _warn(at))
+METHOD["text"] = "методология textgen"
+_st.cache_data.clear()
+ai.task_config = lambda task: ("anthropic", "model-without-price")
+at = run()
+check("цена модели неизвестна — кнопка выключена",
+      at.button(key="tg-gen-go").disabled and "model-without-price" in _warn(at))
+ai.task_config = lambda task: ("anthropic", "claude-sonnet-5")
+_db.table_exists = lambda name: False
+at = run()
+check("нет журнала генерации — кнопка выключена и названа миграция",
+      at.button(key="tg-gen-go").disabled and "2026-10-21_textgen_calls.sql" in _warn(at))
+_db.table_exists = lambda name: name != "content_versions"
+at = run()
+check("нет таблицы черновиков — кнопка выключена", at.button(key="tg-gen-go").disabled
+      and "content_versions" in _warn(at))
+_db.table_exists = lambda name: True
+ai.task_config = lambda task: ("gemini", "gemini-3.5-flash")
+at = run()
+check("не Anthropic — кнопка выключена и сказано почему", at.button(key="tg-gen-go").disabled
+      and "gemini" in _warn(at))
+ai.task_config = lambda task: ("anthropic", "claude-sonnet-5")
+_can = auth.can
+auth.can = lambda a: a != "ls.textgen.accept"
+at = run()
+check("без права ls.textgen.accept «Сгенерировать» выключена", at.button(key="tg-gen-go").disabled)
+auth.can = _can
+
+GEN["latest"] = (pd.DataFrame([
+    {"field": f, "text": f"текст {f}", "text_len": 10, "version": 1, "proposal_id": "TG-7", "status": "draft",
+     "model": "claude-sonnet-5", "created_at": "2026-10-21 22:00",
+     "checks": ('[{"code": "BRAND_NOT_FIRST", "field": "title", "detail": "DNIPRO-M"}]' if f == "title" else "[]")}
+    for f in tg.FIELDS]), None)
+at = run()
+full = texts_of(at)
+check("последнее предложение показано целиком — 8 полей",
+      len([c for c in at.code if str(c.value).startswith("текст ")]) == 8)
+check("нарушение правил тайтла из checks названо", lab("tg.code.BRAND_NOT_FIRST") in full)
+GEN["latest"] = (GEN["latest"][0].assign(checks="[]"), None)
+at = run()
+check("без нарушений — так и сказано", lab("tg.gen.ok_checks") in texts_of(at))
+ai.task_config = _task_config
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS else f"{len(FAILS)} провалов: {FAILS}")
