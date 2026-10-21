@@ -84,7 +84,8 @@ for what, words in (("миграции SQL", ("миграции sql",)), ("ре�
     check(f"«ждёт меня»: {what}", all(w in low(wait_part) for w in words))
 for leak in ("канон", "amazon", "модел", "миграц", "ребут"):
     check(f"«сам» не разрешает ничего про «{leak}»", leak not in low(self_part))
-check("размер AGENTS.md — под порогом 150 тыс. символов (иначе — в docs/)", len(agents) <= 150_000)
+check("размер AGENTS.md — под порогом 60 тыс. символов: правила и ссылки, подробности — в docs/ "
+      "(решение владельца 21.10.2026)", len(agents) < 60_000)
 check("схема описана в docs/autonomy.md", (ROOT / "docs" / "autonomy.md").is_file())
 
 # ======================================================= 3. проверяющий
