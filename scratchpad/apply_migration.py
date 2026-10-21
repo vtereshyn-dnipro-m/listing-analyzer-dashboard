@@ -31,6 +31,8 @@
 8. Предпроверка без изменений → файл до COMMIT (autocommit, транзакцию держат
    BEGIN/COMMIT файла) → проверочные запросы в сессии ТОЛЬКО НА ЧТЕНИЕ. Ошибка —
    ROLLBACK и текст ошибки.
+9. Тело функции, процедуры или DO — только $…$: строку '…' разбор не видит,
+   и в ней прошло бы что угодно — такой файл отклоняется.
 --check-only: только предпроверка, в базе ничего не меняет (учётные данные БД при
 этом выпускаются — это нужно для подключения).
 """
@@ -204,6 +206,13 @@ def vet(path: pathlib.Path, root: pathlib.Path | None = None) -> tuple[str, list
             created[(m.group(1).lower(), m.group(2).lower())] = i
     recreated = False
     for i, ((a, b), s) in enumerate(zip(spans[1:k], skels[1:k]), 1):
+        # Тело функции, процедуры или DO строкой '…' разбор видит пустым ('') —
+        # в нём прошло бы что угодно, вплоть до удаления данных (проверка #160).
+        # Тело $…$ разбирается рекурсивно, поэтому принимается только оно.
+        if re.match(r"(CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE)\b.*\bAS\s+''|DO\s+(LANGUAGE\s+\w+\s+)?'')",
+                    s, re.I):
+            fail(f"тело функции или DO строкой '…' — скрипт его не видит, нужно $…$: "
+                 f"{' '.join(text[a:b].split())[:90]}")
         deep = re.sub(rf"\b(BEFORE|AFTER|OR)\s+{W_WIPE}\b", " ", s, flags=re.I)
         if re.search(rf"\b({W_WIPE}|{W_DEL}\s+FROM)\b", deep, re.I):
             fail(f"удаление данных в файле — агент этого не применяет: {' '.join(text[a:b].split())[:90]}")

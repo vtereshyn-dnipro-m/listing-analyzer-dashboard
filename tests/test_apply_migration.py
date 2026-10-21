@@ -127,6 +127,23 @@ try:
         (False, "START TRANSACTION внутри", "BEGIN;\nSTART TRANSACTION;\nSELECT 1;\nCOMMIT;\n"),
         (False, "PREPARE TRANSACTION внутри", "BEGIN;\nPREPARE TRANSACTION 'x';\nCOMMIT;\n"),
         (False, "COMMIT внутри тела DO", "BEGIN;\nDO $$ BEGIN COMMIT; END $$;\nCOMMIT;\n"),
+        # --- тела строкой (проверка #160): разбор видит их пустыми
+        (False, f"{DEL} в теле функции строкой AS '…'",
+         f"BEGIN;\nCREATE FUNCTION listing_data.g() RETURNS void LANGUAGE sql AS '{DEL} FROM listing_data.t';\n"
+         "SELECT listing_data.g();\nCOMMIT;\n"),
+        (False, f"{D} TABLE в теле функции E-строкой",
+         f"BEGIN;\nCREATE OR REPLACE FUNCTION listing_data.g() RETURNS void LANGUAGE sql AS E'{D} TABLE listing_data.t';\nCOMMIT;\n"),
+        (False, "RENAME в теле функции строкой при пересоздании триггера",
+         f"BEGIN;\n{D} TRIGGER IF EXISTS tg ON listing_data.t;\nCREATE FUNCTION listing_data.g() RETURNS void LANGUAGE sql AS "
+         "'ALTER TABLE listing_data.t RENAME TO t_old';\nSELECT listing_data.g();\nCREATE TABLE listing_data.t (id int);\n"
+         "CREATE TRIGGER tg BEFORE UPDATE ON listing_data.t FOR EACH ROW EXECUTE FUNCTION f();\nCOMMIT;\n"),
+        (False, "тело процедуры строкой", "BEGIN;\nCREATE PROCEDURE listing_data.p() LANGUAGE sql AS 'SELECT 1';\nCOMMIT;\n"),
+        (False, "DO строкой", f"BEGIN;\nDO '{DEL} FROM listing_data.t';\nCOMMIT;\n"),
+        (False, "DO LANGUAGE plpgsql строкой", "BEGIN;\nDO LANGUAGE plpgsql 'BEGIN NULL; END';\nCOMMIT;\n"),
+        (True, "тело функции $$…$$ со строками внутри",
+         "BEGIN;\nCREATE FUNCTION listing_data.g() RETURNS text LANGUAGE sql AS $$ SELECT 'AS ''x''' $$;\nCOMMIT;\n"),
+        (True, "COMMENT ON FUNCTION … IS '…' — не тело",
+         "BEGIN;\nCOMMENT ON FUNCTION listing_data.g() IS 'AS тело';\nCOMMIT;\n"),
         # --- удаление данных и DROP
         (False, f"{D} TABLE", f"BEGIN;\n{D} TABLE listing_data.t;\nCOMMIT;\n"),
         (False, f"{D} COLUMN", f"BEGIN;\nALTER TABLE listing_data.t {D} COLUMN x;\nCOMMIT;\n"),
