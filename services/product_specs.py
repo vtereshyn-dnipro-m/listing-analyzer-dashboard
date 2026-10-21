@@ -239,8 +239,9 @@ TEXT_PATTERNS = {
     "power_w": re.compile(r"(?<![\d.,])(\d{1,2}[.,]\d{3}|\d{3,4})\s?W\b"),
     "voltage_v": re.compile(rf"{_N}\s?V\b"),
     "drill_concrete_mm": re.compile(rf"hormig[oó]n[^\d]{{0,12}}{_N}\s?mm|{_N}\s?mm\s+(?:en\s+)?hormig[oó]n", re.I),
-    # Удары в минуту: «4.200 ipm», «3200 bpm», «4200 impactos/min».
-    "bpm": re.compile(r"(?<![\d.,])(\d{1,2}[.,]\d{3}|\d{3,4})\s?(?:ipm|bpm|impactos?\s?/\s?min|golpes\s?/\s?min)\b", re.I),
+    # Удары в минуту: «4.200 ipm», «3200 bpm», «4200 impactos/min»,
+    # «3.200 golpes por minuto».
+    "bpm": re.compile(r"(?<![\d.,])(\d{1,2}[.,]\d{3}|\d{3,4})\s?(?:ipm|bpm|(?:impactos?|golpes)\s?(?:/\s?min|por\s+minuto))\b", re.I),
 }
 _SDS = re.compile(r"SDS[- ]?(Plus|Max)\b", re.I)
 # Хвостовик — только рядом со словом «hexagonal»: «Portabrocas hexagonal de 1/4
@@ -412,6 +413,8 @@ def extract(asin: str, marketplace: str, *, title: str = "", attributes: dict | 
     info_text = " ".join(f"{k}: {v}" for k, v in (product_information or {}).items() if isinstance(v, str))
     for source, text in (("snapshot", info_text), ("highlights", item_highlight or ""), ("title", title or "")):
         for k, v in from_text(text).items():
+            if k == "shank" and tkey != "impact_driver":
+                continue        # у дрели «hexagonal 1/4"» — это патрон, не хвостовик
             have = ps.values.get(k)
             if have is None:
                 ps.values[k] = Spec(v, source)

@@ -252,20 +252,35 @@ check(f"момент из атрибута, удары из Highlights, хвос
       ps.title_parts(DTD) == ["200Nm", "4200bpm", '1/4"'] and DTD.missing == [])
 check("и это проходит правила тайтла",
       tr.check("DNIPRO-M DTD-201BC Atornillador de Impacto, " + ", ".join(ps.title_parts(DTD)), "", kind=DTD.kind) == [])
+TD_HL = ("2800 rpm y 105 Nm de par máximo │ Portabrocas hexagonal de 1/4 pulgada │ "
+         "Gatillo de velocidad progresiva, luz LED")
 TD = ps.extract("B0FWRZTDT7", "es", title="Atornillador de Impacto Inalámbrico Dnipro-M TD-12 12V, sin Batería ni",
-                attributes={"maximum_torque": u(105.0, "newton_meters")}, amazon_type="DRILL",
-                item_highlight="2800 rpm y 105 Nm de par máximo │ Portabrocas hexagonal de 1/4 pulgada │ "
-                               "Gatillo de velocidad progresiva, luz LED")
-check(f"TD-12: хвостовик из текста «hexagonal de 1/4 pulgada», ударов в данных нет — названо ({TD.missing})",
-      TD.values["shank"].value == '1/4"' and TD.values["shank"].source == "highlights" and TD.missing == ["bpm"])
+                attributes={"maximum_torque": u(105.0, "newton_meters"), "maximum_chuck_size": u(0.25, "inches")},
+                amazon_type="DRILL", item_highlight=TD_HL)
+check(f"TD-12: хвостовик из атрибута, ударов в данных нет — названо ({TD.missing})",
+      TD.values["shank"] == ps.Spec('1/4"', "attribute") and TD.missing == ["bpm"])
+TD_NO_ATTR = ps.extract("X", "es", title="Atornillador de Impacto Dnipro-M TD-12 12V",
+                        attributes={"maximum_torque": u(105.0, "newton_meters")}, amazon_type="DRILL",
+                        item_highlight=TD_HL)
+check("без атрибута хвостовик берётся из текста «hexagonal de 1/4 pulgada»",
+      TD_NO_ATTR.values["shank"] == ps.Spec('1/4"', "highlights"))
 check('«1/4"» без «hexagonal» хвостовиком не читается (резьба, адаптер)',
       "shank" not in ps.from_text('Adaptador de rosca 1/4" para trípode'))
 DRL = ps.extract("X", "es", title="Taladro Atornillador Dnipro-M CD-200BC 20V",
                  attributes={"maximum_chuck_size": u(0.5, "inches")}, amazon_type="DRILL")
 check("у дрели тот же атрибут в дюймах хвостовиком не становится (это патрон)", "shank" not in DRL.values)
+# Форма живых CD-12QX / CD-12QBC (B0DFYY87FN, B0GVGWDZCP): шестигранный патрон в тексте.
+QBC = ps.extract("B0GVGWDZCP", "es", title="Taladro Atornillador Dnipro-M CD-12QBC 12V 45Nm Brushless, Sin Batería",
+                 attributes={"maximum_torque": u(45.0, "newton_meters")}, amazon_type="DRILL",
+                 product_information={"Tipo de portabrocas": 'Portabrocas hexagonal de 1/4"'})
+check(f'и из текста «Portabrocas hexagonal de 1/4"» у дрели хвостовика нет ({sorted(QBC.values)})',
+      QBC.tool_type == "drill" and "shank" not in QBC.values)
 check("удары в минуту: «4.200 ipm», «3200 bpm», «2.800 impactos/min»",
       ps.from_text("4.200 ipm").get("bpm") == 4200 and ps.from_text("3200 bpm").get("bpm") == 3200
-      and ps.from_text("2.800 impactos/min").get("bpm") == 2800)
+      and ps.from_text("2.800 impactos/min").get("bpm") == 2800
+      and ps.from_text("3.200 golpes por minuto").get("bpm") == 3200
+      and ps.from_text("4200 impactos por minuto").get("bpm") == 4200)
+check("кусок большего числа ударами не читается: «36800ipm»", "bpm" not in ps.from_text("36800ipm"))
 
 print("7. загрузчики на подменённой базе")
 import services.db as db  # noqa: E402
