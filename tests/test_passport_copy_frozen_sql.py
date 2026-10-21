@@ -16,7 +16,12 @@ tests/test_passport_copy_frozen_sql.py — копия паспорта, на к�
     заморозки, которая добавляет, удаляет, переименовывает колонки
     passport_source_artifacts или выключает её триггеры (имя в кавычках и без,
     со схемой и без), тоже валит тест: она обязана заодно решить, заморожена ли
-    новая колонка, и обновить этот файл (проверка #157);
+    новая колонка, и обновить этот файл (проверка #157). Так же валит тест любая
+    другая миграция, где упомянут passport_copy_frozen (удаление триггера или
+    функции, подмена тела) или replica-режим триггеров.
+    Блочные комментарии и строки перед поиском ALTER вырезаются. Граница
+    статической проверки: динамический SQL (EXECUTE format(...)) тест не видит —
+    это ловит только ревью;
   · функция версий — ровно та, что в 2026-10-21_content_versions_checks.sql,
     плюс одна добавка: строка копии читается FOR SHARE (гонка правки копии и
     записи версии, найденная проверкой #154);
@@ -114,7 +119,7 @@ check("функция версий = функция из поправок #154 �
 
 # --------------------------------------------------- заморозка копии
 cols_m = re.search(r"CREATE TABLE IF NOT EXISTS listing_data\.passport_source_artifacts \((.*?)\); CREATE INDEX", CORE)
-PSA = re.findall(r"(?:^|, )([a-z_0-9]+) [a-z]", cols_m.group(1).strip()) if cols_m else []
+PSA = [c.lower() for c in re.findall(r'(?:^|, )"?([a-z_0-9]+)"? [a-z]', cols_m.group(1).strip(), re.I)] if cols_m else []
 F = body(SQL, "passport_copy_frozen")
 # Ровно 15: колонка любого типа, вписанная в CREATE TABLE, меняет число и валит
 # тест — решение о ней принимается осознанно.
@@ -145,11 +150,20 @@ for f in sorted((ROOT / "migrations").glob("*.sql")):
     if f.name == MIG.name:
         continue
     t = norm(f.read_text(encoding="utf-8"))
+    # для поиска ALTER — без блочных комментариев и строковых литералов: иначе
+    # «/* … */» перед именем или «;» внутри строки прятали бы оператор
+    bare = re.sub(r"'(?:[^']|'')*'", "''", re.sub(r"/\*.*?\*/", " ", t, flags=re.S))
     # имя — со схемой и без, в кавычках и без (так пишут генераторы миграций)
     if re.search(r"ALTER\s+TABLE\s+(IF\s+EXISTS\s+)?(ONLY\s+)?"
                  r"(\"?listing_data\"?\s*\.\s*)?\"?passport_source_artifacts\"?(?![a-z0-9_])"
-                 r"[^;]*\b(ADD|DR" r"OP|RENAME|DISABLE)\b", t, re.I):
+                 r"[^;]*\b(ADD|DR" r"OP|RENAME|DISABLE)\b", bare, re.I):
         ALTERS.append(f.name)
+    # триггер и функция заморозки — только в своём файле: удаление, подмена тела
+    # («RETURN NEW»), CASCADE в чужой миграции молча сняли бы запрет
+    if re.search(r"\bpassport_copy_frozen\b", t, re.I):
+        ALTERS.append(f.name + " (passport_copy_frozen)")
+    if re.search(r"\b(session_replication_role|REPLICA\s+TRIGGER)\b", t, re.I):
+        ALTERS.append(f.name + " (replica)")
 check("состав колонок и триггеры копий паспорта не меняет ни одна другая миграция"
       + (f" — эти меняют его: {ALTERS}; решите, заморожена ли колонка, и обновите "
          f"{MIG.name} и этот тест" if ALTERS else ""), not ALTERS)
