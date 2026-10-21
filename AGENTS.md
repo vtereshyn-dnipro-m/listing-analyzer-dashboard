@@ -1243,7 +1243,8 @@ Figma заново после каждого перезапуска.
 ### `textgen.py` — «Генератор текстов (пилот)», каркас без модели (21.10.2026)
 Пять пилотных товаров ES: характеристики с источником каждого значения, ключи по
 типу, тайтл и Highlights руками с живой проверкой `title_rules.check()`. Модель не
-вызывается, ничего не пишет. Подробно — [docs/textgen.md](docs/textgen.md).
+вызывается. Пишет только копию паспорта docx в том UC (`services/passport_copies.py`).
+Подробно — [docs/textgen.md](docs/textgen.md).
 
 ### `matrix_setup.py` — «Матрица товаров»
 Ввод ASIN пачкой (терпимый парсер: `sku, asin, mp[, конкурент]`, голый ASIN,
@@ -1858,7 +1859,7 @@ en → сам ключ (забытый перевод виден в UI, без �
 | `ai_runs` | запуски графа AI Design (общие для Паспорта и будущего «Контента», область — `route`): run_state по схеме канона, текущий узел, terminal | `services/graph_store.py` | `services/passport.py`, `services/graph_store.py` |
 | `ai_run_events` | создание запуска с начальным ledger и переходы графа: квитанция, решение маршрутизатора, квитанция бюджета с новой ревизией ledger; только дописывание | `services/graph_store.py` | `services/graph_store.py` |
 | `ai_receipts` | квитанции действий Listing Suite и журнал идемпотентности, только дописывание | действия (этап 3+) | `services/passport.py` (lookup) |
-| `passport_source_artifacts` | зарегистрированные исходные материалы: копия, SHA, результат доступа | приём (этап 3) | — |
+| `passport_source_artifacts` | зарегистрированные исходные материалы: копия, SHA, результат доступа | приём (этап 3), `passport_copies` (паспорт docx генератора) | `passport_copies` |
 | `passport_questions` | вопросы Верификатора `Q-<RUN>-<NNN>`: тип, статус 06E, влияние, ответственный | движок | `services/passport.py` |
 | `passport_answers` | версии ответов на вопросы, неизменяемые | `services/passport_answers.py` (за флагом) | `services/passport.py` |
 | `passport_answer_verdicts` | вердикты Верификатора по ответу, только дописывание | движок | `services/passport.py` |
@@ -1926,6 +1927,7 @@ python tests/test_title_rules.py
 python tests/test_product_specs.py
 python tests/test_textgen_page.py
 python tests/test_content_versions_sql.py
+python tests/test_passport_copies.py
 python tests/test_passport_copy_frozen_sql.py
 python tests/test_feed.py
 python tests/test_methodology_page.py
@@ -2453,13 +2455,8 @@ JSON-схем: каждая даёт ожидаемый схемный исхо�
 не меняется; функция версий = поправки #154 плюс `FOR SHARE`. Подробно —
 [docs/textgen.md](docs/textgen.md).
 
-`test_content_versions_sql.py` — хранилище контента генератора, поправки к нему и
-право `ls.textgen.accept`: решения владельца в SQL заперты статически, файлы —
-отпечатком байт в байт. Поведение
-триггера проверено на PGlite. Подробно — [docs/textgen.md](docs/textgen.md).
-
-`test_textgen_page.py` — «Генератор текстов (пилот)»: экран говорит то же, что
-правила; сбой не кешируется; модель не вызывается; SQL роли для базы Кабинета.
+`test_content_versions_sql.py`, `test_textgen_page.py`, `test_passport_copies.py` —
+хранилище контента генератора, экран генератора, копия паспорта в томе UC.
 Подробно — [docs/textgen.md](docs/textgen.md).
 
 `test_length_guard.py` — гарантия лимита: запас в промпте, автоповтор,
