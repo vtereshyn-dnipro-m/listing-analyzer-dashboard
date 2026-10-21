@@ -14,7 +14,7 @@
    телах DO и функций.
 3. Удаление данных и DROP — отказ, в том числе внутри тел DO и функций.
    Единственное исключение — пересоздание триггера: DROP TRIGGER IF EXISTS X ON T
-   при CREATE TRIGGER X … ON T настоящим оператором того же файла ДО COMMIT
+   и ПОСЛЕ него CREATE TRIGGER X … ON T настоящим оператором того же файла ДО COMMIT
    (пара «имя, таблица»; имена в кавычках исключения не получают). Событие триггера на
    очистку («BEFORE/AFTER/OR <очистка> ON») командой очистки не считается.
 4. После COMMIT — только SELECT без изменяющих слов (SET, INSERT, INTO, …).
@@ -200,21 +200,23 @@ def vet(path: pathlib.Path, root: pathlib.Path | None = None) -> tuple[str, list
     for (a, b), s, h in zip(spans[1:k], skels[1:k], heads[1:k]):
         if h in TX_CONTROL or re.search(r"\b(COMMIT|ROLLBACK)\b", s, re.I):
             fail(f"внутри транзакции — управление транзакцией ({h}): {' '.join(text[a:b].split())[:90]}")
-    created = set()
-    for s in skels[1:k]:
+    created: dict[tuple[str, str], int] = {}     # (имя, таблица) → номер ПОСЛЕДНЕГО CREATE
+    for i, s in enumerate(skels[1:k], 1):
         m = re.match(rf"CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+{_NAME}\s.*?\bON\s+{_TABLE}\s",
                      s + " ", re.I)
         if m:
-            created.add((m.group(1).lower(), _norm_table(m.group(2))))
-    for (a, b), s in zip(spans[1:k], skels[1:k]):
+            created[(m.group(1).lower(), _norm_table(m.group(2)))] = i
+    for i, ((a, b), s) in enumerate(zip(spans[1:k], skels[1:k]), 1):
         deep = re.sub(rf"\b(BEFORE|AFTER|OR)\s+{W_WIPE}\b", " ", s, flags=re.I)
         if re.search(rf"\b({W_WIPE}|{W_DEL}\s+FROM)\b", deep, re.I):
             fail(f"удаление данных в файле — агент этого не применяет: {' '.join(text[a:b].split())[:90]}")
         if re.search(rf"\b{W_DROP}\b", deep, re.I):
             ok = re.fullmatch(rf"{W_DROP}\s+TRIGGER\s+IF\s+EXISTS\s+{_NAME}\s+ON\s+{_TABLE}", s, re.I)
-            if not (ok and (ok.group(1).lower(), _norm_table(ok.group(2))) in created):
+            # CREATE обязан стоять ПОСЛЕ DROP: «CREATE, затем DROP» оставил бы
+            # таблицу без триггера, то есть было бы удалением (проверка #159).
+            if not (ok and created.get((ok.group(1).lower(), _norm_table(ok.group(2))), 0) > i):
                 fail(f"{W_DROP} в файле — агент этого не применяет (кроме пересоздания триггера: то же имя, "
-                     f"та же таблица, CREATE до COMMIT): {' '.join(text[a:b].split())[:90]}")
+                     f"та же таблица, CREATE после {W_DROP} и до COMMIT): {' '.join(text[a:b].split())[:90]}")
     checks = []
     for (a, b), s in zip(spans[k + 1:], skels[k + 1:]):
         bad = sorted({w.upper() for w in re.findall(r"[A-Za-z_]+", s)} & TAIL_FORBIDDEN)

@@ -12,7 +12,7 @@ tests/test_apply_migration.py — `scratchpad/apply_migration.py` отказыв
     внутри ни END, ABORT, START, ROLLBACK, PREPARE, ни COMMIT в теле DO;
   · удаление данных и DROP — отказ, в том числе в телах DO и функций;
     исключение одно — пересоздание триггера: то же имя на той же таблице,
-    CREATE настоящим оператором до COMMIT;
+    CREATE настоящим оператором ПОСЛЕ DROP и до COMMIT;
   · после COMMIT — только SELECT без изменяющих слов;
   · разбор не обманывается комментариями в телах $…$, именами "a'b",
     строками E'\\'', вложенными $q$…$q$ и именами вида x$a$;
@@ -144,6 +144,9 @@ try:
          f"BEGIN;\n{DROPTRG}CREATE TABLE \"CREATE TRIGGER tg x ON listing_data.t \" (id int);\nCOMMIT;\n"),
         (False, "CREATE TRIGGER в комментарии", f"BEGIN;\n{DROPTRG}-- {TRG}COMMIT;\n"),
         (False, "CREATE TRIGGER после COMMIT", f"BEGIN;\n{DROPTRG}COMMIT;\n{TRG}"),
+        (False, "CREATE раньше DROP — триггер остался бы удалён", f"BEGIN;\n{TRG}{DROPTRG}COMMIT;\n"),
+        (False, "DROP после пересоздания — второй DROP без CREATE", f"BEGIN;\n{DROPTRG}{TRG}{DROPTRG}COMMIT;\n"),
+        (True, "DROP, CREATE, DROP, CREATE — каждый DROP перед своим CREATE", f"BEGIN;\n{DROPTRG}{TRG}{DROPTRG}{TRG}COMMIT;\n"),
         (False, "имя триггера в кавычках", f"BEGIN;\n{D} TRIGGER IF EXISTS \"tg\" ON listing_data.t;\n"
                                            "CREATE TRIGGER \"tg\" BEFORE UPDATE ON listing_data.t FOR EACH ROW EXECUTE FUNCTION f();\nCOMMIT;\n"),
         # --- после COMMIT (замечание 1)
