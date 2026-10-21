@@ -333,6 +333,9 @@ for матрица, где in (([], "по коду"),
         check(f"{роль} прочие страницы видит, как раньше ({где})",
               auth.can("ls.page.synthesis") and auth.can("ls.page.content"))
 
+check("в матрице кода у пилота ровно страница генератора и ls.textgen.accept",
+      {a for a, роли in auth._MATRIX.items() if auth.TEXTGEN in роли} == {"ls.page.textgen", "ls.textgen.accept"})
+
 # до SQL-файла строки ls.page.textgen в базе нет — генератор не видит никто
 сброс(mode=1, matrix=[r for r in БАЗА if r[0] != "ls.page.textgen"])
 как(auth.ADMIN)

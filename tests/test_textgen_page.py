@@ -350,6 +350,9 @@ check("почта не подставлена — блок отказывает�
       "почта text := 'ПОДСТАВИТЬ_ПОЧТУ'" in asg
       and re.search(r"IF почта = 'ПОДСТАВИТЬ_ПОЧТУ' THEN\s+RAISE EXCEPTION", asg))
 check("назначение — ровно одной строке, иначе отказ", "IF n <> 1 THEN" in asg)
+check("назначение — одна транзакция, после неё только SELECT",
+      asg.strip().startswith("BEGIN;") and asg.count("COMMIT;") == 1
+      and all(x.strip().upper().startswith("SELECT") for x in asg.split("COMMIT;", 1)[-1].split(";") if x.strip()))
 check("назначается только роль пилота", re.findall(r"SET ls_role = '([a-z_]+)'", asg) == ["textgen_pilot"])
 check("кабинетная роль не трогается", not re.search(r"SET\s+role\s*=", code_sql + asg))
 check("карточек не заводит", "INSERT INTO kabinet_data.app_users" not in code_sql + asg)
