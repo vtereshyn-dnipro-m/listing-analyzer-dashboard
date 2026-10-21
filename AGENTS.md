@@ -1899,6 +1899,7 @@ python tests/test_title_rules.py
 python tests/test_product_specs.py
 python tests/test_textgen_page.py
 python tests/test_content_versions_sql.py
+python tests/test_passport_copy_frozen_sql.py
 python tests/test_feed.py
 python tests/test_methodology_page.py
 python tests/test_i18n_sync.py
@@ -2416,6 +2417,10 @@ JSON-схем: каждая даёт ожидаемый схемный исхо�
 `test_product_specs.py` — характеристики товара для тайтла: тип, источники,
 единицы, сетевое напряжение, модель, загрузчики. Подробно —
 [docs/product-specs.md](docs/product-specs.md).
+
+`test_passport_copy_frozen_sql.py` — копия паспорта, на которую ссылается текст,
+не меняется; функция версий = поправки #154 плюс `FOR SHARE`. Подробно —
+[docs/textgen.md](docs/textgen.md).
 
 `test_content_versions_sql.py` — хранилище контента генератора, поправки к нему и
 право `ls.textgen.accept`: решения владельца в SQL заперты статически, файлы —
