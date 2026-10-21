@@ -16,7 +16,8 @@ tests/test_textgen_page.py — «Генератор текстов (пилот)�
   · модель не вызывается вовсе; в базу пишет только загрузка паспорта, под правом;
   · колонки таблиц — технические имена (правило 3), подписи из `t()`;
   · SQL роли для базы Кабинета: роль в обоих CHECK, генератор — только админу
-    и роли пилота, остальное роли пилота закрыто явными строками, почта не
+    и роли пилота, остальное роли пилота закрыто явными строками, почта (в
+    отдельном файле назначения) не
     подставлена — файл отказывается выполняться.
 
 Сеть и база не трогаются: чтения подменены данными `tests/fixture_pilot.py`.
@@ -305,7 +306,10 @@ SQL = SQL_PATH.read_text(encoding="utf-8") if SQL_PATH.exists() else ""
 code_sql = "\n".join(line.split("--")[0] for line in SQL.splitlines())
 check("и не попадает в миграции listing_data (glob *.sql корня)",
       SQL_PATH.name not in {p.name for p in (ROOT / "migrations").glob("*.sql")})
-check("одна транзакция", code_sql.strip().startswith("BEGIN;") and code_sql.strip().endswith("COMMIT;"))
+_tail = code_sql.split("COMMIT;", 1)[1] if "COMMIT;" in code_sql else "x"
+check("одна транзакция, после неё — только проверочный SELECT",
+      code_sql.strip().startswith("BEGIN;") and code_sql.count("COMMIT;") == 1
+      and all(x.strip().upper().startswith("SELECT") for x in _tail.split(";") if x.strip()))
 
 ls_role_check = re.search(r"app_users_ls_role_check\s+CHECK\s*\((.*?)\);", code_sql, re.S)
 perm_check = re.search(r"app_permissions_role_check\s+CHECK\s*\((.*?)\);", code_sql, re.S)
@@ -331,16 +335,121 @@ check("строка ls.page.textgen заводится для каждой ро�
 closed = re.search(r"SELECT a\.action, 'textgen_pilot', false.*?FROM \(VALUES (.*?)\) AS a\(action\)",
                    code_sql, re.S)
 closed_set = set(re.findall(r"'(ls\.[a-z_.]+)'", closed.group(1))) if closed else set()
-check("всё прочее роли пилота закрыто явными строками — список совпадает с матрицей кода",
-      closed_set == set(auth._MATRIX) - {"ls.page.textgen"})
+check("всё прочее роли пилота закрыто явными строками — список совпадает с матрицей кода "
+      "(кроме страницы и ls.textgen.accept: его заводит свой файл)",
+      closed_set == set(auth._MATRIX) - {"ls.page.textgen", "ls.textgen.accept"})
 check("права не перетираются (ON CONFLICT DO NOTHING у обеих вставок)",
       code_sql.count("ON CONFLICT (action, role) DO NOTHING") == 2)
+check("SQL роли никому роль не назначает (решение владельца: позже Алексею)",
+      "UPDATE kabinet_data.app_users" not in code_sql)
+# Назначение — отдельный файл, с заготовкой почты, которая отказывается выполняться.
+ASSIGN = ROOT / "migrations" / "kabinet" / "2026-10-21_ls_textgen_assign.sql"
+check("SQL назначения лежит рядом", ASSIGN.exists())
+asg = "\n".join(line.split("--")[0] for line in ASSIGN.read_text(encoding="utf-8").splitlines()) if ASSIGN.exists() else ""
 check("почта не подставлена — блок отказывается выполняться",
-      "почта text := 'ПОДСТАВИТЬ_ПОЧТУ_ЯРОСЛАВА'" in code_sql
-      and re.search(r"IF почта = 'ПОДСТАВИТЬ_ПОЧТУ_ЯРОСЛАВА' THEN\s+RAISE EXCEPTION", code_sql))
-check("назначение — ровно одной строке, иначе отказ", "IF n <> 1 THEN" in code_sql)
-check("кабинетная роль не трогается", not re.search(r"SET\s+role\s*=", code_sql))
-check("карточек не заводит", "INSERT INTO kabinet_data.app_users" not in code_sql)
+      "почта text := 'ПОДСТАВИТЬ_ПОЧТУ'" in asg
+      and re.search(r"IF почта = 'ПОДСТАВИТЬ_ПОЧТУ' THEN\s+RAISE EXCEPTION", asg))
+check("назначение — ровно одной строке, иначе отказ", "IF n <> 1 THEN" in asg)
+check("назначение — одна транзакция, после неё только SELECT",
+      asg.strip().startswith("BEGIN;") and asg.count("COMMIT;") == 1
+      and all(x.strip().upper().startswith("SELECT") for x in asg.split("COMMIT;", 1)[-1].split(";") if x.strip()))
+check("назначается только роль пилота", re.findall(r"SET ls_role = '([a-z_]+)'", asg) == ["textgen_pilot"])
+check("кабинетная роль не трогается", not re.search(r"SET\s+role\s*=", code_sql + asg))
+check("карточек не заводит", "INSERT INTO kabinet_data.app_users" not in code_sql + asg)
+
+# ================================================== загрузка паспорта: «заменить?»
+# Поток вопроса на ЭКРАНЕ (проверка #164): ответ на прежний вопрос не может ответить
+# на новый; вопрос привязан к файлу; без права кнопок нет. Загрузку файла AppTest не
+# умеет — подменяется сам `st.file_uploader`, а `register()` ведёт сценарий.
+import hashlib  # noqa: E402
+import io  # noqa: E402
+import zipfile  # noqa: E402
+
+import streamlit as _st  # noqa: E402
+
+from services import db as _db  # noqa: E402
+from services import passport_copies as pc  # noqa: E402
+
+
+def _docx(pid: str, ver: str = "1") -> bytes:
+    rows = [("passport_id", pid), ("passport_version", ver), ("sku_id", "99601000-B"), ("state", "NOT_READY")]
+    tbl = "<w:tbl>" + "".join(f"<w:tr><w:tc><w:p><w:r><w:t>{a}</w:t></w:r></w:p></w:tc>"
+                              f"<w:tc><w:p><w:r><w:t>{b}</w:t></w:r></w:p></w:tc></w:tr>" for a, b in rows) + "</w:tbl>"
+    b = io.BytesIO()
+    with zipfile.ZipFile(b, "w") as z:
+        z.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/'
+                   f'wordprocessingml/2006/main"><w:body>{tbl}</w:body></w:document>')
+    return b.getvalue()
+
+
+class _Up:
+    def __init__(self, data):
+        self.data, self.name = data, "p.docx"
+
+    def getvalue(self):
+        return self.data
+
+
+FLOW = {"file": _docx("PASS-99601000-B-002"), "calls": [], "script": []}
+_st.file_uploader = lambda *a, **k: _Up(FLOW["file"])
+pc.volume_store = lambda: object()
+_db.get_conn = lambda: type("C", (), {"close": lambda self: None})()
+pc.copies = lambda sku: (pd.DataFrame(), None)
+
+
+def _register(data, name, *, actor, store, conn, replace=()):
+    FLOW["calls"].append(tuple(replace))
+    step = FLOW["script"].pop(0)
+    if step[0] == "ask":
+        raise pc.CopyError("OTHER_PASSPORT_ACTIVE", ", ".join(step[1]), step[1])
+    return pc.Outcome("REGISTERED", "DOCX-PASS-99601000-B-002-v1", "/Volumes/x", {}, list(replace))
+
+
+pc.register = _register
+A, B = ("DOCX-PASS-99601000-B-001-v2",), ("DOCX-PASS-99601000-B-003-v1",)
+
+
+def _rkey(ids):
+    return "tg-pp-replace-" + hashlib.sha256("|".join(ids).encode("utf-8")).hexdigest()[:12]
+
+
+def _keys(at):
+    return {b.key for b in at.button}
+
+
+FLOW["script"] = [("ask", A)]
+at = run()
+at.button(key="tg-pp-save").click().run()
+check("паспорт: другой действующий — вопрос с id копии и версией, записи нет",
+      not at.exception and FLOW["calls"] == [()] and any(A[0] in str(w.value) for w in at.warning)
+      and _rkey(A) in _keys(at))
+# пока человек думал, коллега заменил A на B: ответ про A получает НОВЫЙ вопрос про B
+FLOW["script"] = [("ask", B), ("ok",)]
+at.button(key=_rkey(A)).click().run()
+check("ответ на прежний вопрос — новый вопрос про B, не замена B",
+      not at.exception and FLOW["calls"] == [(), A] and any(B[0] in str(w.value) for w in at.warning)
+      and not at.success)
+check("кнопки прежнего вопроса больше нет — новый вопрос, новая кнопка",
+      _rkey(A) not in _keys(at) and _rkey(B) in _keys(at))
+at.button(key=_rkey(B)).click().run()
+check("подтверждение B — замена ровно B, итог без висящего вопроса",
+      not at.exception and FLOW["calls"] == [(), A, B] and at.success
+      and not any("DOCX-PASS" in str(w.value) for w in at.warning))
+# вопрос привязан к файлу: другой файл — вопроса нет
+FLOW["script"], FLOW["calls"] = [("ask", A)], []
+at = run()
+at.button(key="tg-pp-save").click().run()
+FLOW["file"] = _docx("PASS-99601000-B-004")
+at.run()
+check("сменили файл — вопрос снят", not any(A[0] in str(w.value) for w in at.warning) and _rkey(A) not in _keys(at))
+# без права — кнопки выключены, а нажатие (в обход) отказано в момент записи
+_can, _req = auth.can, auth.require
+auth.can = lambda a: False
+auth.require = lambda *a, **k: False
+FLOW["calls"] = []
+at = run()
+check("без права «Сохранить» выключена", at.button(key="tg-pp-save").disabled)
+auth.can, auth.require = _can, _req
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS else f"{len(FAILS)} провалов: {FAILS}")
