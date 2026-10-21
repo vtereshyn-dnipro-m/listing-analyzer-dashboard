@@ -66,8 +66,30 @@ CI проверяющий «ок» не ставит. Каждое такое с
 
 - код страниц, `services/`, `components/`, `auth.py`, `app.py`,
   `requirements.txt`;
-- **миграции SQL**: файл в `migrations/` — PR, применение в Databricks —
-  отдельным словом владельца;
+- **миграции SQL**: файл прямо в `migrations/` — PR. Применяет агент, но
+  только по команде владельца «применяй <имя файла>» (решение 21.10.2026), и
+  только под учёткой владельца в Databricks — профиль CLI, через
+  `scratchpad/apply_migration.py`, — а НЕ под `claude_code_ro`. Порядок:
+  - предпроверка без изменений: кто подключён и какая база;
+  - файл до `COMMIT` одной транзакцией;
+  - проверочные запросы из конца файла — в сессии только на чтение, результат
+    владельцу.
+
+  Ошибка — `ROLLBACK` и текст ошибки владельцу. Без команды не применяется
+  ничего. Скрипт отказывается:
+  - если учётка CLI — не владельца;
+  - на файле не одной транзакцией;
+  - на `migrations/kabinet/` — SQL базы Кабинета, его применяет только
+    владелец;
+  - на удалении данных и `DROP` (см. «Никогда сам»).
+
+  Единственное исключение — пересоздание триггера: `DROP TRIGGER IF EXISTS X ON T`
+  при `CREATE TRIGGER X … ON T` настоящим оператором того же файла до `COMMIT` —
+  то же имя на той же таблице. Это исключение — на подтверждение владельцу.
+  Чего скрипт не видит: команду, собранную строкой в `EXECUTE '…'`, и
+  выключение защиты без `DROP` (`ALTER TABLE … DISABLE TRIGGER`, замена функции
+  триггера) — поэтому применяется только файл, прошедший ревью PR;
+- правка `scratchpad/apply_migration.py` — он пишет в базу, поэтому не «сам»;
 - **ребут Streamlit Cloud** — делает владелец; агент только напоминает;
 - обновление снимка канона прогоном `canon/build_snapshot.py` по новому
   архиву от Ярослава и перегенерация `REFERENCE_DRIFT.md`;
@@ -546,8 +568,10 @@ SQLAlchemy, из-за одной разницы: у psycopg2 `with conn:` это
 транзакция откатилась бы при возврате, и запись пропала бы МОЛЧА.
 Поведение заперто `test_db_pool.py`.
 
-**Правило DDL: миграции идут через Databricks, вручную.** Каждая — отдельный
-`.sql` в [migrations/](migrations/), см. [migrations/README.md](migrations/README.md).
+**Правило DDL: миграции идут через Databricks, по команде владельца.** Каждая —
+отдельный `.sql` в [migrations/](migrations/), см. [migrations/README.md](migrations/README.md).
+С 21.10.2026 применяет агент по команде «применяй <имя файла>», под учёткой
+владельца (раздел «Автономия»).
 Приложение схему не создаёт и не меняет — только `SELECT` и разрешённые
 `INSERT`/`UPDATE`.
 
@@ -1928,6 +1952,7 @@ python tests/test_passport_intake.py
 python tests/test_passport_answers.py
 python tests/test_graph_engine.py
 python tests/test_autonomy.py
+python tests/test_apply_migration.py
 python tests/test_syntax.py
 python tests/test_imports.py
 ```
@@ -2385,6 +2410,9 @@ JSON-схем: каждая даёт ожидаемый схемный исхо�
   те же границы;
 - скрипт сводки не подключается к базе и не читает ничьих учётных данных:
   ни `.mcp.json`, ни строки подключения, ни репозитория Кабинета.
+
+`test_apply_migration.py` — отказы `scratchpad/apply_migration.py`, без базы;
+что заперто — в [docs/autonomy.md](docs/autonomy.md).
 
 `test_telegram_token_redaction.py` — токен бота Telegram не попадает в
 текст ошибки `_telegram` (T-7, #137). `requests` кладёт URL с токеном в
