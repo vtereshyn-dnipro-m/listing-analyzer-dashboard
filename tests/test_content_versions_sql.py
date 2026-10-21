@@ -276,7 +276,7 @@ check("поправки не трогают таблицу, триггеры и 
 raw = CHK.read_bytes()
 check("поправки: без блочных комментариев /* */", b"/*" not in raw and b"*/" not in raw)
 check("поправки: файл не менялся без осознанной правки отпечатка",
-      hashlib.sha256(raw).hexdigest() == "b1b5d9a7304f4a15192a738a2bf96d5cd0f22c0a179222a3324746f76702eef5")
+      hashlib.sha256(raw).hexdigest() == "eae9a123e485139f4c24ac68f40de77196b7c049d4e83d56f403b27d77a40b57")
 new = re.search(r"FUNCTION listing_data\.content_versions_guard\(\) RETURNS trigger LANGUAGE plpgsql AS \$\$(.*?)\$\$;", CSQL)
 NEW_BODY = new.group(1) if new else ""
 old_raises = re.findall(r"RAISE EXCEPTION '([^']*)'", BODY)
@@ -300,6 +300,15 @@ for frag, what in (
 ):
     check("поправки: " + what, has(frag, NEW_BODY))
 check("поправки: исключения — исключения", not re.search(r"RAISE (NOTICE|WARNING|INFO|LOG|DEBUG)", CSQL))
+check("поправки: признак «копия найдена» ставится true, а не false",
+      has("SELECT sku_id, passport_id, sha256, true INTO copy_sku, copy_pass, copy_sha, found_copy", NEW_BODY))
+check("поправки: ровно три выхода RETURN NEW — ни одного раннего перед проверками",
+      NEW_BODY.count("RETURN NEW;") == 3 and BODY.count("RETURN NEW;") == 3)
+ins_branch = re.search(r"IF TG_OP = 'INSERT' THEN(.*?)RETURN NEW; END IF; IF TG_OP = 'DELETE'", NEW_BODY)
+check("поправки: в ветке вставки сверки идут до выхода",
+      bool(ins_branch) and all(x in ins_branch.group(1) for x in ("copy_sku IS DISTINCT FROM NEW.sku",
+                                                                   "copy_sha IS DISTINCT FROM NEW.passport_sha256",
+                                                                   "NEW.created_at > now()")))
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS else f"{len(FAILS)} провалов: {FAILS}")
