@@ -47,9 +47,9 @@ W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 class CopyError(Exception):
     """Отказ с кодом: страница показывает `tg.pp.err.<code>`."""
 
-    def __init__(self, code: str, detail: str = ""):
+    def __init__(self, code: str, detail: str = "", active: tuple[str, ...] = ()):
         super().__init__(f"{code}: {detail}" if detail else code)
-        self.code, self.detail = code, detail
+        self.code, self.detail, self.active = code, detail, active
 
 
 @dataclass
@@ -159,10 +159,17 @@ def volume_store() -> VolumeStore | None:
 
 
 # ------------------------------------------------------------- регистрация
-def register(data: bytes, origin_name: str, *, actor: str, store: ArtifactStore, conn) -> Outcome:
+def register(data: bytes, origin_name: str, *, actor: str, store: ArtifactStore, conn,
+             replace: tuple[str, ...] = ()) -> Outcome:
     """Копия в том, повторное чтение, строка регистрации — одной транзакцией базы
     под блокировкой SKU. Сбой тома — откат, в базе ничего. Сбой базы после
-    записи файла — файл остаётся, повторная загрузка того же файла его узнаёт."""
+    записи файла — файл остаётся, повторная загрузка того же файла его узнаёт.
+
+    Один SKU — один действующий паспорт (решение владельца 21.10.2026). Если у SKU
+    уже действует паспорт с другим id, без `replace` — отказ OTHER_PASSPORT_ACTIVE
+    с этими id в `active`: страница спрашивает «заменить?». `replace` — ровно те id,
+    что человек видел в вопросе; разошлись (кто-то успел загрузить третий) — снова
+    вопрос, а не молчаливая замена. После замены прежние копии SKU — в OLD (архив)."""
     h = read_header(data)
     sha = hashlib.sha256(data).hexdigest()
     sku, pid, ver = h["sku_id"], h["passport_id"], int(h["passport_version"])
@@ -189,6 +196,11 @@ def register(data: bytes, origin_name: str, *, actor: str, store: ArtifactStore,
         other = cur.fetchone()
         if other:
             raise CopyError("PASSPORT_OTHER_SKU", f"{pid} → {other[0]}")
+        cur.execute("SELECT DISTINCT passport_id FROM passport_source_artifacts WHERE sku_id = %s"
+                    " AND passport_id <> %s AND lifecycle = 'ACTIVE'" + mine, (sku, pid) + scope)
+        active = tuple(sorted(r[0] for r in cur.fetchall()))
+        if active and active != tuple(sorted(replace)):
+            raise CopyError("OTHER_PASSPORT_ACTIVE", ", ".join(active), active)
         cur.execute("SELECT source_artifact_id, archived_locator FROM passport_source_artifacts"
                     " WHERE sku_id = %s AND passport_id = %s" + mine, (sku, pid) + scope)
         known = [(r[0], version_of(r[1])) for r in cur.fetchall()]
@@ -213,10 +225,12 @@ def register(data: bytes, origin_name: str, *, actor: str, store: ArtifactStore,
             " 'ACTIVE', %s)",
             (aid, sku, pid, h.get("run_id") or None, origin_name or None, loc, loc.rsplit("/", 1)[-1],
              MIME, len(data), sha, actor))
+        # В архив — все прежние действующие копии SKU: того же паспорта (старая
+        # версия) и, при замене, подтверждённого другого.
         cur.execute("UPDATE passport_source_artifacts SET lifecycle = 'OLD'"
-                    " WHERE sku_id = %s AND passport_id = %s AND lifecycle = 'ACTIVE'"
+                    " WHERE sku_id = %s AND lifecycle = 'ACTIVE'"
                     " AND source_artifact_id <> %s" + mine + " RETURNING source_artifact_id",
-                    (sku, pid, aid) + scope)
+                    (sku, aid) + scope)
         old = [r[0] for r in cur.fetchall()]
     return Outcome("REGISTERED", aid, loc, h, old)
 

@@ -228,39 +228,56 @@ if pp_header:
     may = auth.can("ls.textgen.accept")
     if not may:
         st.caption(t("tg.pp.denied_hint"))
-    if st.button(t("tg.pp.save"), type="primary", disabled=not may, key="tg-pp-save"):
-        if auth.require("ls.textgen.accept", object_type="passport", object_id=pp_header["passport_id"]):
-            try:
-                store = pc.volume_store()
-            except pc.CopyError as e:
-                store = False
+    pp_sha = hashlib.sha256(pp_data).hexdigest()
+
+    def _save(replace: tuple = ()) -> None:
+        """Запись копии; право — в момент нажатия. Другой действующий паспорт SKU —
+        вопрос «заменить?» (решение владельца 21.10.2026), ответ — второй кнопкой."""
+        st.session_state.pop("tg-pp-ask", None)
+        if not auth.require("ls.textgen.accept", object_type="passport", object_id=pp_header["passport_id"]):
+            return
+        try:
+            store = pc.volume_store()
+        except pc.CopyError as e:
+            st.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
+            return
+        if store is None:
+            st.error(t("tg.pp.no_store"))
+            return
+        from services.db import get_conn
+        try:
+            conn = get_conn()
+        except Exception as e:  # noqa: BLE001
+            st.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
+            return
+        try:
+            res = pc.register(pp_data, up.name, actor=auth.actor(), store=store, conn=conn, replace=replace)
+        except pc.CopyError as e:
+            if e.code == "OTHER_PASSPORT_ACTIVE":
+                st.session_state["tg-pp-ask"] = (pp_sha, e.active)
+            else:
                 st.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
-            if store is None:
-                st.error(t("tg.pp.no_store"))
-            elif store:
-                from services.db import get_conn
-                try:
-                    conn = get_conn()
-                except Exception as e:  # noqa: BLE001
-                    conn = None
-                    st.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
-                if conn is not None:
-                    try:
-                        res = pc.register(pp_data, up.name, actor=auth.actor(), store=store, conn=conn)
-                    except pc.CopyError as e:
-                        st.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
-                    except Exception as e:  # noqa: BLE001 — база: файл уже в томе, повтор его узнает
-                        st.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
-                    else:
-                        if res.status == "DUPLICATE":
-                            st.info(t("tg.pp.duplicate", aid=res.artifact_id, loc=res.locator))
-                        else:
-                            st.success(t("tg.pp.saved", aid=res.artifact_id, loc=res.locator,
-                                         sha=hashlib.sha256(pp_data).hexdigest()[:12]))
-                            if res.superseded:
-                                st.info(t("tg.pp.superseded", ids=", ".join(res.superseded)))
-                    finally:
-                        conn.close()
+        except Exception as e:  # noqa: BLE001 — база: файл уже в томе, повтор его узнает
+            st.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
+        else:
+            if res.status == "DUPLICATE":
+                st.info(t("tg.pp.duplicate", aid=res.artifact_id, loc=res.locator))
+            else:
+                st.success(t("tg.pp.saved", aid=res.artifact_id, loc=res.locator, sha=pp_sha[:12]))
+                if res.superseded:
+                    st.info(t("tg.pp.superseded", ids=", ".join(res.superseded)))
+        finally:
+            conn.close()
+
+    if st.button(t("tg.pp.save"), type="primary", disabled=not may, key="tg-pp-save"):
+        _save()
+    ask = st.session_state.get("tg-pp-ask")
+    if ask and ask[0] == pp_sha:
+        # Вопрос привязан к ЭТОМУ файлу: сменили файл — вопрос снят.
+        st.warning(t("tg.pp.ask_replace", sku=pp_header["sku_id"], ids=", ".join(ask[1]),
+                     pid=pp_header["passport_id"]))
+        if st.button(t("tg.pp.replace"), disabled=not may, key="tg-pp-replace"):
+            _save(replace=tuple(ask[1]))
     lst, lerr = pc.copies(pp_header["sku_id"])
     st.markdown(f"**{t('tg.pp.list', sku=pp_header['sku_id'])}**")
     if lerr:
@@ -272,13 +289,15 @@ if pp_header:
             "id": lst["source_artifact_id"],
             "ver": lst["archived_locator"].map(lambda x: pc.version_of(x) if isinstance(x, str) else None),
             "sha": lst["sha256"].map(lambda x: x[:12] if isinstance(x, str) else ""),
-            "life": lst["lifecycle"],
+            "pid": lst["passport_id"],
+            "life": lst["lifecycle"].map(lambda x: t(f"tg.pp.life.{x}") if x in ("ACTIVE", "OLD") else x),
             "by": lst["registered_by"],
             "at": lst["recorded_at"],
         })
         st.dataframe(view, hide_index=True, width="stretch",
                      column_config={"id": st.column_config.TextColumn(t("tg.pp.col.id")),
                                     "ver": st.column_config.NumberColumn(t("tg.pp.col.version")),
+                                    "pid": st.column_config.TextColumn(t("tg.pp.col.pid")),
                                     "sha": st.column_config.TextColumn(t("tg.pp.col.sha")),
                                     "life": st.column_config.TextColumn(t("tg.pp.col.lifecycle")),
                                     "by": st.column_config.TextColumn(t("tg.pp.col.by")),

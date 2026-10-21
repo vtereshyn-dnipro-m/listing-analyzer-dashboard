@@ -157,6 +157,12 @@ class FakeCursor:
         elif sql.startswith("SELECT") and "sha256 = %s" in sql:
             self.res = [(r["source_artifact_id"], r["archived_locator"]) for r in db.rows
                         if r["sku_id"] == p[0] and r["sha256"] == p[1] and scoped(r, p[2:])][:1]
+        elif sql.startswith("SELECT DISTINCT passport_id"):
+            # Значение lifecycle — из запроса: без фильтра «ACTIVE» сюда попали бы архивные.
+            want = re.search(r"lifecycle = '(\w+)'", sql)
+            self.res = sorted({(r["passport_id"],) for r in db.rows
+                               if r["sku_id"] == p[0] and r["passport_id"] != p[1] and scoped(r, p[2:])
+                               and (want is None or r["lifecycle"] == want.group(1))})
         elif sql.startswith("SELECT sku_id"):
             self.res = [(r["sku_id"],) for r in db.rows
                         if r["passport_id"] == p[0] and r["sku_id"] != p[1] and scoped(r, p[2:])][:1]
@@ -179,8 +185,12 @@ class FakeCursor:
             new, old = re.findall(r"lifecycle = '(\w+)'", sql)
             out = []
             for r in db.rows:
-                if r["sku_id"] == p[0] and r["passport_id"] == p[1] and r["lifecycle"] == old \
-                        and r["source_artifact_id"] != p[2] and scoped(r, p[3:]):
+                # Фильтр по паспорту — только если он есть в самом запросе.
+                by_pid = "passport_id = %s" in sql
+                pp = list(p)
+                pid = pp.pop(1) if by_pid else None
+                if r["sku_id"] == pp[0] and (pid is None or r["passport_id"] == pid) and r["lifecycle"] == old \
+                        and r["source_artifact_id"] != pp[1] and scoped(r, pp[2:]):
                     r["lifecycle"] = new
                     out.append((r["source_artifact_id"],))
             self.res = out
@@ -255,6 +265,38 @@ check("новая версия — REGISTERED, прежняя копия в OLD"
       and [x["lifecycle"] for x in db.rows] == ["ACTIVE", "OLD", "ACTIVE"])
 check("строка приёма не тронута", db.rows[0] == FOREIGN)
 check("старая версия после новой — VERSION_OLDER", refused(lambda: reg(V1), "VERSION_OLDER") and len(db.rows) == 3)
+
+# Один SKU — один действующий паспорт (решение владельца 21.10.2026): другой id у
+# того же SKU — вопрос «заменить?», ответ — те же id; прежние копии — в архив.
+P2 = docx(header("1", pid="PASS-99601000-B-002"))
+puts = store.puts
+
+
+def asked(fn, want):
+    try:
+        fn()
+    except pc.CopyError as e:
+        return e.code == "OTHER_PASSPORT_ACTIVE" and e.active == want
+    except Exception:  # noqa: BLE001
+        return False
+    return False
+
+
+check("другой паспорт у SKU — вопрос «заменить?» с действующим id, ничего не записано",
+      asked(lambda: reg(P2), ("PASS-99601000-B-001",)) and len(db.rows) == 3 and store.puts == puts)
+check("ответ не про те id — снова вопрос, а не молчаливая замена",
+      asked(lambda: pc.register(P2, "p2.docx", actor="a", store=store, conn=db, replace=("PASS-X",)),
+            ("PASS-99601000-B-001",)) and len(db.rows) == 3)
+r = pc.register(P2, "p2.docx", actor="a", store=store, conn=db, replace=("PASS-99601000-B-001",))
+check("подтверждённая замена — REGISTERED, прежний паспорт в архиве, действует один",
+      r.status == "REGISTERED" and r.superseded == ["DOCX-PASS-99601000-B-001-v3"]
+      and [x["lifecycle"] for x in db.rows if x["mime_type"] == pc.MIME] == ["OLD", "OLD", "ACTIVE"])
+check("строка приёма и после замены не тронута", db.rows[0] == FOREIGN)
+try:
+    _st = reg(docx(header("2", pid="PASS-99601000-B-002"))).status
+except pc.CopyError as e:
+    _st = e.code
+check("архивный паспорт вопроса не вызывает: новая версия действующего — без вопроса", _st == "REGISTERED")
 
 # сбои тома: в базе ничего
 db2, s2 = FakeDB(), CountingStore()
