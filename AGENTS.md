@@ -1835,6 +1835,7 @@ en → сам ключ (забытый перевод виден в UI, без �
 | `passport_questions` | вопросы Верификатора `Q-<RUN>-<NNN>`: тип, статус 06E, влияние, ответственный | движок | `services/passport.py` |
 | `passport_answers` | версии ответов на вопросы, неизменяемые | `services/passport_answers.py` (за флагом) | `services/passport.py` |
 | `passport_answer_verdicts` | вердикты Верификатора по ответу, только дописывание | движок | `services/passport.py` |
+| `content_versions` | контент «Генератора текстов»: версия одного поля (title, highlight, bullet_1…5, description) по точному SKU и рынку; статус draft → accepted → sent (передано Марко) с автором и временем; паспорт-источник. Текст неизменяем, удаления нет — триггер. Подробно — [docs/textgen.md](docs/textgen.md) | генератор (кнопки — следующий PR) | генератор |
 | `passport_blocks` | блокеры `BLK-<RUN>-<NNN>` с причиной, ответственным и условием возобновления | движок | `services/passport.py` |
 
 Реестр перечисляет то, что читает НАШ код. В схеме есть ещё восемь
@@ -1897,6 +1898,7 @@ python tests/test_telegram_token_redaction.py
 python tests/test_title_rules.py
 python tests/test_product_specs.py
 python tests/test_textgen_page.py
+python tests/test_content_versions_sql.py
 python tests/test_feed.py
 python tests/test_methodology_page.py
 python tests/test_i18n_sync.py
@@ -2414,6 +2416,10 @@ JSON-схем: каждая даёт ожидаемый схемный исхо�
 `test_product_specs.py` — характеристики товара для тайтла: тип, источники,
 единицы, сетевое напряжение, модель, загрузчики. Подробно —
 [docs/product-specs.md](docs/product-specs.md).
+
+`test_content_versions_sql.py` — хранилище контента генератора и право
+`ls.textgen.accept`: решения владельца в SQL заперты статически. Поведение
+триггера проверено на PGlite. Подробно — [docs/textgen.md](docs/textgen.md).
 
 `test_textgen_page.py` — «Генератор текстов (пилот)»: экран говорит то же, что
 правила; сбой не кешируется; модель не вызывается; SQL роли для базы Кабинета.
