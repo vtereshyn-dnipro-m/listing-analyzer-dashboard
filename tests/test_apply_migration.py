@@ -12,7 +12,8 @@ tests/test_apply_migration.py — `scratchpad/apply_migration.py` отказыв
     внутри ни END, ABORT, START, ROLLBACK, PREPARE, ни COMMIT в теле DO;
   · удаление данных и DROP — отказ, в том числе в телах DO и функций;
     исключение одно — пересоздание триггера: то же имя на той же таблице,
-    CREATE настоящим оператором до COMMIT;
+    CREATE настоящим оператором ПОСЛЕ DROP и до COMMIT, таблица только
+    listing_data.<имя>, без RENAME и SET SCHEMA в том же файле;
   · после COMMIT — только SELECT без изменяющих слов;
   · разбор не обманывается комментариями в телах $…$, именами "a'b",
     строками E'\\'', вложенными $q$…$q$ и именами вида x$a$;
@@ -86,7 +87,22 @@ try:
         (True, "одна транзакция с CREATE", "BEGIN;\nCREATE TABLE IF NOT EXISTS listing_data.t (id int);\nCOMMIT;\nSELECT 1;\n"),
         (True, "BOM в начале файла", "\ufeffBEGIN;\nSELECT 1;\nCOMMIT;\n"),
         (True, "пересоздание триггера", f"BEGIN;\n{DROPTRG}{TRG}COMMIT;\n"),
-        (True, "пересоздание триггера: таблица со схемой и без", f"BEGIN;\n{D} TRIGGER IF EXISTS tg ON t;\n{TRG}COMMIT;\n"),
+        (False, "пересоздание: таблица без схемы в DROP", f"BEGIN;\n{D} TRIGGER IF EXISTS tg ON t;\n{TRG}COMMIT;\n"),
+        (False, "пересоздание: таблица без схемы в обоих",
+         f"BEGIN;\n{D} TRIGGER IF EXISTS tg ON t;\nCREATE TRIGGER tg BEFORE UPDATE ON t FOR EACH ROW EXECUTE FUNCTION f();\nCOMMIT;\n"),
+        (False, "пересоздание и SET search_path — CREATE ушёл бы на чужую t",
+         f"BEGIN;\n{D} TRIGGER IF EXISTS tg ON t;\nSET LOCAL search_path = other;\n"
+         "CREATE TRIGGER tg BEFORE UPDATE ON t FOR EACH ROW EXECUTE FUNCTION f();\nCOMMIT;\n"),
+        (False, "пересоздание и RENAME — прежняя таблица осталась бы без триггера",
+         f"BEGIN;\n{DROPTRG}ALTER TABLE listing_data.t RENAME TO t_old;\n"
+         f"CREATE TABLE listing_data.t (id int);\n{TRG}COMMIT;\n"),
+        (False, "пересоздание и SET SCHEMA — прежняя таблица ушла бы без триггера",
+         f"BEGIN;\n{DROPTRG}ALTER TABLE listing_data.t SET SCHEMA archive;\n"
+         f"CREATE TABLE listing_data.t (id int);\n{TRG}COMMIT;\n"),
+        (False, "пересоздание и SET SCHEMA внутри DO",
+         f"BEGIN;\n{DROPTRG}DO $$ BEGIN ALTER TABLE listing_data.t SET SCHEMA archive; END $$;\n"
+         f"CREATE TABLE listing_data.t (id int);\n{TRG}COMMIT;\n"),
+        (True, "RENAME без пересоздания триггера — не наше дело", "BEGIN;\nALTER TABLE listing_data.t RENAME COLUMN a TO b;\nCOMMIT;\n"),
         (True, f"защитный триггер BEFORE {WIPE} — не очистка",
          f"BEGIN;\nCREATE TRIGGER nw BEFORE {WIPE} ON listing_data.t FOR EACH STATEMENT EXECUTE FUNCTION f();\nCOMMIT;\n"),
         (True, f"слово {D} внутри строки — не оператор", f"BEGIN;\nCOMMENT ON TABLE listing_data.t IS 'no {D} here';\nCOMMIT;\n"),
@@ -144,6 +160,9 @@ try:
          f"BEGIN;\n{DROPTRG}CREATE TABLE \"CREATE TRIGGER tg x ON listing_data.t \" (id int);\nCOMMIT;\n"),
         (False, "CREATE TRIGGER в комментарии", f"BEGIN;\n{DROPTRG}-- {TRG}COMMIT;\n"),
         (False, "CREATE TRIGGER после COMMIT", f"BEGIN;\n{DROPTRG}COMMIT;\n{TRG}"),
+        (False, "CREATE раньше DROP — триггер остался бы удалён", f"BEGIN;\n{TRG}{DROPTRG}COMMIT;\n"),
+        (False, "DROP после пересоздания — второй DROP без CREATE", f"BEGIN;\n{DROPTRG}{TRG}{DROPTRG}COMMIT;\n"),
+        (True, "DROP, CREATE, DROP, CREATE — каждый DROP перед своим CREATE", f"BEGIN;\n{DROPTRG}{TRG}{DROPTRG}{TRG}COMMIT;\n"),
         (False, "имя триггера в кавычках", f"BEGIN;\n{D} TRIGGER IF EXISTS \"tg\" ON listing_data.t;\n"
                                            "CREATE TRIGGER \"tg\" BEFORE UPDATE ON listing_data.t FOR EACH ROW EXECUTE FUNCTION f();\nCOMMIT;\n"),
         # --- после COMMIT (замечание 1)
