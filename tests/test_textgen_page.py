@@ -202,6 +202,30 @@ check("введённый ключ отмечен, невведённый — н
 check("чужой бренд — «не брать»",
       kdf.set_index("query").loc["radial bosch", "tier"] == lab("tg.tier.forbid"))
 
+# модели нет — «нарушений нет» не выдаёт непроверенный префикс за проверенный
+_real_load = ps.load
+
+
+def no_model_load(asin, mp):
+    d, e = fake_load(asin, mp)
+    d = dict(d, title="Amoladora Angular Dnipro-M 20V", attributes={
+        k: v for k, v in d["attributes"].items() if k != "model_name"})
+    return d, e
+
+
+ps.load = no_model_load
+st_mod = __import__("streamlit")
+st_mod.cache_data.clear()
+at = run(title="DNIPRO-M Amoladora Angular, Ø125mm", hl="Velocidad 10000rpm")
+check("модели нет: префикс Highlights назван непроверенным",
+      any(lab("tg.no_model_prefix") == str(w.value) for w in at.warning))
+at = run(title="DNIPRO-M Amoladora Angular, Ø125mm")
+check("и без Highlights оговорки нет", not any(lab("tg.no_model_prefix") == str(w.value) for w in at.warning))
+ps.load = _real_load
+st_mod.cache_data.clear()
+at = run(title=ok_title, hl=ok_hl)
+check("модель есть — оговорки нет", not any(lab("tg.no_model_prefix") == str(w.value) for w in at.warning))
+
 # ================================================================ расхождение карточки
 at = run(asin="B0H75XRDBK")
 check("перфоратор: тип назван", lab("tg.type.hammer") in texts_of(at))

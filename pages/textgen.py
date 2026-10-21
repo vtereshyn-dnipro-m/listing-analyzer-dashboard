@@ -178,6 +178,10 @@ if title_in or hl_in:
                         + (f": `{v.detail}`" if v.detail else ""))
     else:
         st.success(t("tg.all_ok"))
+    # Без модели префикс «Model …: » не проверить. «Нарушений нет» без этой
+    # оговорки выдавало бы непроверенное за проверенное.
+    if hl_in and not specs.model:
+        st.warning(t("tg.no_model_prefix"))
 
 if keys_df is not None and not keys_df.empty:
     typed = f"{title_in} {hl_in}"
