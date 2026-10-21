@@ -202,6 +202,16 @@ check("артикул с префиксом («S2_48091000») — модель �
 check("слова вместо модели («Taladro atornillador») и обрывок («201HBC») — из тайтла",
       ps.model_of({"model_name": texts("Taladro atornillador")}, "Taladro Dnipro-M CD-201HBC Compact") == "CD-201HBC"
       and ps.model_of({"model_name": texts("201HBC")}, "Taladro Dnipro-M CD-201HBC Compact") == "CD-201HBC")
+check("короткий код «HD-8» — модель (B0DY7XZBXV)",
+      ps.model_of({"model_name": texts("HD-8")}, "Taladro Percutor Dnipro-M HD-8 650W") == "HD-8"
+      and ps.model_of({}, "Taladro Percutor Dnipro-M HD-8, 650W") == "HD-8")
+check("«TYPE-C-1.5» у кабеля — не код модели",
+      ps.model_of({}, "Cable Magnético Dnipro-M TYPE-C-1.5 m") is None)
+check("тот же код в тайтле полнее — берётся полный: DSO-200 → DSO-200BC, CD-218 → CD-218Q",
+      ps.model_of({"model_name": texts("DSO-200")}, "Lijadora Orbital Dnipro-M DSO-200BC Ultra 20V") == "DSO-200BC"
+      and ps.model_of({"model_name": texts("CD-218")}, "Taladro Percutor Dnipro-M CD-218Q 20V") == "CD-218Q")
+check("а другой код в тайтле атрибут не перебивает",
+      ps.model_of({"model_name": texts("DGA-201M")}, "Amoladora DGA-200") == "DGA-201M")
 check("бренд внутри model_name снимается: «Dnipro-M GS-100S» — GS-100S",
       ps.model_of({"model_name": texts("Dnipro-M GS-100S")}, "Amoladora") == "GS-100S")
 GS = ps.extract("X", "es", title="Amoladora Angular Dnipro-M GS-100S 850W 125mm",
@@ -226,6 +236,7 @@ db.get_engine = lambda: object()
 _real_read = pd.read_sql
 QUERIES = []
 SQLS = []
+NULL_TITLE = [False]
 
 
 def fake_read(sql, con=None, params=None, **kw):
@@ -238,6 +249,8 @@ def fake_read(sql, con=None, params=None, **kw):
         rows.append({"asin": "B0OTHERDRL", "title": "Taladro Atornillador Dnipro-M CD-12QX 12V 25Nm",
                      "product_type": "DRILL", "attributes": float("nan")})
         return pd.DataFrame(rows)
+    if "FROM listing_snapshots" in s and NULL_TITLE[0]:
+        return pd.DataFrame([{"title": None, "raw": {}}])
     if "FROM listing_snapshots" in s:
         d = PILOT["B0H75XRDBK"]
         return pd.DataFrame([{"title": d["title"], "raw": {"product_information": d["product_information"],
@@ -257,6 +270,11 @@ pd.read_sql = fake_read
 try:
     got, err = ps.for_product("B0H75XRDBK", "es")
     check("for_product читает и разбирает", err is None and got.tool_type == "hammer" and got.conflicts)
+    NULL_TITLE[0] = True
+    data, err = ps.load("B0H75XRDBK", "es")
+    NULL_TITLE[0] = False
+    check(f"тайтл NULL в снапшоте — пустая строка, а не «None» или «nan» ({data and data['title']!r})",
+          err is None and data["title"] == "")
     full = [" ".join(sql.split()) for sql in SQLS]
     check("снапшот — последний УДАЧНЫЙ (ok IS TRUE), а не с непустым тайтлом",
           any("FROM listing_snapshots" in f and "ok IS TRUE" in f and "title IS NOT NULL" not in f for f in full))

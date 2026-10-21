@@ -322,7 +322,9 @@ def kit_items(attrs: dict, model: str | None, type_re: str | None) -> list[str]:
 # Код модели в тайтле: «GL-240», «DHR-202BC», «CD-12QBC», «DGA-201M». Нужен,
 # когда в атрибутах нет `model_name` (у GL-240 его нет): префикс Highlights
 # «Model <модель>: » без модели не собрать.
-_MODEL_RE = re.compile(r"\b([A-Z]{1,4}-\d{2,4}[A-Z]{0,4})\b")
+# Цифр после дефиса — от одной: «HD-8», «FX-5». Слева не буква, не цифра и не
+# дефис: «TYPE-C-1.5» у кабеля кодом «C-1» не становится.
+_MODEL_RE = re.compile(r"(?<![\w-])([A-Z]{1,4}-\d{1,4}[A-Z]{0,4})\b")
 
 
 def model_of(attrs: dict, title: str) -> str | None:
@@ -335,9 +337,14 @@ def model_of(attrs: dict, title: str) -> str | None:
     кода не подходит). Иначе — код из тайтла. Нет и там — None: экран
     говорит «модели нет», а не подставляет артикул."""
     m = _MODEL_RE.search(_first_text(attrs, "model_name") or "")
+    in_title = model_from_title(title)
     if m:
+        # В тайтле тот же код полнее («DSO-200» в атрибуте, «DSO-200BC» в
+        # тайтле) — берётся полный.
+        if in_title and in_title != m.group(1) and in_title.startswith(m.group(1)):
+            return in_title
         return m.group(1)
-    return model_from_title(title)
+    return in_title
 
 
 def model_from_title(title: str, brand: str = "Dnipro-M") -> str | None:
