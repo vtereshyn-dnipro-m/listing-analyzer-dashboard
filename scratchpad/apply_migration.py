@@ -15,7 +15,8 @@
 3. Удаление данных и DROP — отказ, в том числе внутри тел DO и функций.
    Единственное исключение — пересоздание триггера: DROP TRIGGER IF EXISTS X ON T
    и ПОСЛЕ него CREATE TRIGGER X … ON T настоящим оператором того же файла ДО COMMIT
-   (пара «имя, таблица»; имена в кавычках исключения не получают). Событие триггера на
+   (пара «имя, таблица»; таблица — только listing_data.<имя>; имена в кавычках
+   исключения не получают; RENAME в том же файле — отказ). Событие триггера на
    очистку («BEFORE/AFTER/OR <очистка> ON») командой очистки не считается.
 4. После COMMIT — только SELECT без изменяющих слов (SET, INSERT, INTO, …).
 5. Разбор понимает комментарии «--» и «/* */» везде (и в телах $…$), строки '…'
@@ -176,11 +177,6 @@ def _skel(stmt: str) -> str:
     return re.sub(r"\s+", " ", scrub(stmt)).strip(" ;")
 
 
-def _norm_table(t: str) -> str:
-    t = t.lower()
-    return t.split(".", 1)[1] if t.startswith("listing_data.") else t
-
-
 _NAME = r"([A-Za-z_][A-Za-z0-9_]*)"
 _TABLE = r"([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)"
 
@@ -205,7 +201,8 @@ def vet(path: pathlib.Path, root: pathlib.Path | None = None) -> tuple[str, list
         m = re.match(rf"CREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\s+{_NAME}\s.*?\bON\s+{_TABLE}\s",
                      s + " ", re.I)
         if m:
-            created[(m.group(1).lower(), _norm_table(m.group(2)))] = i
+            created[(m.group(1).lower(), m.group(2).lower())] = i
+    recreated = False
     for i, ((a, b), s) in enumerate(zip(spans[1:k], skels[1:k]), 1):
         deep = re.sub(rf"\b(BEFORE|AFTER|OR)\s+{W_WIPE}\b", " ", s, flags=re.I)
         if re.search(rf"\b({W_WIPE}|{W_DEL}\s+FROM)\b", deep, re.I):
@@ -214,9 +211,18 @@ def vet(path: pathlib.Path, root: pathlib.Path | None = None) -> tuple[str, list
             ok = re.fullmatch(rf"{W_DROP}\s+TRIGGER\s+IF\s+EXISTS\s+{_NAME}\s+ON\s+{_TABLE}", s, re.I)
             # CREATE обязан стоять ПОСЛЕ DROP: «CREATE, затем DROP» оставил бы
             # таблицу без триггера, то есть было бы удалением (проверка #159).
-            if not (ok and created.get((ok.group(1).lower(), _norm_table(ok.group(2))), 0) > i):
+            # Таблица — только со схемой: иначе SET search_path между DROP и
+            # CREATE увёл бы CREATE на чужую таблицу (проверка #160).
+            if not (ok and ok.group(2).lower().startswith("listing_data.")
+                    and created.get((ok.group(1).lower(), ok.group(2).lower()), 0) > i):
                 fail(f"{W_DROP} в файле — агент этого не применяет (кроме пересоздания триггера: то же имя, "
-                     f"та же таблица, CREATE после {W_DROP} и до COMMIT): {' '.join(text[a:b].split())[:90]}")
+                     f"та же таблица listing_data.<имя>, CREATE после {W_DROP} и до COMMIT): "
+                     f"{' '.join(text[a:b].split())[:90]}")
+            recreated = True
+    # Переименование рядом с пересозданием увело бы CREATE на другую таблицу
+    # под тем же именем, а прежняя осталась бы без триггера (проверка #160).
+    if recreated and any(re.search(r"\bRENAME\b", s, re.I) for s in skels[1:k]):
+        fail(f"{W_DROP} TRIGGER вместе с RENAME в одном файле — агент это не применяет")
     checks = []
     for (a, b), s in zip(spans[k + 1:], skels[k + 1:]):
         bad = sorted({w.upper() for w in re.findall(r"[A-Za-z_]+", s)} & TAIL_FORBIDDEN)
