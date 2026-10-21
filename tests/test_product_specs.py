@@ -210,6 +210,12 @@ check("«TYPE-C-1.5» у кабеля — не код модели",
 check("тот же код в тайтле полнее — берётся полный: DSO-200 → DSO-200BC, CD-218 → CD-218Q",
       ps.model_of({"model_name": texts("DSO-200")}, "Lijadora Orbital Dnipro-M DSO-200BC Ultra 20V") == "DSO-200BC"
       and ps.model_of({"model_name": texts("CD-218")}, "Taladro Percutor Dnipro-M CD-218Q 20V") == "CD-218Q")
+check("вольтаж, приклеенный к коду, не наращивает модель: «CS-12V 2Ah» (IT, B0GS78L7JP) — CS-12",
+      ps.model_of({"model_name": texts("CS-12")}, "Mini Motosega a Batteria Dnipro-M CS-12V 2Ah") == "CS-12")
+check("добавка цифрами — другой товар: «BP-24» при «BP-240» остаётся BP-24",
+      ps.model_of({"model_name": texts("BP-24")}, "Batería Dnipro-M BP-240 20V 4Ah") == "BP-24")
+check("кусок длинного слова кодом не становится: «ABCDE-12»",
+      ps.model_from_title("Kit ABCDE-12 con maletín") is None)
 check("а другой код в тайтле атрибут не перебивает",
       ps.model_of({"model_name": texts("DGA-201M")}, "Amoladora DGA-200") == "DGA-201M")
 check("бренд внутри model_name снимается: «Dnipro-M GS-100S» — GS-100S",

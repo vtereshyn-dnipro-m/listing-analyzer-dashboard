@@ -340,10 +340,14 @@ def model_of(attrs: dict, title: str) -> str | None:
     in_title = model_from_title(title)
     if m:
         # В тайтле тот же код полнее («DSO-200» в атрибуте, «DSO-200BC» в
-        # тайтле) — берётся полный.
-        if in_title and in_title != m.group(1) and in_title.startswith(m.group(1)):
+        # тайтле) — берётся полный. Добавка — только буквы и не вольтаж:
+        # «CS-12V 2Ah» на IT — это CS-12 и 12V, а «BP-240» при «BP-24» —
+        # другой товар.
+        base = m.group(1)
+        tail = in_title[len(base):] if in_title and in_title.startswith(base) else ""
+        if tail.isalpha() and tail.upper() != "V":
             return in_title
-        return m.group(1)
+        return base
     return in_title
 
 
