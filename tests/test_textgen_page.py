@@ -541,7 +541,16 @@ _db.table_exists = lambda name: False
 at = run()
 check("нет журнала генерации — кнопка выключена и названа миграция",
       at.button(key="tg-gen-go").disabled and "2026-10-21_textgen_calls.sql" in _warn(at))
+_db.table_exists = lambda name: name != "content_versions"
+at = run()
+check("нет таблицы черновиков — кнопка выключена", at.button(key="tg-gen-go").disabled
+      and "content_versions" in _warn(at))
 _db.table_exists = lambda name: True
+ai.task_config = lambda task: ("gemini", "gemini-3.5-flash")
+at = run()
+check("не Anthropic — кнопка выключена и сказано почему", at.button(key="tg-gen-go").disabled
+      and "gemini" in _warn(at))
+ai.task_config = lambda task: ("anthropic", "claude-sonnet-5")
 _can = auth.can
 auth.can = lambda a: a != "ls.textgen.accept"
 at = run()

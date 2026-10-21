@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from dataclasses import dataclass, field
 from xml.etree import ElementTree as ET
@@ -23,6 +24,17 @@ FACT_SECTIONS = ("ідентичність", "технічні характер�
 CONFLICT_SECTION = "конфлікти"
 # Колонки-ссылки на источники в модель не идут: это шум, а не факт о товаре.
 SOURCE_COLS = ("джерело", "evidence")
+SOURCE_MARK = "джерел"          # «Статус / джерела» и подобные — тоже ссылки
+
+# Значения сторон конфликта, по которым узнаётся строка факта: коды моделей
+# («BP-240», «FC-230») и величины («36 В», «4 Ah», «45×20×45 cm», «39 minutes»).
+# Строка факта с таким значением в модель НЕ идёт — запрет конфликта держит код,
+# а не послушание модели (проверка #167). Фильтр с запасом: уходит и соседний
+# факт с тем же кодом — лишнее молчание дешевле выдуманного комплекта.
+_CODE = re.compile(r"\b[A-ZА-ЯІЇЄ]{1,4}-\d{2,4}[A-Z]{0,3}\b")
+_QTY = re.compile(r"\b\d+(?:[.,]\d+)?\s?(?:[×x]\s?\d+(?:[.,]\d+)?\s?)*"
+                  r"(?:В|V|Ah|А·год|Аг|mAh|W|Вт|cm|см|mm|мм|kg|кг|L|л|min|хв|minutes|months|місяц\w*|years?|рок\w*|рік)\b",
+                  re.I)
 
 
 @dataclass
@@ -31,15 +43,38 @@ class Section:
     rows: list[list[str]] = field(default_factory=list)   # первая строка — шапка таблицы
 
 
+def conflict_tokens(conflicts: list[dict]) -> set[str]:
+    """Коды и величины из сторон конфликтов, нормализованные (без пробелов, нижний регистр)."""
+    out = set()
+    for c in conflicts:
+        for side in (c.get("a") or "", c.get("b") or ""):
+            out |= {_norm(m.group(0)) for m in _CODE.finditer(side)}
+            out |= {_norm(m.group(0)) for m in _QTY.finditer(side)}
+    return out
+
+
+def _norm(x: str) -> str:
+    return re.sub(r"\s+", "", x).lower()
+
+
+def has_token(text: str, tokens: set[str]) -> str | None:
+    """Первое значение конфликта, найденное в тексте; None — нет."""
+    flat = _norm(text)
+    return next((tk for tk in sorted(tokens, key=len, reverse=True) if tk and tk in flat), None)
+
+
 @dataclass
 class Facts:
     sections: list[Section]
     conflicts: list[dict]        # {id, field, a, b, status}
+    dropped: list[str] = field(default_factory=list)   # строки фактов, снятые из-за конфликта
 
     def prompt_text(self) -> str:
         """Разделы-источники как текст: заголовок, затем строки «колонка: значение»;
         в конце — поля открытых конфликтов, которые использовать нельзя."""
         out = []
+        tokens = conflict_tokens(self.conflicts)
+        self.dropped = []
         for s in self.sections:
             out.append(f"## {s.title}")
             if not s.rows:
@@ -47,9 +82,14 @@ class Facts:
             head, body = s.rows[0], s.rows[1:]
             for r in body:
                 cells = [f"{h}: {v}" for h, v in zip(head, r)
-                         if v and not h.strip().lower().startswith(SOURCE_COLS)]
-                if cells:
-                    out.append("- " + " | ".join(cells))
+                         if v and not h.strip().lower().startswith(SOURCE_COLS) and SOURCE_MARK not in h.lower()]
+                if not cells:
+                    continue
+                hit = has_token(" ".join(r), tokens)
+                if hit:
+                    self.dropped.append(f"{r[0]} ({hit})")
+                    continue
+                out.append("- " + " | ".join(cells))
         if self.conflicts:
             out.append("## НЕ ИСПОЛЬЗОВАТЬ — открытые конфликты паспорта (нужно решение)")
             out += [f"- {c['field']}" for c in self.conflicts if c["field"]]

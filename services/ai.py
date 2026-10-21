@@ -34,7 +34,8 @@ DEFAULTS = {
     "translate": ("anthropic", "claude-sonnet-5"),
     # генератор текстов по паспорту SKU (21.10.2026): цена модели обязана быть
     # известна services/textgen.py — по ней проверяются лимиты в долларах
-    "textgen": ("anthropic", "claude-sonnet-5"),
+    # модель — Opus 5.5, решение владельца 20.10.2026 (TASKS.md, T-20)
+    "textgen": ("anthropic", "claude-opus-5-5"),
 }
 
 

@@ -34,10 +34,15 @@ LIMIT_CALLS_SKU_DAY = 10
 LIMIT_USD_SKU_DAY = 1.0
 LIMIT_USD_PILOT_DAY = 10.0
 
-# Цена, USD за миллион токенов (вход, выход). Переопределяется настройкой
-# `price.<модель>` = «вход/выход» в app_settings. Вход-кэш считается по полной цене
-# входа — оценка сверху, лимит не занижается.
-DEFAULT_PRICES = {"claude-sonnet-5": (3.0, 15.0)}
+# Цена, USD за миллион токенов (вход, выход) — по справочнику Anthropic на 06.10.2026
+# (проверка #167). Переопределяется настройкой `price.<модель>` = «вход/выход» в
+# app_settings. Запись в кэш стоит до 2× входа (кэш на час), чтение — 0,1×: в счёт
+# идёт запись по 2×, чтение — по полной цене входа. Оценка сверху, лимит не занижается.
+DEFAULT_PRICES = {"claude-opus-5-5": (4.0, 20.0), "claude-sonnet-5": (2.0, 10.0)}
+CACHE_WRITE_FACTOR = 2.0
+# Только Anthropic: расход размышления у Gemini (`thoughtsTokenCount`) слой ai не
+# считает, и цена вызова вышла бы заниженной — лимит в долларах врал бы.
+PROVIDERS = ("anthropic",)
 
 LANGUAGE = {"es": "español", "de": "Deutsch", "it": "italiano", "fr": "français", "nl": "Nederlands",
             "pl": "polski", "se": "svenska", "be": "français", "co.uk": "English (UK)", "ie": "English (UK)"}
@@ -82,16 +87,19 @@ def cost(p: tuple[float, float], input_tokens: int, output_tokens: int) -> float
 
 
 def estimate(p: tuple[float, float], prompt_chars: int, max_tokens: int) -> float:
-    """Оценка сверху: токен входа — не меньше двух знаков (кириллица дороже
-    латиницы), выход — весь бюджет ответа вместе с размышлением."""
-    return round(math.ceil(cost(p, prompt_chars // 2 + 1, max_tokens) * 10_000) / 10_000, 4)
+    """Оценка сверху: токен входа — не меньше знака (на деле 2–4 знака) и весь вход
+    по цене записи в кэш; выход — весь бюджет ответа вместе с размышлением."""
+    tin = int(math.ceil((prompt_chars + 1) * CACHE_WRITE_FACTOR))
+    return round(math.ceil(cost(p, tin, max_tokens) * 10_000) / 10_000, 4)
 
 
 def usage_cost(p: tuple[float, float], usage: dict) -> tuple[int, int, float]:
     tin = sum(int(usage.get(k) or 0) for k in
               ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+    billable_in = (int(usage.get("input_tokens") or 0) + int(usage.get("cache_read_input_tokens") or 0)
+                   + CACHE_WRITE_FACTOR * int(usage.get("cache_creation_input_tokens") or 0))
     tout = int(usage.get("output_tokens") or 0)
-    return tin, tout, cost(p, tin, tout)
+    return tin, tout, cost(p, int(math.ceil(billable_in)), tout)
 
 
 # ------------------------------------------------------------------ лимиты
@@ -153,10 +161,18 @@ def model_code(facts: pf.Facts) -> str | None:
     return None
 
 
-def run_checks(texts: dict, model: str | None) -> list[dict]:
+def run_checks(texts: dict, model: str | None, conflict_tokens: set[str] = frozenset()) -> list[dict]:
+    # kind=TOOL: тип товара (инструмент или аккумулятор/зарядка) паспорт не даёт
+    # машинно; для аккумулятора правило вольтажа сработает лишним — это видно.
     found = tr.check(texts["title"], texts["highlight"], kind=tr.TOOL, model=model)
     out = [{"code": v.code, "field": "highlight" if v.field == "highlights" else v.field, "detail": v.detail}
            for v in found]
+    # Значение конфликта всё-таки попало в текст (из названия товара, из знаний
+    # модели) — нарушение, которое видит человек до приёмки.
+    for f in FIELDS:
+        hit = pf.has_token(texts[f], conflict_tokens)
+        if hit:
+            out.append({"code": "CONFLICT_VALUE", "field": f, "detail": hit})
     if not model:
         out.append({"code": "NO_MODEL_PREFIX_CHECK", "field": "highlight", "detail": ""})
     return out
@@ -173,6 +189,8 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
     m_text, m_ver = method
     if not (m_text or "").strip() or not m_ver:
         return Result("BLOCKED", "NO_METHOD", SCOPE)
+    if provider not in PROVIDERS:
+        return Result("BLOCKED", "PROVIDER", provider)
     p = price(model, setting)
     if p is None:
         return Result("BLOCKED", "NO_PRICE", model)
@@ -185,6 +203,8 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
     header = pc.read_header(data)
     if header["sku_id"] != sku:
         return Result("FAILED", "COPY_OTHER_SKU", f"{header['sku_id']} ≠ {sku}")
+    if header["passport_id"] != copy["passport_id"]:
+        return Result("FAILED", "COPY_OTHER_PASSPORT", f"{header['passport_id']} ≠ {copy['passport_id']}")
     facts = pf.read(data)
     prompt = build_prompt(sku, marketplace, header, facts)
     est = estimate(p, len(prompt) + len(m_text), max_tokens)
@@ -193,6 +213,10 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
         # Одна блокировка на весь пилот: лимит пилота общий, проверка и резерв —
         # одним шагом, иначе два нажатия разом прошли бы оба.
         cur.execute("SELECT pg_advisory_xact_lock(hashtext('textgen_limits'))")
+        # Черновикам должно быть куда лечь ДО траты денег (проверка #167).
+        cur.execute("SELECT to_regclass('listing_data.content_versions') IS NOT NULL")
+        if not cur.fetchone()[0]:
+            return Result("BLOCKED", "NO_CONTENT_TABLE", "content_versions")
         why = block_reason(day_usage(cur, sku), est)
         if why:
             return Result("BLOCKED", why[0], why[1])
@@ -223,7 +247,7 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
     if texts is None:
         return Result("FAILED", "MODEL", err, call_id, cost_usd=real)
 
-    checks = run_checks(texts, model_code(facts))
+    checks = run_checks(texts, model_code(facts), pf.conflict_tokens(facts.conflicts))
     with conn, conn.cursor() as cur:
         cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"content:{sku}:{marketplace}",))
         for f in FIELDS:

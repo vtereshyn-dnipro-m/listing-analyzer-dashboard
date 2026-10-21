@@ -337,22 +337,29 @@ def _textgen_method() -> tuple[str, int, str | None]:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _copy_conflicts(locator: str, sha: str) -> list[str]:
-    """Поля «Конфлікти» сохранённой копии — для подписи «нужно решение». Ключ —
-    SHA: копия неизменна, читать том на каждой перерисовке незачем."""
+def _copy_conflicts(locator: str, sha: str) -> tuple[list[str], list[str]]:
+    """Поля «Конфлікти» сохранённой копии и строки фактов, снятые из-за них, — для
+    подписи «нужно решение». Ключ — SHA: копия неизменна, читать том на каждой
+    перерисовке незачем. Сбой — исключение (не кешируется), страница его называет."""
     store = pc.volume_store()
-    data = store.get(locator) if store else b""
+    if store is None:
+        raise _ReadFailed(t("tg.pp.no_store"))
+    data = store.get(locator)
     if hashlib.sha256(data).hexdigest() != sha:
         raise _ReadFailed("SHA")
-    return [c["field"] for c in pf.read(data).conflicts if c["field"]]
+    facts = pf.read(data)
+    facts.prompt_text()
+    return [c["field"] for c in facts.conflicts if c["field"]], list(facts.dropped)
 
 
 def _check_line(v: dict) -> str:
     if v.get("code") == "NO_MODEL_PREFIX_CHECK":
         return f"- {t('tg.no_model_prefix')}"
     where = "highlights" if v.get("field") == "highlight" else v.get("field")
-    return (f"- **{t('tg.code.' + str(v.get('code')))}** ({t(f'tg.where.{where}')})"
-            + (f": `{v['detail']}`" if v.get("detail") else ""))
+    where_txt = t(f"tg.where.{where}") if where in ("title", "highlights") else t(
+        "tg.gen.field.bullet", n=where.split("_")[1]) if str(where).startswith("bullet_") else t(f"tg.gen.field.{where}")
+    detail = str(v.get("detail") or "").replace("`", "'")
+    return (f"- **{t('tg.code.' + str(v.get('code')))}** ({where_txt})" + (f": `{detail}`" if detail else ""))
 
 
 section(t("tg.gen.title"))
@@ -372,19 +379,26 @@ else:
     g_copy = copies_df[copies_df["sku_id"] == g_sku].iloc[0].to_dict()
     st.caption(t("tg.gen.passport", pid=cell_text(g_copy, "passport_id"), aid=cell_text(g_copy, "source_artifact_id")))
     try:
-        g_conf = _copy_conflicts(cell_text(g_copy, "archived_locator"), cell_text(g_copy, "sha256"))
-    except Exception:  # noqa: BLE001 — подпись удобства; генерация сама сверит копию
-        g_conf = []
+        g_conf, g_dropped = _copy_conflicts(cell_text(g_copy, "archived_locator"), cell_text(g_copy, "sha256"))
+    except Exception as e:  # noqa: BLE001 — сбой называется: молчание выглядело бы «конфликтов нет»
+        g_conf, g_dropped = [], []
+        st.warning(t("tg.gen.conflicts_error", err=f"{type(e).__name__}: {str(e)[:160]}"))
     if g_conf:
         st.warning(t("tg.gen.conflicts", fields=", ".join(g_conf)))
+    if g_dropped:
+        st.caption(t("tg.gen.dropped", rows=", ".join(g_dropped)))
 
     from services.db import table_exists
     g_reason, g_detail = None, ""
     g_prov, g_model = ai.task_config(tg.TASK)
+    g_maxtok = ai.task_limits(tg.TASK)[0]
     g_method, g_mver = "", 0
     if table_exists("textgen_calls") is False:
         g_reason = "NO_TABLE"
         st.warning(t("tg.gen.no_table"))
+    elif table_exists("content_versions") is False:
+        g_reason = "NO_CONTENT_TABLE"
+        st.warning(t("tg.gen.err.NO_CONTENT_TABLE", detail="content_versions"))
     else:
         g_usage, g_uerr = tg.usage_now(g_sku)
         try:
@@ -400,13 +414,14 @@ else:
             g_price = tg.price(g_model, get_setting)
             if not g_method.strip() or not g_mver:
                 g_reason, g_detail = "NO_METHOD", tg.SCOPE
+            elif g_prov not in tg.PROVIDERS:
+                g_reason, g_detail = "PROVIDER", g_prov
             elif g_price is None:
                 g_reason, g_detail = "NO_PRICE", g_model
             else:
                 # Кнопка гаснет заранее по худшей оценке; окончательно решает
                 # проверка под блокировкой в момент нажатия.
-                why = tg.block_reason(g_usage, tg.estimate(g_price, 12_000 + len(g_method),
-                                                           ai.task_limits(tg.TASK)[0]))
+                why = tg.block_reason(g_usage, tg.estimate(g_price, 12_000 + len(g_method), g_maxtok))
                 if why:
                     g_reason, g_detail = why
             if g_reason:
@@ -436,7 +451,7 @@ else:
                             res = tg.generate(
                                 sku=g_sku, marketplace=g_mp, copy=g_copy, actor=auth.actor(), store=g_store,
                                 conn=g_conn, method=(g_method, g_mver), provider=g_prov, model=g_model,
-                                max_tokens=ai.task_limits(tg.TASK)[0], setting=get_setting,
+                                max_tokens=g_maxtok, setting=get_setting,
                                 ai_call=ai.generate_json, ai_usage=ai.usage_totals, ai_reset=ai.reset_usage,
                                 ai_error=ai.last_call_error)
                     except Exception as e:  # noqa: BLE001 — база или том: причина на экран

@@ -66,9 +66,11 @@ def passport(sku="99601000-B", ver="2"):
                     ("FACT-1", "Об’єм мішка", "45 л", "PROPOSED", "SRC-SECRET-77")])
             + _p("Комплектація та функціональні елементи", "Heading1")
             + _tbl([("ID", "Елемент", "Кількість"), ("KIT-1", "Колеса", "1")])
+            + _tbl([("ID", "Елемент", "Кількість"), ("KIT-2", "Акумулятор BP-240 4 Ah", "2")])
             + _p("Конфлікти", "Heading1")
             + _tbl([("ID", "Поле", "Сторона A", "Сторона B", "Статус"),
-                    ("CONFLICT-1", "Гарантія", "36 місяців", "5 років", "OPEN")])
+                    ("CONFLICT-1", "Гарантія", "36 місяців", "5 років", "OPEN"),
+                    ("CONFLICT-2", "Комплектація АКБ", "без АКБ", "2× BP-240 4 Ah", "OPEN")])
             + _p("Джерела і походження", "Heading1")
             + _tbl([("source_id", "Назва"), ("SRC-1", "Офіційна картка")]))
     b = io.BytesIO()
@@ -90,12 +92,19 @@ check("поле конфликта названо списком «НЕ ИСПО
 check("колонки источников и раздел источников в промпт не идут",
       "SRC-SECRET-77" not in text and "Офіційна картка" not in text)
 check("конфликты для экрана", facts.conflicts[0]["field"] == "Гарантія")
+check("строка факта со значением стороны конфликта снята кодом (не только словами модели)",
+      "BP-240" not in text and "4 Ah" not in text and any(d.startswith("KIT-2") for d in facts.dropped))
+check("соседняя строка без значений конфликта осталась", "Колеса" in text)
 check("модель из раздела идентичности", tg.model_code(facts) == "DVB-200BC Dual")
 prompt = tg.build_prompt("99601000-B", "es", {"passport_id": "PASS-X", "passport_version": "2", "state": "NOT_READY"}, facts)
 check("язык площадки назван в промпте", "español" in prompt and "Amazon ES" in prompt)
 
 # ------------------------------------------------------------------ цена и лимиты
-check("цена по умолчанию для модели по умолчанию", tg.price("claude-sonnet-5") == (3.0, 15.0))
+check("цены по справочнику: Opus 5.5 $4/$20, Sonnet 5 $2/$10",
+      tg.price("claude-opus-5-5") == (4.0, 20.0) and tg.price("claude-sonnet-5") == (2.0, 10.0))
+check("запись в кэш — по 2× входа, чтение — по полной цене входа",
+      tg.usage_cost((4.0, 20.0), {"input_tokens": 1000, "cache_creation_input_tokens": 1000,
+                                  "cache_read_input_tokens": 1000, "output_tokens": 0})[2] == tg.cost((4.0, 20.0), 4000, 0))
 check("цена из настройки «вход/выход»", tg.price("x", lambda k, d="": "2/10" if k == "price.x" else d) == (2.0, 10.0))
 check("неизвестная модель — цены нет", tg.price("unknown-model") is None)
 check("стоимость: 1M входа по $3 + 0,1M выхода по $15", tg.cost((3.0, 15.0), 1_000_000, 100_000) == 4.5)
@@ -112,6 +121,7 @@ class DB:
     def __init__(self):
         self.calls, self.content, self.log = [], [], []
         self.fail_content = False
+        self.no_content_table = False
 
     def cursor(self):
         return Cur(self)
@@ -141,6 +151,8 @@ class Cur:
         db.log.append(sql.split()[0] + " " + " ".join(sql.split()[1:3]))
         if "pg_advisory_xact_lock" in sql:
             self.res = [(None,)]
+        elif sql.startswith("SELECT to_regclass"):
+            self.res = [(not db.no_content_table,)]
         elif sql.startswith("SELECT count(*)"):
             today = [c for c in db.calls if not c.get("yesterday")]
             self.res = [(sum(1 for c in today if c["sku"] == p[0]),
@@ -190,8 +202,8 @@ GOOD = {"title": "DNIPRO-M Aspirador Soplador de Hojas, Aire 245km/h, Tritura 15
 USAGE = {"input_tokens": 9000, "output_tokens": 1200}
 
 
-def run(db, *, answer=GOOD, usage=USAGE, store=None, method=("методология", 3), model="claude-sonnet-5",
-        copy=COPY, raise_in_call=False):
+def run(db, *, answer=GOOD, usage=USAGE, store=None, method=("методология", 3), model="claude-opus-5-5",
+        copy=COPY, raise_in_call=False, provider="anthropic"):
     seen = {"calls": 0, "during": None}
 
     def ai_call(task, prompt, system=None):
@@ -203,7 +215,7 @@ def run(db, *, answer=GOOD, usage=USAGE, store=None, method=("методолог
         return answer
 
     res = tg.generate(sku="99601000-B", marketplace="es", copy=copy, actor="yaroslav@dniprom.com",
-                      store=store or Store(DOCX), conn=db, method=method, provider="anthropic", model=model,
+                      store=store or Store(DOCX), conn=db, method=method, provider=provider, model=model,
                       max_tokens=8000, setting=lambda k, d="": d, ai_call=ai_call,
                       ai_usage=lambda: dict(usage), ai_reset=lambda: None, ai_error=lambda: "разбор не удался")
     return res, seen
@@ -215,9 +227,9 @@ call = db.calls[0] if db.calls else {}
 check("удача: OK, предложение TG-<id>", res.status == "OK" and res.proposal_id == "TG-1")
 check("до вызова в журнале — резерв started с оценкой сверху",
       seen["during"] and seen["during"][0]["status"] == "started"
-      and seen["during"][0]["cost_usd"] == tg.estimate((3.0, 15.0), len(seen["prompt"]) + len("методология"), 8000))
+      and seen["during"][0]["cost_usd"] == tg.estimate((4.0, 20.0), len(seen["prompt"]) + len("методология"), 8000))
 check("после — фактическая цена по расходу токенов", call.get("status") == "ok"
-      and call.get("cost_usd") == tg.cost((3.0, 15.0), 9000, 1200) and call.get("proposal_id") == "TG-1")
+      and call.get("cost_usd") == tg.cost((4.0, 20.0), 9000, 1200) and call.get("proposal_id") == "TG-1")
 check("методология textgen — постоянной частью (system), задача textgen",
       seen["task"] == "textgen" and seen["system"] == "методология")
 check("8 черновиков, одним предложением, версия 1",
@@ -225,7 +237,7 @@ check("8 черновиков, одним предложением, версия
       and {c["proposal_id"] for c in db.content} == {"TG-1"} and {c["version"] for c in db.content} == {1})
 t0 = next(c for c in db.content if c["field"] == "title")
 check("черновик: текст, автор, модель, версия методологии, паспорт и копия",
-      t0["text"] == GOOD["title"] and t0["created_by"] == "yaroslav@dniprom.com" and t0["model"] == "claude-sonnet-5"
+      t0["text"] == GOOD["title"] and t0["created_by"] == "yaroslav@dniprom.com" and t0["model"] == "claude-opus-5-5"
       and t0["skill_version"] == 3 and t0["passport_id"] == "PASS-99601000-B-001" and t0["passport_version"] == "2"
       and t0["passport_sha256"] == COPY["sha256"] and t0["passport_artifact_id"] == COPY["source_artifact_id"]
       and t0["origin"] == "model")
@@ -276,6 +288,24 @@ db = DB()
 other = passport(sku="21680000")
 res, seen = run(db, store=Store(other), copy={**COPY, "sha256": hashlib.sha256(other).hexdigest()})
 check("копия другого SKU — FAILED COPY_OTHER_SKU", res.code == "COPY_OTHER_SKU" and not db.calls)
+
+db, st_ = DB(), Store(DOCX)
+res, seen = run(db, provider="gemini", store=st_)
+check("не Anthropic — BLOCKED PROVIDER до тома и записи (расход размышления не считается)",
+      res.code == "PROVIDER" and st_.reads == 0 and not db.calls)
+db = DB()
+res, seen = run(db, copy={**COPY, "passport_id": "PASS-OTHER"})
+check("в копии другой паспорт — FAILED COPY_OTHER_PASSPORT до записи", res.code == "COPY_OTHER_PASSPORT" and not db.calls)
+db = DB()
+db.no_content_table = True
+res, seen = run(db)
+check("нет таблицы черновиков — BLOCKED до вызова и без резерва",
+      res.code == "NO_CONTENT_TABLE" and seen["calls"] == 0 and not db.calls)
+db = DB()
+res, seen = run(db, answer={**GOOD, "bullets": GOOD["bullets"][:4] + ["INCLUYE: 2 baterías BP-240 de 4Ah"]})
+b5c = next(c for c in db.content if c["field"] == "bullet_5")
+check("значение конфликта в ответе — нарушение CONFLICT_VALUE в checks поля",
+      res.status == "OK" and any(v["code"] == "CONFLICT_VALUE" for v in json.loads(b5c["checks"])))
 
 # --- неудачный вызов: учтён, черновиков нет
 db = DB()
