@@ -9,8 +9,12 @@ tests/test_passport_copy_frozen_sql.py — копия паспорта, на к�
 
   · у строки passport_source_artifacts, на которую ссылается версия текста, не
     меняется ничего, кроме одного шага lifecycle ACTIVE → OLD — тело функции
-    сверяется целиком с эталоном, собранным из колонок самой таблицы: новая
-    колонка без решения о ней и любая добавка в условие валят тест;
+    сверяется целиком с эталоном, собранным из колонок самой таблицы, и любая
+    добавка в условие валит тест. Колонки берутся из CREATE TABLE миграции
+    Паспорта, а таблица в базе уже есть — новая колонка придёт отдельной
+    миграцией через ALTER TABLE. Поэтому любая другая миграция, меняющая состав
+    колонок passport_source_artifacts, тоже валит тест: она обязана заодно
+    решить, заморожена ли новая колонка, и обновить этот файл (проверка #157);
   · функция версий — ровно та, что в 2026-10-21_content_versions_checks.sql,
     плюс одна добавка: строка копии читается FOR SHARE (гонка правки копии и
     записи версии, найденная проверкой #154);
@@ -129,6 +133,21 @@ EXPECTED_F = (
 )
 check("функция заморозки — ровно эталон: всё, кроме шага lifecycle ACTIVE → OLD, и только при ссылке текста",
       F.strip() == EXPECTED_F)
+# Колонка, добавленная позже ALTER TABLE, в CREATE TABLE не попадёт, и эталон её
+# не увидит — значит, и триггер её не заморозит. Пока такой миграции нет, тест
+# зелёный; появится — красный, с подсказкой, что решить.
+ALTERS = []
+for f in sorted((ROOT / "migrations").glob("*.sql")):
+    if f.name in (MIG.name, "2026-10-07_passport_sku_core.sql"):
+        continue
+    t = norm(f.read_text(encoding="utf-8"))
+    if re.search(r"ALTER\s+TABLE\s+(IF\s+EXISTS\s+)?(ONLY\s+)?(listing_data\.)?passport_source_artifacts\b"
+                 r"[^;]*\b(ADD|DR" r"OP|RENAME)\b", t, re.I):
+        ALTERS.append(f.name)
+check("состав колонок копий паспорта меняет только миграция Паспорта"
+      + (f" — эти меняют его: {ALTERS}; решите, заморожена ли колонка, и обновите "
+         f"{MIG.name} и этот тест" if ALTERS else ""), not ALTERS)
+
 check("нарушение — исключение, один выход", "RAISE EXCEPTION" in F and F.count("RETURN NEW;") == 1
       and not re.search(r"RAISE (NOTICE|WARNING|INFO|LOG|DEBUG)", SQL))
 
