@@ -12,9 +12,11 @@ tests/test_passport_copy_frozen_sql.py — копия паспорта, на к�
     сверяется целиком с эталоном, собранным из колонок самой таблицы, и любая
     добавка в условие валит тест. Колонки берутся из CREATE TABLE миграции
     Паспорта, а таблица в базе уже есть — новая колонка придёт отдельной
-    миграцией через ALTER TABLE. Поэтому любая другая миграция, меняющая состав
-    колонок passport_source_artifacts, тоже валит тест: она обязана заодно
-    решить, заморожена ли новая колонка, и обновить этот файл (проверка #157);
+    миграцией через ALTER TABLE. Поэтому любая миграция, кроме файла
+    заморозки, которая добавляет, удаляет, переименовывает колонки
+    passport_source_artifacts или выключает её триггеры (имя в кавычках и без,
+    со схемой и без), тоже валит тест: она обязана заодно решить, заморожена ли
+    новая колонка, и обновить этот файл (проверка #157);
   · функция версий — ровно та, что в 2026-10-21_content_versions_checks.sql,
     плюс одна добавка: строка копии читается FOR SHARE (гонка правки копии и
     записи версии, найденная проверкой #154);
@@ -112,9 +114,11 @@ check("функция версий = функция из поправок #154 �
 
 # --------------------------------------------------- заморозка копии
 cols_m = re.search(r"CREATE TABLE IF NOT EXISTS listing_data\.passport_source_artifacts \((.*?)\); CREATE INDEX", CORE)
-PSA = re.findall(r"(?:^|, )([a-z_0-9]+) (?:text|bigint|timestamptz)\b", cols_m.group(1).strip()) if cols_m else []
+PSA = re.findall(r"(?:^|, )([a-z_0-9]+) [a-z]", cols_m.group(1).strip()) if cols_m else []
 F = body(SQL, "passport_copy_frozen")
-check(f"колонки копии разобраны из миграции Паспорта ({len(PSA)})", len(PSA) >= 15 and "lifecycle" in PSA)
+# Ровно 15: колонка любого типа, вписанная в CREATE TABLE, меняет число и валит
+# тест — решение о ней принимается осознанно.
+check(f"колонки копии разобраны из миграции Паспорта — ровно 15 ({len(PSA)})", len(PSA) == 15 and "lifecycle" in PSA)
 # Тело — целиком, против эталона из колонок самой таблицы: любая добавка в
 # условие («AND (false)», «OR (true)», исключение для роли) меняет текст и валит
 # тест даже при подменённом отпечатке (проверка #157). Заморожено всё, кроме
@@ -138,13 +142,15 @@ check("функция заморозки — ровно эталон: всё, к
 # зелёный; появится — красный, с подсказкой, что решить.
 ALTERS = []
 for f in sorted((ROOT / "migrations").glob("*.sql")):
-    if f.name in (MIG.name, "2026-10-07_passport_sku_core.sql"):
+    if f.name == MIG.name:
         continue
     t = norm(f.read_text(encoding="utf-8"))
-    if re.search(r"ALTER\s+TABLE\s+(IF\s+EXISTS\s+)?(ONLY\s+)?(listing_data\.)?passport_source_artifacts\b"
-                 r"[^;]*\b(ADD|DR" r"OP|RENAME)\b", t, re.I):
+    # имя — со схемой и без, в кавычках и без (так пишут генераторы миграций)
+    if re.search(r"ALTER\s+TABLE\s+(IF\s+EXISTS\s+)?(ONLY\s+)?"
+                 r"(\"?listing_data\"?\s*\.\s*)?\"?passport_source_artifacts\"?(?![a-z0-9_])"
+                 r"[^;]*\b(ADD|DR" r"OP|RENAME|DISABLE)\b", t, re.I):
         ALTERS.append(f.name)
-check("состав колонок копий паспорта меняет только миграция Паспорта"
+check("состав колонок и триггеры копий паспорта не меняет ни одна другая миграция"
       + (f" — эти меняют его: {ALTERS}; решите, заморожена ли колонка, и обновите "
          f"{MIG.name} и этот тест" if ALTERS else ""), not ALTERS)
 
