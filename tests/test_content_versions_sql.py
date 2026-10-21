@@ -153,6 +153,71 @@ check("никаких удалений и очисток данных в сам�
       not re.search(rf"\b({DEL_FROM}|{DROP_TABLE})\b", SQL, re.I)
       and not re.search(rf"\b{WIPE}\s+(TABLE\s+)?listing_data", SQL, re.I))
 
+# ------------------------------------------------ состав миграции целиком
+def statements(sql: str) -> list[str]:
+    """Операторы по «;» — кроме точек с запятой внутри тел функций $$…$$."""
+    out, cur, inside = [], [], False
+    for part in re.split(r"(\$\$|;)", sql):
+        if part == "$$":
+            inside = not inside
+            cur.append(part)
+        elif part == ";" and not inside:
+            stmt = "".join(cur).strip()
+            if stmt:
+                out.append(stmt)
+            cur = []
+        else:
+            cur.append(part)
+    tail = "".join(cur).strip()
+    if tail:
+        out.append(tail)
+    return out
+
+
+# Белый список: миграция — ровно эта последовательность операторов. Дописанное
+# перед COMMIT (отключение триггера, снятие CHECK, правило «не удалять», новая
+# колонка) меняет состав и валит тест, даже если остальной текст на месте.
+EXPECTED_SEQUENCE = [
+    r"BEGIN",
+    r"CREATE TABLE IF NOT EXISTS listing_data\.content_versions \(",
+    r"CREATE UNIQUE INDEX IF NOT EXISTS content_versions_version ON ",
+    r"CREATE UNIQUE INDEX IF NOT EXISTS content_versions_proposal_field ON ",
+    r"CREATE INDEX IF NOT EXISTS content_versions_current ON ",
+    r"CREATE INDEX IF NOT EXISTS content_versions_passport ON ",
+    r"CREATE OR REPLACE FUNCTION listing_data\.content_versions_guard\(\)",
+    r"CREATE OR REPLACE FUNCTION listing_data\.content_versions_no_wipe\(\)",
+    r"DR" r"OP TRIGGER IF EXISTS content_versions_guard ON ",
+    r"CREATE TRIGGER content_versions_guard ",
+    r"DR" r"OP TRIGGER IF EXISTS content_versions_no_wipe ON ",
+    r"CREATE TRIGGER content_versions_no_wipe ",
+    r"COMMIT",
+    r"SELECT to_regclass\('listing_data\.content_versions'\)",
+    r"SELECT tgname FROM pg_trigger ",
+]
+STMTS = statements(SQL)
+check(f"миграция — ровно {len(EXPECTED_SEQUENCE)} операторов в заданном порядке ({len(STMTS)})",
+      len(STMTS) == len(EXPECTED_SEQUENCE)
+      and all(re.match(p, s) for p, s in zip(EXPECTED_SEQUENCE, STMTS)))
+check("в миграции нет ALTER, RULE, отключения триггеров и replica-режима",
+      not re.search(r"\b(ALTER\s+TABLE|CREATE\s+(OR\s+REPLACE\s+)?RULE|DISABLE\s+TRIGGER|REPLICA|"
+                    r"session_replication_role)\b", SQL, re.I))
+
+# Тела функций — отпечатком. Меняете триггер — меняете отпечаток здесь же,
+# осознанно и с прогоном на PGlite: иначе «запрет» мог бы молча перестать быть
+# запретом (бэкдор в начале тела, RETURN до проверок).
+import hashlib  # noqa: E402
+
+BODY_SHA = {
+    "content_versions_guard": hashlib.sha256(BODY.encode("utf-8")).hexdigest(),
+    "content_versions_no_wipe": hashlib.sha256((wipe.group(1) if wipe else "").encode("utf-8")).hexdigest(),
+}
+PINNED_SHA = {
+    "content_versions_guard": "81e2df7dd6e122b427372113c28af5429f986df9a4eef11c71be12aa8e3fbf49",
+    "content_versions_no_wipe": "029d667dab066519edfd4cade21bc97ba260984d809f708e790bc74f0b377c79",
+}
+for fn, sha in BODY_SHA.items():
+    check(f"тело {fn} не менялось без осознанной правки отпечатка", sha == PINNED_SHA[fn])
+
 # ------------------------------------------------- право для базы Кабинета
 import auth  # noqa: E402
 
