@@ -13,7 +13,7 @@ tests/test_textgen_page.py — «Генератор текстов (пилот)�
     вслух, а не выбрано молча;
   · сбой чтения — ошибка с причиной, а не пустая карточка «характеристик нет»;
   · ключи по типу: сбой SQP — ошибка, а не «данных поиска нет»;
-  · модель не вызывается вовсе, в базу ничего не пишется;
+  · модель не вызывается вовсе; в базу пишет только загрузка паспорта, под правом;
   · колонки таблиц — технические имена (правило 3), подписи из `t()`;
   · SQL роли для базы Кабинета: роль в обоих CHECK, генератор — только админу
     и роли пилота, остальное роли пилота закрыто явными строками, почта не
@@ -269,7 +269,12 @@ check("модель не вызвана ни разу", STATE["ai_calls"] == [])
 
 # ================================================================ статика страницы
 check("страница не импортирует слой модели", not re.search(r"services\s+import\s+ai\b|services\.ai\b", SRC))
-check("страница ничего не пишет", not re.search(r"\bget_conn\b|\bINSERT\b|\bUPDATE\b|spapi", SRC))
+# Пишет страница ровно одно — копию паспорта, через services/passport_copies.py
+# и только после проверки права в момент нажатия (tests/test_passport_copies.py).
+check("страница сама SQL не пишет и в Amazon не ходит", not re.search(r"\bINSERT\b|\bUPDATE\b|spapi", SRC))
+check("единственная запись — register() паспорта под ls.textgen.accept",
+      SRC.count("pc.register(") == 1 and SRC.count("get_conn()") == 1
+      and SRC.index('auth.require("ls.textgen.accept"') < SRC.index("get_conn()") < SRC.index("pc.register("))
 check("страница не держит своей логики правил",
       "tr.check(" in SRC and not re.search(r"\bre\.(search|match|finditer|sub)\b", SRC))
 check("компилируется (не только разбирается)", compile(SRC, str(PAGE), "exec") is not None)

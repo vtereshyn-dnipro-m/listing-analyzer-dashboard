@@ -5,8 +5,9 @@ pages/textgen.py — «Генератор текстов (пилот)», шаг 
 Ярослав выбирает пилотный товар → видит характеристики (с источником каждого
 значения), чего не хватает, расхождения карточки, набор и ключи по типу товара
 → пишет тайтл и Item Highlights руками → правила тайтла проверяют их на каждом
-изменении. Модель не вызывается, в базу и в Amazon ничего не уходит: это
-появится следующими шагами, когда придёт документ «Предложения».
+изменении. Модель не вызывается, в Amazon ничего не уходит. В базу и в том UC
+пишет только загрузка паспорта docx (последний блок, право `ls.textgen.accept`,
+`services/passport_copies.py`).
 
 Данные и проверки — из существующих модулей, без копий:
 `services/product_specs.py` (характеристики), `services/seo.py` (ключи по типу,
@@ -19,11 +20,16 @@ pages/textgen.py — «Генератор текстов (пилот)», шаг 
 """
 from __future__ import annotations
 
+import hashlib
+
 import pandas as pd
 import streamlit as st
 
+import auth
+
 from components.ui import eyebrow, inject_fonts
 from i18n import t
+from services import passport_copies as pc
 from services import product_specs as ps
 from services import seo
 from services import title_rules as tr
@@ -198,3 +204,78 @@ if keys_df is not None and not keys_df.empty:
                                 "tier": st.column_config.TextColumn(t("tg.col.tier")),
                                 "asins": st.column_config.NumberColumn(t("tg.col.asins")),
                                 "typed": st.column_config.CheckboxColumn(t("tg.col.typed"))})
+
+# ------------------------------------------------- паспорт SKU (docx)
+# Копия паспорта — в томе UC, неизменная; SKU, id и версия — из шапки файла
+# (services/passport_copies.py). Права — в момент нажатия, как везде.
+section(t("tg.pp.title"))
+st.caption(t("tg.pp.hint", volume=pc.VOLUME))
+up = st.file_uploader(t("tg.pp.upload"), type=["docx"], key="tg-pp-file")
+pp_header = None
+if up is not None:
+    pp_data = up.getvalue()
+    try:
+        pp_header = pc.read_header(pp_data)
+    except pc.CopyError as e:
+        st.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
+if pp_header:
+    state = pp_header.get("state") or "—"
+    st.markdown(t("tg.pp.header", sku=pp_header["sku_id"], pid=pp_header["passport_id"],
+                  ver=pp_header["passport_version"], state=state))
+    if state != "READY":
+        st.warning(t("tg.pp.not_ready", state=state))
+    st.caption(t("tg.pp.path", path=f"{pc.ROOT}/{pc.copy_path(pp_header)}"))
+    may = auth.can("ls.textgen.accept")
+    if not may:
+        st.caption(t("tg.pp.denied_hint"))
+    if st.button(t("tg.pp.save"), type="primary", disabled=not may, key="tg-pp-save"):
+        if auth.require("ls.textgen.accept", object_type="passport", object_id=pp_header["passport_id"]):
+            store = pc.volume_store()
+            if store is None:
+                st.error(t("tg.pp.no_store"))
+            else:
+                from services.db import get_conn
+                try:
+                    conn = get_conn()
+                except Exception as e:  # noqa: BLE001
+                    conn = None
+                    st.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
+                if conn is not None:
+                    try:
+                        res = pc.register(pp_data, up.name, actor=auth.actor(), store=store, conn=conn)
+                    except pc.CopyError as e:
+                        st.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
+                    except Exception as e:  # noqa: BLE001 — база: файл уже в томе, повтор его узнает
+                        st.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
+                    else:
+                        if res.status == "DUPLICATE":
+                            st.info(t("tg.pp.duplicate", aid=res.artifact_id, loc=res.locator))
+                        else:
+                            st.success(t("tg.pp.saved", aid=res.artifact_id, loc=res.locator,
+                                         sha=hashlib.sha256(pp_data).hexdigest()[:12]))
+                            if res.superseded:
+                                st.info(t("tg.pp.superseded", ids=", ".join(res.superseded)))
+                    finally:
+                        conn.close()
+    lst, lerr = pc.copies(pp_header["sku_id"])
+    st.markdown(f"**{t('tg.pp.list', sku=pp_header['sku_id'])}**")
+    if lerr:
+        st.error(t("tg.pp.list_error", err=lerr))
+    elif lst.empty:
+        st.caption(t("tg.pp.none", sku=pp_header["sku_id"]))
+    else:
+        view = pd.DataFrame({
+            "id": lst["source_artifact_id"],
+            "ver": lst["archived_locator"].map(lambda x: pc.version_of(x) if isinstance(x, str) else None),
+            "sha": lst["sha256"].map(lambda x: x[:12] if isinstance(x, str) else ""),
+            "life": lst["lifecycle"],
+            "by": lst["registered_by"],
+            "at": lst["recorded_at"],
+        })
+        st.dataframe(view, hide_index=True, width="stretch",
+                     column_config={"id": st.column_config.TextColumn(t("tg.pp.col.id")),
+                                    "ver": st.column_config.NumberColumn(t("tg.pp.col.version")),
+                                    "sha": st.column_config.TextColumn(t("tg.pp.col.sha")),
+                                    "life": st.column_config.TextColumn(t("tg.pp.col.lifecycle")),
+                                    "by": st.column_config.TextColumn(t("tg.pp.col.by")),
+                                    "at": st.column_config.DatetimeColumn(t("tg.pp.col.at"))})
