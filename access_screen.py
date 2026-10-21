@@ -1,4 +1,4 @@
-# ОТПЕЧАТОК ИСТОЧНИКА: 24bcf8f31e084d625ce92c28ebd89d9db2bc5d29a9abbefb7f354224009f274c
+# ОТПЕЧАТОК ИСТОЧНИКА: 9106e4a87f744b6d14df2dc47b517142f72bc0bca7880d46e7a9eb1e84e8cd35
 # access_screen.py — экран «Доступ»: один на два приложения.
 """Админка доступа (ТЗ 010): люди, роли, матрица прав, тестовый вход, журналы.
 
@@ -48,7 +48,9 @@ import streamlit as st
         "mode_key": "auth_enabled",
     },
     "ls": {
-        "roles": ["viewer", "content_manager", "approver", "admin"],
+        # textgen_pilot — роль пилота «Генератор текстов» (21.10.2026): видит одну страницу и ни одного действия;
+        # в базе её вводит migrations/kabinet/2026-10-21_ls_textgen_role.sql репозитория Listing Suite
+        "roles": ["viewer", "content_manager", "approver", "admin", "textgen_pilot"],
         "default_role": "viewer",
         "mode_key": "ls_auth_enabled",
     },
@@ -826,6 +828,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.action.ls.page.photo": "Страница «Фото и A+»",
         "auth.action.ls.page.settings": "Страница «Настройки»",
         "auth.action.ls.page.synthesis": "Страница «Синтез»",
+        "auth.action.ls.page.textgen": "Страница «Генератор текстов (пилот)»",
         "auth.action.ls.settings.edit": "Listing Suite: правка настроек",
         "auth.action.notify_new_user": "Уведомление о новом человеке",
         "auth.action.notify_new_user_wd": "Уведомление дослано сторожем",
@@ -996,6 +999,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.role.content_manager": "Контент-менеджер",
         "auth.role.country_manager": "Страновой менеджер",
         "auth.role.demand_planner": "Планировщик спроса",
+        "auth.role.textgen_pilot": "Пилот генератора текстов",
         "auth.role.viewer": "Просмотр",
     },
     "uk": {
@@ -1026,6 +1030,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.action.ls.page.photo": "Сторінка «Фото та A+»",
         "auth.action.ls.page.settings": "Сторінка «Налаштування»",
         "auth.action.ls.page.synthesis": "Сторінка «Синтез»",
+        "auth.action.ls.page.textgen": "Сторінка «Генератор текстів (пілот)»",
         "auth.action.ls.settings.edit": "Listing Suite: правка налаштувань",
         "auth.action.notify_new_user": "Сповіщення про нову людину",
         "auth.action.notify_new_user_wd": "Сповіщення дослано сторожем",
@@ -1196,6 +1201,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.role.content_manager": "Контент-менеджер",
         "auth.role.country_manager": "Країновий менеджер",
         "auth.role.demand_planner": "Планувальник попиту",
+        "auth.role.textgen_pilot": "Пілот генератора текстів",
         "auth.role.viewer": "Перегляд",
     },
     "en": {
@@ -1226,6 +1232,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.action.ls.page.photo": "Page “Photos & A+”",
         "auth.action.ls.page.settings": "Page “Settings”",
         "auth.action.ls.page.synthesis": "Page “Synthesis”",
+        "auth.action.ls.page.textgen": "Page “Text Generator (pilot)”",
         "auth.action.ls.settings.edit": "Listing Suite: edit settings",
         "auth.action.notify_new_user": "New person notification",
         "auth.action.notify_new_user_wd": "Notification sent by watchdog",
@@ -1396,6 +1403,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.role.content_manager": "Content manager",
         "auth.role.country_manager": "Country manager",
         "auth.role.demand_planner": "Demand planner",
+        "auth.role.textgen_pilot": "Text generator pilot",
         "auth.role.viewer": "Viewer",
     },
 }
