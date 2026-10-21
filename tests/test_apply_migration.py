@@ -138,6 +138,12 @@ try:
          "'ALTER TABLE listing_data.t RENAME TO t_old';\nSELECT listing_data.g();\nCREATE TABLE listing_data.t (id int);\n"
          "CREATE TRIGGER tg BEFORE UPDATE ON listing_data.t FOR EACH ROW EXECUTE FUNCTION f();\nCOMMIT;\n"),
         (False, "тело процедуры строкой", "BEGIN;\nCREATE PROCEDURE listing_data.p() LANGUAGE sql AS 'SELECT 1';\nCOMMIT;\n"),
+        (False, "тело строкой, LANGUAGE после AS",
+         "BEGIN;\nCREATE FUNCTION listing_data.g() RETURNS void AS 'SELECT 1' LANGUAGE sql;\nCOMMIT;\n"),
+        (False, "C-функция AS 'obj', 'sym'",
+         "BEGIN;\nCREATE FUNCTION listing_data.g() RETURNS void AS 'lib', 'sym' LANGUAGE c;\nCOMMIT;\n"),
+        (False, "комментарий и перевод строки между AS и строкой, строчными",
+         "BEGIN;\ncreate or replace function listing_data.g() returns void language sql as /* x */\n-- y\n'select 1';\nCOMMIT;\n"),
         (False, "DO строкой", f"BEGIN;\nDO '{DEL} FROM listing_data.t';\nCOMMIT;\n"),
         (False, "DO LANGUAGE plpgsql строкой", "BEGIN;\nDO LANGUAGE plpgsql 'BEGIN NULL; END';\nCOMMIT;\n"),
         (True, "тело функции $$…$$ со строками внутри",
