@@ -347,6 +347,11 @@ _(пусто)_
     рынок. Порядок PR: миграция → загрузка паспорта в том → кнопки. Ждёт
     владельца: применить миграцию; SQL права `ls.textgen.accept` — когда
     подключат Алексея. Подробно — `docs/textgen.md`.
+  - **21.10.2026:** владелец — «ls.textgen.accept кладём сейчас». Связка: PR
+    Listing Suite и PR Кабинета `feat/ls-textgen-accept`, затем в базе Кабинета
+    `…_ls_textgen_role.sql` → `…_ls_textgen_accept.sql`. Назначение роли человеку
+    — `…_ls_textgen_assign.sql`, позже. Том `dnipro_m.listing_data.passports`
+    создан, пробная загрузка 99601000-B v2 прошла (DOCX-PASS-99601000-B-001-v2).
   - **21.10.2026, 18:4x:** `2026-10-21_content_versions.sql` и
     `2026-10-21_content_versions_checks.sql` применены агентом по команде
     владельца, под его учёткой: таблица на месте, пустая, приложение пишет,

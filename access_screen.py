@@ -1,4 +1,4 @@
-# ОТПЕЧАТОК ИСТОЧНИКА: 9106e4a87f744b6d14df2dc47b517142f72bc0bca7880d46e7a9eb1e84e8cd35
+# ОТПЕЧАТОК ИСТОЧНИКА: 68452d1d6b3e8555b25f1aefd84cfc76e91268cf2750283f81a87bc4819b4a05
 # access_screen.py — экран «Доступ»: один на два приложения.
 """Админка доступа (ТЗ 010): люди, роли, матрица прав, тестовый вход, журналы.
 
@@ -48,8 +48,9 @@ import streamlit as st
         "mode_key": "auth_enabled",
     },
     "ls": {
-        # textgen_pilot — роль пилота «Генератор текстов» (21.10.2026): видит одну страницу и ни одного действия;
-        # в базе её вводит migrations/kabinet/2026-10-21_ls_textgen_role.sql репозитория Listing Suite
+        # textgen_pilot — роль пилота «Генератор текстов» (21.10.2026): видит одну страницу и одно действие —
+        # ls.textgen.accept; в базе их вводят migrations/kabinet/2026-10-21_ls_textgen_role.sql и …_accept.sql
+        # репозитория Listing Suite
         "roles": ["viewer", "content_manager", "approver", "admin", "textgen_pilot"],
         "default_role": "viewer",
         "mode_key": "ls_auth_enabled",
@@ -830,6 +831,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.action.ls.page.synthesis": "Страница «Синтез»",
         "auth.action.ls.page.textgen": "Страница «Генератор текстов (пилот)»",
         "auth.action.ls.settings.edit": "Listing Suite: правка настроек",
+        "auth.action.ls.textgen.accept": "Генератор текстов: принять, выгрузить, загрузить паспорт",
         "auth.action.notify_new_user": "Уведомление о новом человеке",
         "auth.action.notify_new_user_wd": "Уведомление дослано сторожем",
         "auth.action.page.ads": "Страница: видеть «Реклама»",
@@ -1032,6 +1034,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.action.ls.page.synthesis": "Сторінка «Синтез»",
         "auth.action.ls.page.textgen": "Сторінка «Генератор текстів (пілот)»",
         "auth.action.ls.settings.edit": "Listing Suite: правка налаштувань",
+        "auth.action.ls.textgen.accept": "Генератор текстів: прийняти, вивантажити, завантажити паспорт",
         "auth.action.notify_new_user": "Сповіщення про нову людину",
         "auth.action.notify_new_user_wd": "Сповіщення дослано сторожем",
         "auth.action.page.ads": "Сторінка: бачити «Реклама»",
@@ -1234,6 +1237,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.action.ls.page.synthesis": "Page “Synthesis”",
         "auth.action.ls.page.textgen": "Page “Text Generator (pilot)”",
         "auth.action.ls.settings.edit": "Listing Suite: edit settings",
+        "auth.action.ls.textgen.accept": "Text Generator: accept, export, upload passport",
         "auth.action.notify_new_user": "New person notification",
         "auth.action.notify_new_user_wd": "Notification sent by watchdog",
         "auth.action.page.ads": "Page: see Ads",

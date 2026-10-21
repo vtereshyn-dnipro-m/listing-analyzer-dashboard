@@ -16,7 +16,8 @@ tests/test_textgen_page.py — «Генератор текстов (пилот)�
   · модель не вызывается вовсе; в базу пишет только загрузка паспорта, под правом;
   · колонки таблиц — технические имена (правило 3), подписи из `t()`;
   · SQL роли для базы Кабинета: роль в обоих CHECK, генератор — только админу
-    и роли пилота, остальное роли пилота закрыто явными строками, почта не
+    и роли пилота, остальное роли пилота закрыто явными строками, почта (в
+    отдельном файле назначения) не
     подставлена — файл отказывается выполняться.
 
 Сеть и база не трогаются: чтения подменены данными `tests/fixture_pilot.py`.
@@ -305,7 +306,10 @@ SQL = SQL_PATH.read_text(encoding="utf-8") if SQL_PATH.exists() else ""
 code_sql = "\n".join(line.split("--")[0] for line in SQL.splitlines())
 check("и не попадает в миграции listing_data (glob *.sql корня)",
       SQL_PATH.name not in {p.name for p in (ROOT / "migrations").glob("*.sql")})
-check("одна транзакция", code_sql.strip().startswith("BEGIN;") and code_sql.strip().endswith("COMMIT;"))
+_tail = code_sql.split("COMMIT;", 1)[1] if "COMMIT;" in code_sql else "x"
+check("одна транзакция, после неё — только проверочный SELECT",
+      code_sql.strip().startswith("BEGIN;") and code_sql.count("COMMIT;") == 1
+      and all(x.strip().upper().startswith("SELECT") for x in _tail.split(";") if x.strip()))
 
 ls_role_check = re.search(r"app_users_ls_role_check\s+CHECK\s*\((.*?)\);", code_sql, re.S)
 perm_check = re.search(r"app_permissions_role_check\s+CHECK\s*\((.*?)\);", code_sql, re.S)
@@ -331,16 +335,24 @@ check("строка ls.page.textgen заводится для каждой ро�
 closed = re.search(r"SELECT a\.action, 'textgen_pilot', false.*?FROM \(VALUES (.*?)\) AS a\(action\)",
                    code_sql, re.S)
 closed_set = set(re.findall(r"'(ls\.[a-z_.]+)'", closed.group(1))) if closed else set()
-check("всё прочее роли пилота закрыто явными строками — список совпадает с матрицей кода",
-      closed_set == set(auth._MATRIX) - {"ls.page.textgen"})
+check("всё прочее роли пилота закрыто явными строками — список совпадает с матрицей кода "
+      "(кроме страницы и ls.textgen.accept: его заводит свой файл)",
+      closed_set == set(auth._MATRIX) - {"ls.page.textgen", "ls.textgen.accept"})
 check("права не перетираются (ON CONFLICT DO NOTHING у обеих вставок)",
       code_sql.count("ON CONFLICT (action, role) DO NOTHING") == 2)
+check("SQL роли никому роль не назначает (решение владельца: позже Алексею)",
+      "UPDATE kabinet_data.app_users" not in code_sql)
+# Назначение — отдельный файл, с заготовкой почты, которая отказывается выполняться.
+ASSIGN = ROOT / "migrations" / "kabinet" / "2026-10-21_ls_textgen_assign.sql"
+check("SQL назначения лежит рядом", ASSIGN.exists())
+asg = "\n".join(line.split("--")[0] for line in ASSIGN.read_text(encoding="utf-8").splitlines()) if ASSIGN.exists() else ""
 check("почта не подставлена — блок отказывается выполняться",
-      "почта text := 'ПОДСТАВИТЬ_ПОЧТУ_ЯРОСЛАВА'" in code_sql
-      and re.search(r"IF почта = 'ПОДСТАВИТЬ_ПОЧТУ_ЯРОСЛАВА' THEN\s+RAISE EXCEPTION", code_sql))
-check("назначение — ровно одной строке, иначе отказ", "IF n <> 1 THEN" in code_sql)
-check("кабинетная роль не трогается", not re.search(r"SET\s+role\s*=", code_sql))
-check("карточек не заводит", "INSERT INTO kabinet_data.app_users" not in code_sql)
+      "почта text := 'ПОДСТАВИТЬ_ПОЧТУ'" in asg
+      and re.search(r"IF почта = 'ПОДСТАВИТЬ_ПОЧТУ' THEN\s+RAISE EXCEPTION", asg))
+check("назначение — ровно одной строке, иначе отказ", "IF n <> 1 THEN" in asg)
+check("назначается только роль пилота", re.findall(r"SET ls_role = '([a-z_]+)'", asg) == ["textgen_pilot"])
+check("кабинетная роль не трогается", not re.search(r"SET\s+role\s*=", code_sql + asg))
+check("карточек не заводит", "INSERT INTO kabinet_data.app_users" not in code_sql + asg)
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS else f"{len(FAILS)} провалов: {FAILS}")

@@ -52,9 +52,10 @@ CONTENT_MANAGER = "content_manager"
 APPROVER = "approver"
 ADMIN = "admin"
 # Роль пилота «Генератор текстов» (21.10.2026, решение владельца: Ярослав — не
-# администратор). Видит ТОЛЬКО страницу генератора: ни одной другой страницы и
-# ни одного действия. Роль заводится в базе Кабинета SQL-файлом
-# `migrations/kabinet/2026-10-21_ls_textgen_role.sql` — применяет владелец.
+# администратор). Видит ТОЛЬКО страницу генератора и одно действие —
+# `ls.textgen.accept` (приёмка и выгрузка текстов, загрузка паспорта). Роль и
+# право заводятся в базе Кабинета SQL-файлами `migrations/kabinet/` — применяет
+# владелец.
 TEXTGEN = "textgen_pilot"
 ROLES = [VIEWER, CONTENT_MANAGER, APPROVER, ADMIN, TEXTGEN]
 
@@ -99,6 +100,8 @@ _MATRIX = {
     "ls.amazon.push":   {APPROVER, ADMIN},
     "ls.method.edit":   {APPROVER, ADMIN},
     "ls.settings.edit": {ADMIN},
+    # Генератор текстов: принять и выгрузить текст, загрузить паспорт (21.10.2026).
+    "ls.textgen.accept": {ADMIN, TEXTGEN},
 }
 for _ключ, *_ in PAGES:
     # Страницы видны всем прежним ролям, как и было. Роль пилота видит только
