@@ -9,10 +9,11 @@
 -- 2026-10-21_content_versions_checks.sql. Два изменения:
 --
 --   1. триггер passport_copy_frozen на passport_source_artifacts: у строки, на
---      которую ссылается хоть одна версия content_versions, меняться могут
---      только lifecycle (ACTIVE → OLD — копию сменила новая версия паспорта) и
---      duplicate_of. SKU, id паспорта, SHA, файл и прочее — нет. Удаление такой
---      строки и так держит внешний ключ content_versions → passport_source_artifacts;
+--      которую ссылается хоть одна версия content_versions, не меняется ничего,
+--      кроме одного шага lifecycle ACTIVE → OLD (копию сменила новая версия
+--      паспорта; обратно — нет). SKU, id паспорта, SHA, файл, duplicate_of и
+--      прочее — нет. Удаление такой строки и так держит внешний ключ
+--      content_versions → passport_source_artifacts;
 --   2. та же триггерная функция content_versions_guard, что в
 --      2026-10-21_content_versions_checks.sql, с одной добавкой: строка копии
 --      читается FOR SHARE. Без блокировки параллельная правка копии проскакивала
@@ -24,6 +25,20 @@
 -- в конце показывают, что блокировка и триггер на месте.
 
 BEGIN;
+
+-- Предусловие: таблица версий уже есть. Без неё триггер ниже встал бы на
+-- таблицу копий и ронял бы каждый её UPDATE.
+DO $$
+BEGIN
+    IF to_regclass('listing_data.content_versions') IS NULL THEN
+        RAISE EXCEPTION 'сначала 2026-10-21_content_versions.sql и 2026-10-21_content_versions_checks.sql';
+    END IF;
+END $$;
+
+-- Поиск версий, ссылающихся на копию, — для триггера ниже.
+CREATE INDEX IF NOT EXISTS content_versions_passport_artifact
+    ON listing_data.content_versions (passport_artifact_id)
+    WHERE passport_artifact_id IS NOT NULL;
 
 CREATE OR REPLACE FUNCTION listing_data.content_versions_guard() RETURNS trigger
 LANGUAGE plpgsql AS $$
@@ -101,14 +116,18 @@ LANGUAGE plpgsql AS $$
 BEGIN
     IF EXISTS (SELECT 1 FROM listing_data.content_versions
                 WHERE passport_artifact_id = OLD.source_artifact_id)
-       AND (NEW.source_artifact_id, NEW.sku_id, NEW.passport_id, NEW.run_id,
-            NEW.origin_locator, NEW.archived_locator, NEW.file_name, NEW.mime_type,
-            NEW.bytes, NEW.sha256, NEW.access_result, NEW.registered_by, NEW.recorded_at)
-           IS DISTINCT FROM
-           (OLD.source_artifact_id, OLD.sku_id, OLD.passport_id, OLD.run_id,
-            OLD.origin_locator, OLD.archived_locator, OLD.file_name, OLD.mime_type,
-            OLD.bytes, OLD.sha256, OLD.access_result, OLD.registered_by, OLD.recorded_at) THEN
-        RAISE EXCEPTION 'listing_data.passport_source_artifacts: копия % — источник текста в content_versions и не меняется; новый паспорт — новая строка', OLD.source_artifact_id;
+       AND ((NEW.source_artifact_id, NEW.sku_id, NEW.passport_id, NEW.run_id,
+             NEW.origin_locator, NEW.archived_locator, NEW.file_name, NEW.mime_type,
+             NEW.bytes, NEW.sha256, NEW.access_result, NEW.duplicate_of,
+             NEW.registered_by, NEW.recorded_at)
+            IS DISTINCT FROM
+            (OLD.source_artifact_id, OLD.sku_id, OLD.passport_id, OLD.run_id,
+             OLD.origin_locator, OLD.archived_locator, OLD.file_name, OLD.mime_type,
+             OLD.bytes, OLD.sha256, OLD.access_result, OLD.duplicate_of,
+             OLD.registered_by, OLD.recorded_at)
+            OR (NEW.lifecycle IS DISTINCT FROM OLD.lifecycle
+                AND NOT (OLD.lifecycle = 'ACTIVE' AND NEW.lifecycle = 'OLD'))) THEN
+        RAISE EXCEPTION 'listing_data.passport_source_artifacts: копия % — источник текста в content_versions и не меняется (можно только пометить OLD); новый паспорт — новая строка', OLD.source_artifact_id;
     END IF;
     RETURN NEW;
 END;

@@ -7,10 +7,10 @@ tests/test_passport_copy_frozen_sql.py — копия паспорта, на к�
 запретить менять (триггер), новый паспорт = новая версия». Проверка статическая,
 без базы; поведение проверено на PGlite при подготовке PR. Что заперто:
 
-  · у строки passport_source_artifacts, на которую ссылается версия текста,
-    меняться могут только lifecycle и duplicate_of — список «замороженных»
-    колонок выводится из самой таблицы, и новая колонка без решения о ней
-    валит тест;
+  · у строки passport_source_artifacts, на которую ссылается версия текста, не
+    меняется ничего, кроме одного шага lifecycle ACTIVE → OLD — тело функции
+    сверяется целиком с эталоном, собранным из колонок самой таблицы: новая
+    колонка без решения о ней и любая добавка в условие валят тест;
   · функция версий — ровно та, что в 2026-10-21_content_versions_checks.sql,
     плюс одна добавка: строка копии читается FOR SHARE (гонка правки копии и
     записи версии, найденная проверкой #154);
@@ -76,6 +76,9 @@ CORE = norm((ROOT / "migrations" / "2026-10-07_passport_sku_core.sql").read_text
 # ------------------------------------------------------------ состав файла
 EXPECTED = [
     r"BEGIN",
+    r"DO \$\$ BEGIN IF to_regclass\('listing_data\.content_versions'\) IS NULL THEN RAISE EXCEPTION '[^']*'; END IF; END \$\$$",
+    r"CREATE INDEX IF NOT EXISTS content_versions_passport_artifact ON listing_data\.content_versions "
+    r"\(passport_artifact_id\) WHERE passport_artifact_id IS NOT NULL$",
     r"CREATE OR REPLACE FUNCTION listing_data\.content_versions_guard\(\)",
     r"CREATE OR REPLACE FUNCTION listing_data\.passport_copy_frozen\(\)",
     r"DR" r"OP TRIGGER IF EXISTS passport_copy_frozen ON listing_data\.passport_source_artifacts",
@@ -88,13 +91,13 @@ EXPECTED = [
 ST = statements(SQL)
 check(f"миграция — ровно {len(EXPECTED)} операторов в заданном порядке ({len(ST)})",
       len(ST) == len(EXPECTED) and all(re.match(p, s) for p, s in zip(EXPECTED, ST)))
-check("не трогает таблицы и права",
+check("не трогает таблицы и права (кроме индекса для поиска ссылок)",
       not re.search(r"\b(ALTER|CREATE\s+TABLE|GRANT|REVOKE|RULE|REPLICA|DISABLE)\b", SQL)
       and not re.search(rf"\b({DEL_FROM}|{WIPE})\b", SQL, re.I))
 raw = MIG.read_bytes()
 check("без блочных комментариев /* */", b"/*" not in raw and b"*/" not in raw)
 check("файл не менялся без осознанной правки отпечатка",
-      hashlib.sha256(raw).hexdigest() == "0ccb76341ad1e0caf57e75d9304792a16ac151a74ea76daa5958271807de8100")
+      hashlib.sha256(raw).hexdigest() == "da0efc6c69b0f07b54ad529d05185f38b4746cb600fe008a258712dfa85095c7")
 
 # ------------------------------------------------------ функция версий
 G_OLD, G_NEW = body(CHECKS, "content_versions_guard"), body(SQL, "content_versions_guard")
@@ -107,13 +110,25 @@ check("функция версий = функция из поправок #154 �
 cols_m = re.search(r"CREATE TABLE IF NOT EXISTS listing_data\.passport_source_artifacts \((.*?)\); CREATE INDEX", CORE)
 PSA = re.findall(r"(?:^|, )([a-z_0-9]+) (?:text|bigint|timestamptz)\b", cols_m.group(1).strip()) if cols_m else []
 F = body(SQL, "passport_copy_frozen")
-frozen = re.search(r"IF EXISTS \(SELECT 1 FROM listing_data\.content_versions WHERE passport_artifact_id = "
-                   r"OLD\.source_artifact_id\) AND \((NEW\..*?)\) IS DISTINCT FROM \((OLD\..*?)\) THEN RAISE EXCEPTION", F)
-new_cols = re.findall(r"NEW\.([a-z_0-9]+)", frozen.group(1)) if frozen else []
-old_cols = re.findall(r"OLD\.([a-z_0-9]+)", frozen.group(2)) if frozen else []
-check(f"колонки копии разобраны из миграции Паспорта ({len(PSA)})", len(PSA) >= 15)
-check("заморожено всё, кроме lifecycle и duplicate_of — и только если на копию ссылается текст",
-      bool(frozen) and set(new_cols) == set(PSA) - {"lifecycle", "duplicate_of"} and new_cols == old_cols)
+check(f"колонки копии разобраны из миграции Паспорта ({len(PSA)})", len(PSA) >= 15 and "lifecycle" in PSA)
+# Тело — целиком, против эталона из колонок самой таблицы: любая добавка в
+# условие («AND (false)», «OR (true)», исключение для роли) меняет текст и валит
+# тест даже при подменённом отпечатке (проверка #157). Заморожено всё, кроме
+# одного шага lifecycle ACTIVE → OLD (решение владельца: копию не менять;
+# новый паспорт — новая версия, старая копия помечается OLD).
+FROZEN = [c for c in PSA if c != "lifecycle"]
+EXPECTED_F = (
+    "BEGIN IF EXISTS (SELECT 1 FROM listing_data.content_versions WHERE passport_artifact_id = "
+    "OLD.source_artifact_id) AND (("
+    + ", ".join("NEW." + c for c in FROZEN) + ") IS DISTINCT FROM ("
+    + ", ".join("OLD." + c for c in FROZEN) + ") "
+    "OR (NEW.lifecycle IS DISTINCT FROM OLD.lifecycle AND NOT (OLD.lifecycle = 'ACTIVE' AND NEW.lifecycle = 'OLD'))) "
+    "THEN RAISE EXCEPTION 'listing_data.passport_source_artifacts: копия % — источник текста в content_versions и не "
+    "меняется (можно только пометить OLD); новый паспорт — новая строка', OLD.source_artifact_id; "
+    "END IF; RETURN NEW; END;"
+)
+check("функция заморозки — ровно эталон: всё, кроме шага lifecycle ACTIVE → OLD, и только при ссылке текста",
+      F.strip() == EXPECTED_F)
 check("нарушение — исключение, один выход", "RAISE EXCEPTION" in F and F.count("RETURN NEW;") == 1
       and not re.search(r"RAISE (NOTICE|WARNING|INFO|LOG|DEBUG)", SQL))
 
