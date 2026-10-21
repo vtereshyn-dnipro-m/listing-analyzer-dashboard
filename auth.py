@@ -77,6 +77,9 @@ PAGES = [
 ]
 
 PAGE_ACTIONS = ["ls.page." + ключ for ключ, *_ in PAGES]
+# Что видит тестовый вход QA: все страницы, кроме генератора текстов — решение
+# владельца 21.10.2026: генератор только у администраторов и роли пилота.
+QA_PAGE_ACTIONS = [a for a in PAGE_ACTIONS if a != "ls.page.textgen"]
 
 # Матрица прав по умолчанию — ТА ЖЕ, что в SQL-файле `sql/ls_login_2026-10-02.sql`
 # репозитория Кабинета. Здесь она нужна на случай, когда таблица не прочиталась:
@@ -468,7 +471,7 @@ def can(action: str) -> bool:
     if u.is_qa:
         # Жёстко и раньше всех прочих правил, включая раскатку: робот смотрит, и
         # только. Видимость страниц — исключение, иначе проверять ему нечего.
-        return action in PAGE_ACTIONS
+        return action in QA_PAGE_ACTIONS
     if m == MODE_ROLLOUT:
         return True
     if m == MODE_OFF:

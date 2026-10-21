@@ -209,11 +209,14 @@ check("роботу запрещено всё, даже когда матриц�
       not any(auth.can(a) for a in ("ls.content.edit", "ls.amazon.push",
                                     "ls.method.edit", "ls.settings.edit")))
 check("а страницы ему видны — иначе проверять нечего",
-      all(auth.can(a) for a in auth.PAGE_ACTIONS))
+      all(auth.can(a) for a in auth.PAGE_ACTIONS if a != "ls.page.textgen"))
+check("кроме генератора текстов — решение владельца 21.10.2026",
+      not auth.can("ls.page.textgen"))
 
 сброс(mode=2, matrix=[])
 как(auth.VIEWER, робот=True)
 check("и в раскатке роботу по-прежнему нельзя", not auth.can("ls.amazon.push"))
+check("и генератора в раскатке ему тоже не видно", not auth.can("ls.page.textgen"))
 
 # --- 4. пустая роль в Listing Suite ------------------------------------------
 сброс(mode=1, matrix=БАЗА, user=("", True, None, False))

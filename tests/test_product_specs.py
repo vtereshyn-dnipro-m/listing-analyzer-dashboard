@@ -235,6 +235,38 @@ check("в тайтле модели нет — None, а не артикул (B0G
 check("«Modelo DHR-202BC» не даёт ни J, ни W", ps.from_text("Modelo DHR-202BC M14") == {})
 
 # =========================================================== 7. чтение
+# ======================================== 6в. ударный гайковёрт (21.10.2026)
+print("6в. ударный гайковёрт")
+# Форма живых данных ES: DTD-201BC (B0H271B95K) и TD-12 (B0FWRZTDT7).
+DTD_ATTRS = {"maximum_torque": u(200.0, "newton_meters"), "maximum_chuck_size": u(0.25, "inches"),
+             "model_name": texts("99431000-B"), "power_source_type": texts("Funciona con batería")}
+DTD = ps.extract("B0H271B95K", "es", title="Atornillador de Impacto Dnipro-M DTD-201BC 20V, con Batería 4Ah y Cargador",
+                 attributes=DTD_ATTRS, amazon_type="DRILL",
+                 item_highlight="4 velocidades 0-3.600 rpm, 4.200 ipm │ Modos de par de 50/100/150/200 Nm │ "
+                                "Incluye batería BP-240 de 4Ah y cargador")
+check(f"«Atornillador de Impacto» — ударный гайковёрт, хотя productType DRILL ({DTD.tool_type})",
+      DTD.tool_type == "impact_driver")
+check("«Atornillador» без «de Impacto» — по-прежнему дрель",
+      ps.detect_type("Atornillador para Pladur Dnipro-M DSD-201BCA 20V", "DRILL") == "drill")
+check(f"момент из атрибута, удары из Highlights, хвостовик из атрибута в дюймах ({ps.title_parts(DTD)})",
+      ps.title_parts(DTD) == ["200Nm", "4200bpm", '1/4"'] and DTD.missing == [])
+check("и это проходит правила тайтла",
+      tr.check("DNIPRO-M DTD-201BC Atornillador de Impacto, " + ", ".join(ps.title_parts(DTD)), "", kind=DTD.kind) == [])
+TD = ps.extract("B0FWRZTDT7", "es", title="Atornillador de Impacto Inalámbrico Dnipro-M TD-12 12V, sin Batería ni",
+                attributes={"maximum_torque": u(105.0, "newton_meters")}, amazon_type="DRILL",
+                item_highlight="2800 rpm y 105 Nm de par máximo │ Portabrocas hexagonal de 1/4 pulgada │ "
+                               "Gatillo de velocidad progresiva, luz LED")
+check(f"TD-12: хвостовик из текста «hexagonal de 1/4 pulgada», ударов в данных нет — названо ({TD.missing})",
+      TD.values["shank"].value == '1/4"' and TD.values["shank"].source == "highlights" and TD.missing == ["bpm"])
+check('«1/4"» без «hexagonal» хвостовиком не читается (резьба, адаптер)',
+      "shank" not in ps.from_text('Adaptador de rosca 1/4" para trípode'))
+DRL = ps.extract("X", "es", title="Taladro Atornillador Dnipro-M CD-200BC 20V",
+                 attributes={"maximum_chuck_size": u(0.5, "inches")}, amazon_type="DRILL")
+check("у дрели тот же атрибут в дюймах хвостовиком не становится (это патрон)", "shank" not in DRL.values)
+check("удары в минуту: «4.200 ipm», «3200 bpm», «2.800 impactos/min»",
+      ps.from_text("4.200 ipm").get("bpm") == 4200 and ps.from_text("3200 bpm").get("bpm") == 3200
+      and ps.from_text("2.800 impactos/min").get("bpm") == 2800)
+
 print("7. загрузчики на подменённой базе")
 import services.db as db  # noqa: E402
 
