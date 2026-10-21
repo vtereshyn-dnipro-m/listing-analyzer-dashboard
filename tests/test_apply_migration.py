@@ -13,7 +13,7 @@ tests/test_apply_migration.py — `scratchpad/apply_migration.py` отказыв
   · удаление данных и DROP — отказ, в том числе в телах DO и функций;
     исключение одно — пересоздание триггера: то же имя на той же таблице,
     CREATE настоящим оператором ПОСЛЕ DROP и до COMMIT, таблица только
-    listing_data.<имя>, без RENAME в том же файле;
+    listing_data.<имя>, без RENAME и SET SCHEMA в том же файле;
   · после COMMIT — только SELECT без изменяющих слов;
   · разбор не обманывается комментариями в телах $…$, именами "a'b",
     строками E'\\'', вложенными $q$…$q$ и именами вида x$a$;
@@ -95,6 +95,12 @@ try:
          "CREATE TRIGGER tg BEFORE UPDATE ON t FOR EACH ROW EXECUTE FUNCTION f();\nCOMMIT;\n"),
         (False, "пересоздание и RENAME — прежняя таблица осталась бы без триггера",
          f"BEGIN;\n{DROPTRG}ALTER TABLE listing_data.t RENAME TO t_old;\n"
+         f"CREATE TABLE listing_data.t (id int);\n{TRG}COMMIT;\n"),
+        (False, "пересоздание и SET SCHEMA — прежняя таблица ушла бы без триггера",
+         f"BEGIN;\n{DROPTRG}ALTER TABLE listing_data.t SET SCHEMA archive;\n"
+         f"CREATE TABLE listing_data.t (id int);\n{TRG}COMMIT;\n"),
+        (False, "пересоздание и SET SCHEMA внутри DO",
+         f"BEGIN;\n{DROPTRG}DO $$ BEGIN ALTER TABLE listing_data.t SET SCHEMA archive; END $$;\n"
          f"CREATE TABLE listing_data.t (id int);\n{TRG}COMMIT;\n"),
         (True, "RENAME без пересоздания триггера — не наше дело", "BEGIN;\nALTER TABLE listing_data.t RENAME COLUMN a TO b;\nCOMMIT;\n"),
         (True, f"защитный триггер BEFORE {WIPE} — не очистка",

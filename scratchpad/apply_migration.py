@@ -16,7 +16,7 @@
    Единственное исключение — пересоздание триггера: DROP TRIGGER IF EXISTS X ON T
    и ПОСЛЕ него CREATE TRIGGER X … ON T настоящим оператором того же файла ДО COMMIT
    (пара «имя, таблица»; таблица — только listing_data.<имя>; имена в кавычках
-   исключения не получают; RENAME в том же файле — отказ). Событие триггера на
+   исключения не получают; RENAME или SET SCHEMA в том же файле — отказ). Событие триггера на
    очистку («BEFORE/AFTER/OR <очистка> ON») командой очистки не считается.
 4. После COMMIT — только SELECT без изменяющих слов (SET, INSERT, INTO, …).
 5. Разбор понимает комментарии «--» и «/* */» везде (и в телах $…$), строки '…'
@@ -219,10 +219,11 @@ def vet(path: pathlib.Path, root: pathlib.Path | None = None) -> tuple[str, list
                      f"та же таблица listing_data.<имя>, CREATE после {W_DROP} и до COMMIT): "
                      f"{' '.join(text[a:b].split())[:90]}")
             recreated = True
-    # Переименование рядом с пересозданием увело бы CREATE на другую таблицу
-    # под тем же именем, а прежняя осталась бы без триггера (проверка #160).
-    if recreated and any(re.search(r"\bRENAME\b", s, re.I) for s in skels[1:k]):
-        fail(f"{W_DROP} TRIGGER вместе с RENAME в одном файле — агент это не применяет")
+    # Переименование или перенос в другую схему рядом с пересозданием освободили
+    # бы имя: CREATE встал бы на новую таблицу, а прежняя осталась бы без
+    # триггера (проверка #160).
+    if recreated and any(re.search(r"\b(RENAME|SET\s+SCHEMA)\b", s, re.I) for s in skels[1:k]):
+        fail(f"{W_DROP} TRIGGER вместе с RENAME или SET SCHEMA в одном файле — агент это не применяет")
     checks = []
     for (a, b), s in zip(spans[k + 1:], skels[k + 1:]):
         bad = sorted({w.upper() for w in re.findall(r"[A-Za-z_]+", s)} & TAIL_FORBIDDEN)
