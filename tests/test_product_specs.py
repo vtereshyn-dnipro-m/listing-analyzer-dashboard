@@ -6,7 +6,9 @@ tests/test_product_specs.py — характеристики товара для
 
 1. **Тип инструмента.** productType у дрели и перфоратора один (DRILL), у пил —
    SAW. Ошибка типа даёт тайтл с чужими характеристиками, и он выглядит
-   правдоподобно. Тип — по тайтлу, `drill_type=hammer_drill` — перфоратор.
+   правдоподобно. Тип — по тайтлу, побеждает слово, стоящее раньше; признак
+   Amazon `drill_type=hammer_drill` не используется (на ES он у пяти не
+   перфораторов). Аксессуар — не инструмент.
 2. **Источник у каждого значения, расхождение — вслух.** У DHR-202BC в атрибуте
    аккумулятор 4 Ah, в наборе и тайтле 6Ah: это `conflicts`, а не молча
    выбранное число.
@@ -55,8 +57,26 @@ print("1. тип инструмента")
 check(f"пять пилотных: типы ({[r.tool_type for r in R.values()]})",
       [r.tool_type for r in (DGA, GL, DHR, DSC, CD)] == ["grinder", "grinder", "hammer", "circular_saw", "drill"])
 check("перфоратор по тайтлу, хотя productType DRILL", DHR.tool_type == "hammer")
-check("drill_type=hammer_drill делает перфоратором и «Taladro percutor»",
-      ps.detect_type("Taladro Dnipro-M 20V", "DRILL", {"drill_type": v("hammer_drill")}) == "hammer")
+HD = {"drill_type": v("hammer_drill")}
+check("drill_type=hammer_drill перфоратором НЕ делает: «Taladro Percutor HD-8 650W» — дрель",
+      ps.detect_type("Taladro Percutor Dnipro-M HD-8 650W", "DRILL", HD) == "drill")
+check("и шуруповёрт CD-201HBC с этим признаком — дрель",
+      ps.detect_type("Taladro Atornillador Dnipro-M CD-201HBC 20V", "DRILL", HD) == "drill"
+      and ps.detect_type("", "DRILL", HD) == "drill")
+check("«Cargador … para batería de litio» — зарядка, а не аккумулятор",
+      ps.detect_type("Cargador Rápido Dnipro-M FC-230 para batería de litio 20V", None) == "charger")
+check("«Batería … con cargador» — аккумулятор",
+      ps.detect_type("Batería BP-260 Dnipro-M 20V 6Ah, compatible con cargador FC-230", None) == "battery")
+check("«Kit Motosierra + Taladro» — по первому слову, пила",
+      ps.detect_type("Kit Motosierra Dnipro-M CS-12 + Taladro CD-12QX", "DRILL") == "chainsaw")
+check("«Llave de Impacto … Taladro» — гайковёрт",
+      ps.detect_type("Llave de Impacto Dnipro-M IW-20 con Taladro", None) == "impact_wrench")
+check("аксессуар не инструмент: «Pack de 10 Discos … para Amoladora»",
+      ps.detect_type("Pack de 10 Discos de corte Dnipro-M para Amoladora 125mm", "DISC_GRINDER_TOOL") is None)
+check("и без слова типа в тайтле — тоже: «Disco de corte 230mm» с productType болгарки",
+      ps.detect_type("Disco de corte Dnipro-M 230mm", "DISC_GRINDER_TOOL") is None)
+check("слово аксессуара ПОСЛЕ типа товар не выбрасывает: «Amoladora … con Disco»",
+      ps.detect_type("Amoladora Angular Dnipro-M GL-125 con Disco", None) == "grinder")
 check("перфоратор раньше дрели и без drill_type: «Martillo Perforador RH-100Q» (DRILL)",
       ps.detect_type("Martillo Perforador Dnipro-M RH-100Q SDS-Plus 880W", "DRILL", {}) == "hammer")
 check("без тайтла — по productType", ps.detect_type("", "DISC_GRINDER_TOOL") == "grinder")
@@ -92,6 +112,10 @@ check(f"DGA-201M: аккумулятор и зарядка, без самого 
       DGA.kit == ["Bateria BP-260 de 6Ah", "Cargador FC-230"])
 check("DSC-201BC: в наборе только инструкция — набора нет", DSC.kit == [])
 check("DHR-202BC: аккумулятор и зарядка", DHR.kit == ["Batería recargable BP-260 6A/h", "Cargador FC-230"])
+GRE = ps.TYPE_BY_KEY["grinder"].title_re
+check("набор: сам инструмент отсекается и по модели, и по слову типа — каждым фильтром",
+      ps.kit_items({"included_components": texts("Amoladora angular", "Herramienta DGA-201M", "Maletín")},
+                   "DGA-201M", GRE) == ["Maletín"])
 
 # ===================================================== 4. в тайтл
 print("4. характеристики в тайтл")
@@ -135,8 +159,47 @@ check("у пилотных болгарок всё на месте", DGA.missing
 print("6. разбор текста карточки")
 tx = ps.from_text("Velocidad máxima de 10.000 rpm, 2,8J, Ø 125 mm, corte de 55 mm, SDS-Plus, 1.200W")
 check(f"«10.000 rpm» — 10000, «2,8J» — 2.8 ({tx})", tx.get("rpm") == 10000 and tx.get("impact_j") == 2.8)
-check("Ø с пробелом, пропил, SDS-Plus, 1.200W",
-      tx.get("disc_mm") == 125 and tx.get("cut_depth_mm") == 55 and tx.get("sds") == "SDS-Plus")
+check("Ø с пробелом, пропил, SDS-Plus, 1.200W — 1200",
+      tx.get("disc_mm") == 125 and tx.get("cut_depth_mm") == 55 and tx.get("sds") == "SDS-Plus"
+      and tx.get("power_w") == 1200)
+check("«Potencia 1.500 W» — 1500, «950W» — 950",
+      ps.from_text("Potencia 1.500 W")["power_w"] == 1500 and ps.from_text("Amoladora 950W")["power_w"] == 950)
+check("сетевое напряжение не характеристика: «230V», «230-240V» не читаются",
+      "voltage_v" not in ps.from_text("Cargador FC-124, 230V 4A")
+      and "voltage_v" not in ps.from_text("Entrada 230-240V"))
+check("а «20V» и «2000 mAh» — 20 и не Ah", ps.from_text("Batería 20V 2000 mAh") == {"voltage_v": 20.0})
+FC124 = ps.extract("B0DG62R81C", "es", title="Cargador Dnipro-M FC-124, 230V 4A", amazon_type="BATTERY_CHARGER")
+check(f"у зарядки FC-124 в тайтл не идёт 230V ({ps.title_parts(FC124)})", "230V" not in ps.title_parts(FC124))
+
+# ============================================== 6а. единицы атрибутов
+print("6а. единицы атрибутов")
+hp = ps.from_attributes({"horsepower": u(1.93, "horsepower")})
+check(f"лошадиные силы не становятся ваттами: GL-145S 1,93 л. с. не «1,93W» ({hp})", "power_w" not in hp)
+GL145 = ps.extract("B0FZF8PQGC", "es", title="Amoladora Angular Dnipro-M GL-145S 950W, 125mm",
+                   attributes={"horsepower": u(1.93, "horsepower")}, amazon_type="DISC_GRINDER_TOOL")
+check("и 950W из тайтла — значение, а не расхождение с атрибутом",
+      GL145.values["power_w"].value == 950 and not GL145.conflicts)
+check("киловатты пересчитываются: 1,2 kW — 1200",
+      ps.from_attributes({"horsepower": u(1.2, "kilowatts")})["power_w"] == 1200)
+mah = ps.from_attributes({"battery": [{"capacity": [{"unit": "milliamp_hours", "value": 2000}]}]})
+check(f"2000 mAh у BP-122 — 2 Ah, а не «2000Ah» ({mah})", mah.get("capacity_ah") == 2.0)
+mils = ps.from_attributes({"wheel": [{"diameter": [{"unit": "mils", "decimal_value": 4921.0}]}]})
+check("диаметр в mils не берётся как миллиметры", "disc_mm" not in mils)
+check("незнакомая единица — значения нет, а не число без единицы",
+      ps.from_attributes({"wattage": u(800, "unknown_modifier")}) == {})
+check("сетевое напряжение в атрибуте у зарядки не берётся",
+      "voltage_v" not in ps.from_attributes({"voltage": u(230, "volts")}))
+
+# =================================================== 6б. модель
+print("6б. модель")
+check("артикул в model_name («80588000») — модель из тайтла",
+      ps.model_of({"model_name": texts("80588000")}, "Sierra Dnipro-M DSC-201BC") == "DSC-201BC")
+check("артикул с суффиксом («99655000-C») — тоже из тайтла",
+      ps.model_of({"model_name": texts("99655000-C")}, "Taladro Dnipro-M CD-202BC") == "CD-202BC")
+check("настоящая модель из атрибута главнее тайтла",
+      ps.model_of({"model_name": texts("DGA-201M")}, "Amoladora DGA-200") == "DGA-201M")
+check("в тайтле модели нет — остаётся то, что есть",
+      ps.model_of({"model_name": texts("80588000")}, "Sierra") == "80588000")
 check("«Modelo DHR-202BC» не даёт ни J, ни W", ps.from_text("Modelo DHR-202BC M14") == {})
 
 # =========================================================== 7. чтение
@@ -146,23 +209,25 @@ import services.db as db  # noqa: E402
 db.get_engine = lambda: object()
 _real_read = pd.read_sql
 QUERIES = []
+SQLS = []
 
 
 def fake_read(sql, con=None, params=None, **kw):
     QUERIES.append((" ".join(sql.split())[:60], params))
+    SQLS.append(sql)
     s = " ".join(sql.split())
-    if "FROM listing_snapshots" in s:
-        d = PILOT["B0H75XRDBK"]
-        return pd.DataFrame([{"title": d["title"], "raw": {"product_information": d["product_information"],
-                                                          "item_highlight": d["item_highlight"]}}])
-    if "FROM listing_attributes" in s:
-        return pd.DataFrame([{"product_type": "DRILL", "raw": {"attributes": PILOT["B0H75XRDBK"]["attributes"]}}])
     if "FROM product_matrix" in s:
         rows = [{"asin": a, "title": d["title"], "product_type": d["amazon_type"], "attributes": d["attributes"]}
                 for a, d in PILOT.items()]
         rows.append({"asin": "B0OTHERDRL", "title": "Taladro Atornillador Dnipro-M CD-12QX 12V 25Nm",
                      "product_type": "DRILL", "attributes": float("nan")})
         return pd.DataFrame(rows)
+    if "FROM listing_snapshots" in s:
+        d = PILOT["B0H75XRDBK"]
+        return pd.DataFrame([{"title": d["title"], "raw": {"product_information": d["product_information"],
+                                                          "item_highlight": d["item_highlight"]}}])
+    if "FROM listing_attributes" in s:
+        return pd.DataFrame([{"product_type": "DRILL", "raw": {"attributes": PILOT["B0H75XRDBK"]["attributes"]}}])
     if "FROM sqp_reports" in s:
         return pd.DataFrame([
             {"search_query": "milwaukee", "volume": 13983, "impressions": 50, "clicks": 1, "purchases": 0, "asins": 3},
@@ -176,11 +241,17 @@ pd.read_sql = fake_read
 try:
     got, err = ps.for_product("B0H75XRDBK", "es")
     check("for_product читает и разбирает", err is None and got.tool_type == "hammer" and got.conflicts)
+    full = [" ".join(sql.split()) for sql in SQLS]
+    check("снапшот — последний УДАЧНЫЙ (ok IS TRUE), а не с непустым тайтлом",
+          any("FROM listing_snapshots" in f and "ok IS TRUE" in f and "title IS NOT NULL" not in f for f in full))
     drills, err = ps.same_type_asins("drill", "es")
     check(f"same_type_asins: дрели — без перфоратора, NaN в атрибутах не роняет ({drills})",
           err is None and drills == ["B0DK5VZYVD", "B0OTHERDRL"])
     hammers, _ = ps.same_type_asins("hammer", "es")
     check(f"перфораторы отдельно ({hammers})", hammers == ["B0H75XRDBK"])
+    full = [" ".join(sql.split()) for sql in SQLS]
+    check("тайтл для типа — из последнего удачного снапшота, а не из listing_latest",
+          any("FROM product_matrix" in f and "ok IS TRUE" in f and "listing_latest" not in f for f in full))
 
     from services import seo  # noqa: E402
 

@@ -79,12 +79,16 @@ class ToolType:
 
 
 # Черновик владельца 20.10.2026 («основные характеристики по типу инструмента»).
-# Порядок типов важен: первый подошедший по тайтлу побеждает, поэтому
-# перфоратор стоит раньше дрели (у обоих productType DRILL), торцовочная —
-# раньше циркулярной.
+# Тип по тайтлу — тот, чьё слово стоит РАНЬШЕ: испанский тайтл начинается с
+# названия товара. «Cargador … para batería» — зарядка, «Kit Motosierra +
+# Taladro» — пила, «Taladro Percutor» — дрель. Порядок таблицы решает только
+# при совпадении позиции (перфоратор раньше дрели, торцовочная раньше циркулярной).
 TOOL_TYPES = (
     ToolType("grinder", ("DISC_GRINDER_TOOL", "GRINDER"), r"amoladora|esmeriladora", ("power_w", "disc_mm", "rpm")),
-    ToolType("hammer", ("ROTARY_HAMMER", "DRILL"), r"martillo\s+perforador|perforador|martillo\s+percutor",
+    # productType DRILL у перфоратора тоже бывает, но без слов тайтла он ничего
+    # не говорит: на ES так помечены и дрели, и шуруповёрты. Перфоратор узнаётся
+    # по тайтлу, по одному DRILL — дрель.
+    ToolType("hammer", ("ROTARY_HAMMER",), r"martillo\s+perforador|perforador|martillo\s+percutor",
              ("impact_j", "sds", "power_w", "drill_concrete_mm")),
     ToolType("impact_wrench", ("IMPACT_WRENCH",), r"llave\s+de\s+impacto", ("torque_nm", "bpm")),
     ToolType("drill", ("DRILL", "DRILL_DRIVER", "SCREWDRIVER"), r"taladro|atornillador",
@@ -134,13 +138,42 @@ def _attr(attrs: dict, key: str) -> list:
     return v if isinstance(v, list) else []
 
 
-def _first_num(attrs: dict, *keys) -> float | None:
+# Единицы атрибутов SP-API → множитель к единице поля. Значение с единицей не
+# из списка не берётся вовсе: «1,93 л. с.» у GL-145S стало бы «1,93W», а
+# «2000 mAh» у BP-122 — «2000Ah». Лошадиные силы не пересчитываются: у
+# GL-145S они не сходятся ни с тайтлом, ни с карточкой — тогда берётся текст.
+POWER_UNITS = {"watts": 1.0, "kilowatts": 1000.0}
+RPM_UNITS = {"rpm": 1.0}
+TORQUE_UNITS = {"newton_meters": 1.0}
+VOLT_UNITS = {"volts": 1.0}
+AH_UNITS = {"amp_hours": 1.0, "milliamp_hours": 0.001}
+MM_UNITS = {"millimeters": 1.0}
+
+# Сетевое напряжение в тайтл не идёт никогда (решение владельца 20.10.2026), и
+# у аккумулятора и зарядки поле вольтажа — это напряжение аккумулятора: «230V»
+# в тайтле зарядки FC-124 — питание от сети, а не её характеристика.
+MAINS_FROM_V = 100
+
+
+def _num_with_unit(item, units: dict) -> float | None:
+    if not isinstance(item, dict):
+        return None
+    mult = units.get(item.get("unit"))
+    if mult is None:
+        return None
+    for fld in ("value", "decimal_value"):
+        v = item.get(fld)
+        if isinstance(v, (int, float)) and not isinstance(v, bool):
+            return round(float(v) * mult, 3)
+    return None
+
+
+def _first_num(attrs: dict, units: dict, *keys) -> float | None:
     for k in keys:
         for item in _attr(attrs, k):
-            for fld in ("value", "decimal_value"):
-                v = item.get(fld) if isinstance(item, dict) else None
-                if isinstance(v, (int, float)) and not isinstance(v, bool):
-                    return float(v)
+            v = _num_with_unit(item, units)
+            if v is not None:
+                return v
     return None
 
 
@@ -157,29 +190,33 @@ def _texts(attrs: dict, key: str) -> list[str]:
             if isinstance(i, dict) and isinstance(i.get("value"), str) and i["value"].strip()]
 
 
-def _nested_num(attrs: dict, key: str, inner: str) -> float | None:
+def _nested_num(attrs: dict, key: str, inner: str, units: dict) -> float | None:
     """`wheel[].diameter[]`, `battery[].capacity[]` — величина во вложенном списке."""
     for item in _attr(attrs, key):
         for sub in (item.get(inner) or []) if isinstance(item, dict) else []:
-            for fld in ("value", "decimal_value"):
-                v = sub.get(fld) if isinstance(sub, dict) else None
-                if isinstance(v, (int, float)) and not isinstance(v, bool):
-                    return float(v)
+            v = _num_with_unit(sub, units)
+            if v is not None:
+                return v
     return None
 
 
 def from_attributes(attrs: dict) -> dict:
-    """Поле → число из атрибутов каталога. Только то, что там есть."""
+    """Поле → число из атрибутов каталога. Только то, что там есть, и только в
+    известной единице."""
     out = {
-        "power_w": _first_num(attrs, "wattage", "maximum_power", "horsepower"),
-        "rpm": _first_num(attrs, "maximum_rotational_speed", "speed"),
-        "disc_mm": _nested_num(attrs, "wheel", "diameter") or _nested_num(attrs, "blade", "diameter"),
-        "torque_nm": _first_num(attrs, "maximum_torque", "item_torque"),
-        "voltage_v": _first_num(attrs, "voltage"),
-        "capacity_ah": _nested_num(attrs, "battery", "capacity"),
-        "drill_concrete_mm": _first_num(attrs, "drilling_capacity_concrete", "drilling_capacity_masonry"),
-        "chuck_mm": _first_num(attrs, "chuck_size"),
+        "power_w": _first_num(attrs, POWER_UNITS, "wattage", "maximum_power", "horsepower"),
+        "rpm": _first_num(attrs, RPM_UNITS, "maximum_rotational_speed", "speed"),
+        "disc_mm": (_nested_num(attrs, "wheel", "diameter", MM_UNITS)
+                    or _nested_num(attrs, "blade", "diameter", MM_UNITS)),
+        "torque_nm": _first_num(attrs, TORQUE_UNITS, "maximum_torque", "item_torque"),
+        "voltage_v": _first_num(attrs, VOLT_UNITS, "voltage"),
+        "capacity_ah": _nested_num(attrs, "battery", "capacity", AH_UNITS),
+        "drill_concrete_mm": _first_num(attrs, MM_UNITS, "drilling_capacity_concrete",
+                                        "drilling_capacity_masonry"),
+        "chuck_mm": _first_num(attrs, MM_UNITS, "chuck_size"),
     }
+    if out["voltage_v"] is not None and out["voltage_v"] >= MAINS_FROM_V:
+        out["voltage_v"] = None
     return {k: v for k, v in out.items() if v is not None}
 
 
@@ -192,7 +229,7 @@ TEXT_PATTERNS = {
     "rpm": re.compile(r"(\d{1,2}[.,]?\d{3}|\d{3,5})\s?(?:rpm|r\.?p\.?m|U/min)\b", re.I),
     "torque_nm": re.compile(rf"{_N}\s?Nm\b", re.I),
     "capacity_ah": re.compile(rf"{_N}\s?A/?h\b", re.I),
-    "power_w": re.compile(r"(\d{3,4})\s?W\b"),
+    "power_w": re.compile(r"(?<![\d.,])(\d{1,2}[.,]\d{3}|\d{3,4})\s?W\b"),
     "voltage_v": re.compile(rf"{_N}\s?V\b"),
     "drill_concrete_mm": re.compile(rf"hormig[oó]n[^\d]{{0,12}}{_N}\s?mm|{_N}\s?mm\s+(?:en\s+)?hormig[oó]n", re.I),
 }
@@ -211,10 +248,12 @@ def from_text(text: str) -> dict:
     """Поле → число (или строка для SDS) из свободного текста карточки."""
     out = {}
     for key, rx in TEXT_PATTERNS.items():
-        m = rx.search(text or "")
-        if m:
-            g = next(x for x in m.groups() if x is not None)
-            out[key] = _num(g)
+        for m in rx.finditer(text or ""):
+            v = _num(next(x for x in m.groups() if x is not None))
+            if key == "voltage_v" and v >= MAINS_FROM_V:
+                continue        # «230V», «230-240V» — сеть, не характеристика
+            out[key] = v
+            break
     m = _SDS.search(text or "")
     if m:
         out["sds"] = "SDS-" + m.group(1).capitalize()
@@ -222,20 +261,30 @@ def from_text(text: str) -> dict:
 
 
 # ------------------------------------------------------------------ разбор
+# Аксессуар — не инструмент: «Pack de 10 Discos … para Amoladora», «Protector
+# W125». Слово аксессуара раньше слова типа — товар в тип не попадает, иначе его
+# запросы смешаются с ключами инструмента.
+ACCESSORY_RE = (r"\b(?:discos?|hojas?|brocas?|cuchillas?|protector|cubierta|carcasa|"
+                r"adaptador|cadenas?|lijas?|grapas|boquillas?|accesorios?)\b")
+
+
 def detect_type(title: str, amazon_type: str | None, attrs: dict | None = None) -> str | None:
     """Тип по тайтлу (испанские слова), иначе по productType SP-API.
 
     productType один на дрель и перфоратор (DRILL), на пилы разных видов (SAW),
-    поэтому слова тайтла главнее. `drill_type = hammer_drill` — перфоратор."""
+    поэтому слова тайтла главнее. Побеждает слово, стоящее раньше. Признак
+    Amazon `drill_type = hammer_drill` не используется: на ES он стоит у пяти
+    товаров, и все пять не перфораторы — ударная дрель HD-8 и шуруповёрты."""
     t = (title or "").lower()
-    for tt in TOOL_TYPES:
-        if re.search(tt.title_re, t):
-            if tt.key == "drill" and _first_text(attrs or {}, "drill_type") == "hammer_drill":
-                return "hammer"
-            return tt.key
-    if amazon_type:
-        if amazon_type == "DRILL" and _first_text(attrs or {}, "drill_type") == "hammer_drill":
-            return "hammer"
+    found = [(m.start(), i, tt.key) for i, tt in enumerate(TOOL_TYPES)
+             for m in [re.search(tt.title_re, t)] if m]
+    if found:
+        pos, _, key = min(found)
+        acc = re.search(ACCESSORY_RE, t)
+        if acc and acc.start() < pos:
+            return None
+        return key
+    if amazon_type and not re.search(ACCESSORY_RE, t):
         for tt in TOOL_TYPES:
             if amazon_type in tt.amazon_types:
                 return tt.key
@@ -276,6 +325,18 @@ def kit_items(attrs: dict, model: str | None, type_re: str | None) -> list[str]:
 _MODEL_RE = re.compile(r"\b([A-Z]{1,4}-\d{2,4}[A-Z]{0,4})\b")
 
 
+# Артикул вместо модели: у 33 из 267 товаров ES в `model_name` стоит «80588000»
+# или «99655000-C». В префикс Highlights «Model …: » он не годится.
+_ARTICLE_RE = re.compile(r"^\d{5,}(?:-\w+)?$")
+
+
+def model_of(attrs: dict, title: str) -> str | None:
+    name = _first_text(attrs, "model_name")
+    if name and not _ARTICLE_RE.match(name):
+        return name
+    return model_from_title(title) or name
+
+
 def model_from_title(title: str, brand: str = "Dnipro-M") -> str | None:
     for m in _MODEL_RE.finditer(title or ""):
         if m.group(1).upper() != brand.upper().replace(" ", ""):
@@ -303,7 +364,7 @@ def extract(asin: str, marketplace: str, *, title: str = "", attributes: dict | 
     attrs = attributes or {}
     tkey = detect_type(title, amazon_type, attrs)
     tt = TYPE_BY_KEY.get(tkey)
-    model = _first_text(attrs, "model_name") or model_from_title(title)
+    model = model_of(attrs, title)
     ps = ProductSpecs(asin=asin, marketplace=marketplace, tool_type=tkey,
                       kind=tt.kind if tt else TOOL, model=model, corded=_corded(attrs))
 
@@ -367,7 +428,9 @@ def title_parts(ps: ProductSpecs) -> list[str]:
 
 # ------------------------------------------------------------------ чтение
 def load(asin: str, marketplace: str) -> tuple[dict | None, str | None]:
-    """Сырые данные товара: тайтл и снапшот (последний удачный), атрибуты.
+    """Сырые данные товара: тайтл и снапшот (последний УДАЧНЫЙ — `ok`), атрибуты.
+    Неудачный снапшот приходит с пустым тайтлом, и сбой сбора выглядел бы как
+    «характеристик нет».
 
     (данные, None) — прочитано; (None, причина) — не прочиталось. Пустых данных
     при сбое нет: «нет характеристик» и «не прочиталось» — разные ответы."""
@@ -377,7 +440,7 @@ def load(asin: str, marketplace: str) -> tuple[dict | None, str | None]:
     try:
         snap = pd.read_sql(
             """SELECT title, raw FROM listing_snapshots
-               WHERE asin = %(a)s AND marketplace = %(m)s AND title IS NOT NULL
+               WHERE asin = %(a)s AND marketplace = %(m)s AND ok IS TRUE
                ORDER BY fetched_at DESC LIMIT 1""",
             get_engine(), params={"a": asin, "m": marketplace})
         attrs = pd.read_sql(
@@ -412,7 +475,10 @@ def same_type_asins(tool_type: str, marketplace: str) -> tuple[list[str] | None,
         df = pd.read_sql(
             """SELECT pm.asin, ll.title, la.product_type, la.raw->'attributes' AS attributes
                  FROM product_matrix pm
-                 LEFT JOIN listing_latest ll ON ll.asin = pm.asin AND ll.marketplace = pm.marketplace
+                 LEFT JOIN LATERAL (
+                       SELECT s.title FROM listing_snapshots s
+                        WHERE s.asin = pm.asin AND s.marketplace = pm.marketplace AND s.ok IS TRUE
+                        ORDER BY s.fetched_at DESC LIMIT 1) ll ON true
                  LEFT JOIN listing_attributes la ON la.asin = pm.asin AND la.marketplace = pm.marketplace
                 WHERE pm.marketplace = %(m)s AND NOT pm.is_competitor""",
             get_engine(), params={"m": marketplace})
