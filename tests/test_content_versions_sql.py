@@ -20,8 +20,15 @@ SQL держит решения владельца 21.10.2026, так, чтоб�
   · право ls.textgen.accept — у admin и textgen_pilot, у прочих нет, и SQL
     Кабинета больше ничего не делает.
 
-Текст сравнивается без учёта пробелов и регистра служебных слов: тест не
-должен зависеть от того, как выровнен файл.
+Смысл проверяется по тексту без учёта пробелов, а сами файлы — байт в байт,
+отпечатком sha256: комментарий «/* … */» или «$$» умеет спрятать оператор от
+любого разбора (проверка #153). Применённая миграция не правится, поэтому
+правка файла — это сознательная правка отпечатка здесь же.
+
+Второй файл, `2026-10-21_content_versions_checks.sql`, заменяет тело триггерной
+функции: сверка SKU, id и SHA копии паспорта с версией текста и время шага не в
+будущем (решение владельца 21.10.2026). Для него — свой белый список, отпечаток
+и обязательные фрагменты, и новая функция обязана сохранить ВСЕ прежние запреты.
 
 Запуск (pytest не нужен):  python tests/test_content_versions_sql.py
 """
@@ -249,6 +256,50 @@ check("строка заводится для каждой роли Listing Suit
       bool(roles) and set(re.findall(r"'([a-z_]+)'", roles.group(1))) == set(auth.ROLES))
 check("ручные галочки не перетираются", "ON CONFLICT (action, role) DO NOTHING;" in KSQL)
 check("кабинетная часть матрицы и CHECK не трогаются", "app_permissions_role_check" not in KSQL)
+
+# --------------------------------- поправки: 2026-10-21_content_versions_checks.sql
+CHK = ROOT / "migrations" / "2026-10-21_content_versions_checks.sql"
+CSQL = norm(CHK.read_text(encoding="utf-8"))
+CHK_SEQUENCE = [
+    r"BEGIN",
+    r"CREATE OR REPLACE FUNCTION listing_data\.content_versions_guard\(\)",
+    r"COMMIT",
+    r"SELECT position\(",
+    r"SELECT tgname FROM pg_trigger ",
+]
+CST = statements(CSQL)
+check(f"поправки — ровно {len(CHK_SEQUENCE)} оператора(ов) в заданном порядке ({len(CST)})",
+      len(CST) == len(CHK_SEQUENCE) and all(re.match(p, x) for p, x in zip(CHK_SEQUENCE, CST)))
+check("поправки не трогают таблицу, триггеры и права",
+      not re.search(r"\b(ALTER|CREATE\s+TABLE|CREATE\s+TRIGGER|GRANT|REVOKE|RULE|REPLICA|DISABLE)\b", CSQL)
+      and not re.search(rf"\b({DEL_FROM}|{DROP_TABLE}|{WIPE})\b", CSQL, re.I))
+raw = CHK.read_bytes()
+check("поправки: без блочных комментариев /* */", b"/*" not in raw and b"*/" not in raw)
+check("поправки: файл не менялся без осознанной правки отпечатка",
+      hashlib.sha256(raw).hexdigest() == "b1b5d9a7304f4a15192a738a2bf96d5cd0f22c0a179222a3324746f76702eef5")
+new = re.search(r"FUNCTION listing_data\.content_versions_guard\(\) RETURNS trigger LANGUAGE plpgsql AS \$\$(.*?)\$\$;", CSQL)
+NEW_BODY = new.group(1) if new else ""
+old_raises = re.findall(r"RAISE EXCEPTION '([^']*)'", BODY)
+check(f"новая функция сохраняет все {len(old_raises)} прежних запретов",
+      bool(old_raises) and all(f"RAISE EXCEPTION '{r}'" in NEW_BODY for r in old_raises)
+      and all(has(frag, NEW_BODY) for frag in (
+          "IF NOT ((OLD.status = 'draft' AND NEW.status = 'accepted') OR (OLD.status = 'accepted' AND NEW.status = 'sent')) THEN",
+          "IF TG_OP = 'INSERT' THEN IF NEW.status <> 'draft' THEN RAISE EXCEPTION",
+          "IF TG_OP = 'DELETE' THEN RAISE EXCEPTION")))
+new_frozen = re.search(r"IF \((NEW\..*?)\) IS DISTINCT FROM \((OLD\..*?)\) THEN RAISE EXCEPTION '[^']*неизменяема", NEW_BODY)
+check("и тот же полный список неизменяемых колонок",
+      bool(new_frozen) and re.findall(r"NEW\.([a-z_0-9]+)", new_frozen.group(1)) == new_cols)
+for frag, what in (
+    ("FROM listing_data.passport_source_artifacts WHERE source_artifact_id = NEW.passport_artifact_id;", "копия паспорта читается по ссылке версии"),
+    ("IF found_copy AND copy_sku IS DISTINCT FROM NEW.sku THEN RAISE EXCEPTION", "SKU копии паспорта = SKU текста"),
+    ("IF found_copy AND copy_pass IS NOT NULL AND copy_pass IS DISTINCT FROM NEW.passport_id THEN RAISE EXCEPTION", "id паспорта копии = id в тексте"),
+    ("IF found_copy AND copy_sha IS NOT NULL AND copy_sha IS DISTINCT FROM NEW.passport_sha256 THEN RAISE EXCEPTION", "SHA копии = SHA в тексте"),
+    ("IF NEW.created_at > now() + interval '5 minutes' THEN RAISE EXCEPTION", "создание не в будущем"),
+    ("IF NEW.status = 'accepted' AND NEW.accepted_at > now() + interval '5 minutes' THEN RAISE EXCEPTION", "приёмка не в будущем"),
+    ("IF NEW.status = 'sent' AND NEW.sent_at > now() + interval '5 minutes' THEN RAISE EXCEPTION", "выгрузка не в будущем"),
+):
+    check("поправки: " + what, has(frag, NEW_BODY))
+check("поправки: исключения — исключения", not re.search(r"RAISE (NOTICE|WARNING|INFO|LOG|DEBUG)", CSQL))
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS else f"{len(FAILS)} провалов: {FAILS}")
