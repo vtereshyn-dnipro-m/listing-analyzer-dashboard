@@ -209,7 +209,7 @@ def vet(path: pathlib.Path, root: pathlib.Path | None = None) -> tuple[str, list
         # Тело функции, процедуры или DO строкой '…' разбор видит пустым ('') —
         # в нём прошло бы что угодно, вплоть до удаления данных (проверка #160).
         # Тело $…$ разбирается рекурсивно, поэтому принимается только оно.
-        if re.match(r"(CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE)\b.*\bAS\s+''|DO\s+(LANGUAGE\s+\w+\s+)?'')",
+        if re.match(r"(CREATE\s+(OR\s+REPLACE\s+)?(FUNCTION|PROCEDURE)\b.*\bAS\s+''|DO\s+(LANGUAGE\s+(\w+|\"\")\s+)?'')",
                     s, re.I):
             fail(f"тело функции или DO строкой '…' — скрипт его не видит, нужно $…$: "
                  f"{' '.join(text[a:b].split())[:90]}")

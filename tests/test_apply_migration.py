@@ -146,6 +146,8 @@ try:
          "BEGIN;\ncreate or replace function listing_data.g() returns void language sql as /* x */\n-- y\n'select 1';\nCOMMIT;\n"),
         (False, "DO строкой", f"BEGIN;\nDO '{DEL} FROM listing_data.t';\nCOMMIT;\n"),
         (False, "DO LANGUAGE plpgsql строкой", "BEGIN;\nDO LANGUAGE plpgsql 'BEGIN NULL; END';\nCOMMIT;\n"),
+        (False, "DO LANGUAGE \"plpgsql\" строкой — имя языка в кавычках",
+         "BEGIN;\nDO LANGUAGE \"plpgsql\" 'BEGIN NULL; END';\nCOMMIT;\n"),
         (True, "тело функции $$…$$ со строками внутри",
          "BEGIN;\nCREATE FUNCTION listing_data.g() RETURNS text LANGUAGE sql AS $$ SELECT 'AS ''x''' $$;\nCOMMIT;\n"),
         (True, "COMMENT ON FUNCTION … IS '…' — не тело",
