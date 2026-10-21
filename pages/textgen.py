@@ -21,6 +21,7 @@ pages/textgen.py — «Генератор текстов (пилот)», шаг 
 from __future__ import annotations
 
 import hashlib
+import json
 
 import pandas as pd
 import streamlit as st
@@ -29,10 +30,15 @@ import auth
 
 from components.ui import eyebrow, inject_fonts
 from i18n import t
+from services import ai
 from services import passport_copies as pc
+from services import passport_facts as pf
 from services import product_specs as ps
 from services import seo
+from services import textgen as tg
 from services import title_rules as tr
+from services.cells import cell_text
+from services.settings import get_setting
 
 ACCENT = "#E8590C"
 GREEN = "#2F6B3A"
@@ -311,3 +317,161 @@ if pp_header:
                                     "life": st.column_config.TextColumn(t("tg.pp.col.lifecycle")),
                                     "by": st.column_config.TextColumn(t("tg.pp.col.by")),
                                     "at": st.column_config.DatetimeColumn(t("tg.pp.col.at"))})
+
+# ------------------------------------------------------- генерация по паспорту
+# Модель — только по нажатию человека с правом ls.textgen.accept; лимиты и учёт
+# денег — в services/textgen.py по журналу textgen_calls (решение владельца 21.10.2026).
+
+
+@st.cache_data(ttl=120, show_spinner=False)
+def _textgen_method() -> tuple[str, int, str | None]:
+    """Действующая методология области textgen: (текст, версия, причина-сбоя)."""
+    from services.db import safe_read
+    df, err = safe_read("SELECT skill_text, version FROM synthesis_skill WHERE scope = %(s)s"
+                        " AND is_active = TRUE ORDER BY version DESC LIMIT 1", {"s": tg.SCOPE})
+    if err:
+        raise _ReadFailed(err)
+    if df.empty:
+        return "", 0, None
+    return cell_text(df.iloc[0], "skill_text"), int(df.iloc[0]["version"]), None
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def _copy_conflicts(locator: str, sha: str) -> list[str]:
+    """Поля «Конфлікти» сохранённой копии — для подписи «нужно решение». Ключ —
+    SHA: копия неизменна, читать том на каждой перерисовке незачем."""
+    store = pc.volume_store()
+    data = store.get(locator) if store else b""
+    if hashlib.sha256(data).hexdigest() != sha:
+        raise _ReadFailed("SHA")
+    return [c["field"] for c in pf.read(data).conflicts if c["field"]]
+
+
+def _check_line(v: dict) -> str:
+    if v.get("code") == "NO_MODEL_PREFIX_CHECK":
+        return f"- {t('tg.no_model_prefix')}"
+    where = "highlights" if v.get("field") == "highlight" else v.get("field")
+    return (f"- **{t('tg.code.' + str(v.get('code')))}** ({t(f'tg.where.{where}')})"
+            + (f": `{v['detail']}`" if v.get("detail") else ""))
+
+
+section(t("tg.gen.title"))
+st.caption(t("tg.gen.hint"))
+copies_df, copies_err = tg.active_copies()
+if copies_err:
+    st.error(t("tg.gen.copies_error", err=copies_err))
+elif copies_df.empty:
+    st.caption(t("tg.gen.no_copies"))
+else:
+    skus = list(copies_df["sku_id"])
+    pre = pp_header["sku_id"] if pp_header and pp_header["sku_id"] in skus else skus[0]
+    g1, g2 = st.columns(2)
+    g_sku = g1.selectbox(t("tg.gen.sku"), skus, index=skus.index(pre), key="tg-gen-sku")
+    mps = list(tg.LANGUAGE)
+    g_mp = g2.selectbox(t("tg.gen.mp"), mps, index=mps.index("es"), format_func=str.upper, key="tg-gen-mp")
+    g_copy = copies_df[copies_df["sku_id"] == g_sku].iloc[0].to_dict()
+    st.caption(t("tg.gen.passport", pid=cell_text(g_copy, "passport_id"), aid=cell_text(g_copy, "source_artifact_id")))
+    try:
+        g_conf = _copy_conflicts(cell_text(g_copy, "archived_locator"), cell_text(g_copy, "sha256"))
+    except Exception:  # noqa: BLE001 — подпись удобства; генерация сама сверит копию
+        g_conf = []
+    if g_conf:
+        st.warning(t("tg.gen.conflicts", fields=", ".join(g_conf)))
+
+    from services.db import table_exists
+    g_reason, g_detail = None, ""
+    g_prov, g_model = ai.task_config(tg.TASK)
+    g_method, g_mver = "", 0
+    if table_exists("textgen_calls") is False:
+        g_reason = "NO_TABLE"
+        st.warning(t("tg.gen.no_table"))
+    else:
+        g_usage, g_uerr = tg.usage_now(g_sku)
+        try:
+            g_method, g_mver, _ = _textgen_method()
+        except _ReadFailed as e:
+            g_uerr = g_uerr or str(e)
+        if g_uerr:
+            g_reason = "USAGE"
+            st.error(t("tg.gen.usage_error", err=g_uerr))
+        else:
+            st.caption(t("tg.gen.usage", n=g_usage.calls_sku, n_max=tg.LIMIT_CALLS_SKU_DAY, a=g_usage.usd_sku,
+                         a_max=tg.LIMIT_USD_SKU_DAY, b=g_usage.usd_pilot, b_max=tg.LIMIT_USD_PILOT_DAY))
+            g_price = tg.price(g_model, get_setting)
+            if not g_method.strip() or not g_mver:
+                g_reason, g_detail = "NO_METHOD", tg.SCOPE
+            elif g_price is None:
+                g_reason, g_detail = "NO_PRICE", g_model
+            else:
+                # Кнопка гаснет заранее по худшей оценке; окончательно решает
+                # проверка под блокировкой в момент нажатия.
+                why = tg.block_reason(g_usage, tg.estimate(g_price, 12_000 + len(g_method),
+                                                           ai.task_limits(tg.TASK)[0]))
+                if why:
+                    g_reason, g_detail = why
+            if g_reason:
+                st.warning(t(f"tg.gen.err.{g_reason}", detail=g_detail))
+    g_may = auth.can("ls.textgen.accept")
+    if not g_may:
+        st.caption(t("tg.pp.denied_hint"))
+    if st.button(t("tg.gen.button"), type="primary", disabled=bool(g_reason) or not g_may, key="tg-gen-go"):
+        if auth.require("ls.textgen.accept", object_type="textgen", object_id=f"{g_sku}:{g_mp}"):
+            try:
+                g_store = pc.volume_store()
+            except pc.CopyError as e:
+                g_store = False
+                st.error(t("tg.gen.err.STORE", detail=e.detail))
+            if g_store is None:
+                st.error(t("tg.pp.no_store"))
+            elif g_store:
+                from services.db import get_conn as _gen_conn
+                try:
+                    g_conn = _gen_conn()
+                except Exception as e:  # noqa: BLE001
+                    g_conn = None
+                    st.error(t("tg.gen.err.DB", detail=f"{type(e).__name__}: {str(e)[:160]}"))
+                if g_conn is not None:
+                    try:
+                        with st.spinner(t("tg.gen.running")):
+                            res = tg.generate(
+                                sku=g_sku, marketplace=g_mp, copy=g_copy, actor=auth.actor(), store=g_store,
+                                conn=g_conn, method=(g_method, g_mver), provider=g_prov, model=g_model,
+                                max_tokens=ai.task_limits(tg.TASK)[0], setting=get_setting,
+                                ai_call=ai.generate_json, ai_usage=ai.usage_totals, ai_reset=ai.reset_usage,
+                                ai_error=ai.last_call_error)
+                    except Exception as e:  # noqa: BLE001 — база или том: причина на экран
+                        st.error(t("tg.gen.err.DB", detail=f"{type(e).__name__}: {str(e)[:200]}"))
+                    else:
+                        if res.status == "OK":
+                            st.success(t("tg.gen.done", proposal=res.proposal_id, cost=res.cost_usd))
+                        else:
+                            st.error(t(f"tg.gen.err.{res.code}", detail=res.detail))
+                    finally:
+                        g_conn.close()
+
+    lat, lat_err = tg.latest(g_sku, g_mp)
+    if lat_err:
+        st.error(t("tg.gen.latest_error", err=lat_err))
+    elif lat.empty:
+        st.caption(t("tg.gen.none", sku=g_sku, mp=g_mp.upper()))
+    else:
+        r0 = lat.iloc[0]
+        st.markdown("**" + t("tg.gen.latest", proposal=cell_text(r0, "proposal_id"), model=cell_text(r0, "model"),
+                             at=str(r0["created_at"])[:16]) + "**")
+        order = {f: i for i, f in enumerate(tg.FIELDS)}
+        limits = {"title": tr.TITLE_LIMIT, "highlight": tr.Ruleset().highlight_limit}
+        any_bad = False
+        for _, row in sorted(lat.iterrows(), key=lambda x: order.get(x[1]["field"], 99)):
+            f = row["field"]
+            label = (t("tg.gen.field.bullet", n=f.split("_")[1]) if f.startswith("bullet_")
+                     else t(f"tg.gen.field.{f}"))
+            n = int(row["text_len"])
+            st.markdown(f"{label} · " + (counter(n, limits[f]) if f in limits else str(n)), unsafe_allow_html=True)
+            st.code(cell_text(row, "text"), language=None, wrap_lines=True)
+            raw = row["checks"]
+            items = raw if isinstance(raw, list) else (json.loads(raw) if isinstance(raw, str) and raw else [])
+            for v in items:
+                any_bad = True
+                st.markdown(_check_line(v))
+        if not any_bad:
+            st.success(t("tg.gen.ok_checks"))

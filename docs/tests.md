@@ -52,6 +52,7 @@ python tests/test_product_specs.py
 python tests/test_textgen_page.py
 python tests/test_content_versions_sql.py
 python tests/test_passport_copies.py
+python tests/test_textgen_generate.py
 python tests/test_passport_copy_frozen_sql.py
 python tests/test_feed.py
 python tests/test_methodology_page.py
@@ -588,3 +589,12 @@ JSON-схем: каждая даёт ожидаемый схемный исхо�
 
 ---
 
+`test_textgen_generate.py` — генерация текстов по паспорту SKU (решение владельца
+21.10.2026): в модель идут только разделы-факты паспорта, поля «Конфлікти» —
+списком «не использовать», без сторон; лимиты 10 вызовов и $1 на товар, $10 на
+пилот в сутки — отказ ДО вызова модели и без записи; резерв оценки сверху до
+вызова и фактическая цена после; без методологии или цены — отказ до тома;
+копия сверяется по SHA и SKU; удача — 8 черновиков одним предложением,
+неудача — вызов учтён, черновиков нет. Мутации валят свои проверки. Экран —
+в `test_textgen_page.py`: кнопка гаснет с объяснением, нажатие — один вызов
+генерации, настоящая модель не вызывается.

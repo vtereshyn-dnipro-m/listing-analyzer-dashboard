@@ -266,6 +266,7 @@ TASKS = [
     ("photo_audit", t("set.task_photo"), "gemini"),
     ("agents", t("set.task_agents"), "anthropic"),
     ("translate", t("set.task_translate"), "anthropic"),
+    ("textgen", t("set.task_textgen"), "anthropic"),
 ]
 
 for task, label, prov_default in TASKS:
