@@ -157,10 +157,10 @@ class FakeCursor:
         elif sql.startswith("SELECT") and "sha256 = %s" in sql:
             self.res = [(r["source_artifact_id"], r["archived_locator"]) for r in db.rows
                         if r["sku_id"] == p[0] and r["sha256"] == p[1] and scoped(r, p[2:])][:1]
-        elif sql.startswith("SELECT DISTINCT passport_id"):
+        elif sql.startswith("SELECT source_artifact_id FROM") and "passport_id <> %s" in sql:
             # Значение lifecycle — из запроса: без фильтра «ACTIVE» сюда попали бы архивные.
             want = re.search(r"lifecycle = '(\w+)'", sql)
-            self.res = sorted({(r["passport_id"],) for r in db.rows
+            self.res = sorted({(r["source_artifact_id"],) for r in db.rows
                                if r["sku_id"] == p[0] and r["passport_id"] != p[1] and scoped(r, p[2:])
                                and (want is None or r["lifecycle"] == want.group(1))})
         elif sql.startswith("SELECT sku_id"):
@@ -283,15 +283,36 @@ def asked(fn, want):
 
 
 check("другой паспорт у SKU — вопрос «заменить?» с действующим id, ничего не записано",
-      asked(lambda: reg(P2), ("PASS-99601000-B-001",)) and len(db.rows) == 3 and store.puts == puts)
-check("ответ не про те id — снова вопрос, а не молчаливая замена",
-      asked(lambda: pc.register(P2, "p2.docx", actor="a", store=store, conn=db, replace=("PASS-X",)),
-            ("PASS-99601000-B-001",)) and len(db.rows) == 3)
-r = pc.register(P2, "p2.docx", actor="a", store=store, conn=db, replace=("PASS-99601000-B-001",))
+      asked(lambda: reg(P2), ("DOCX-PASS-99601000-B-001-v3",)) and len(db.rows) == 3 and store.puts == puts)
+check("ответ про прежнюю версию той же копии — снова вопрос, а не молчаливая замена",
+      asked(lambda: pc.register(P2, "p2.docx", actor="a", store=store, conn=db, replace=("DOCX-PASS-99601000-B-001-v2",)),
+            ("DOCX-PASS-99601000-B-001-v3",)) and len(db.rows) == 3)
+r = pc.register(P2, "p2.docx", actor="a", store=store, conn=db, replace=("DOCX-PASS-99601000-B-001-v3",))
 check("подтверждённая замена — REGISTERED, прежний паспорт в архиве, действует один",
       r.status == "REGISTERED" and r.superseded == ["DOCX-PASS-99601000-B-001-v3"]
       and [x["lifecycle"] for x in db.rows if x["mime_type"] == pc.MIME] == ["OLD", "OLD", "ACTIVE"])
 check("строка приёма и после замены не тронута", db.rows[0] == FOREIGN)
+
+# Два действующих паспорта (так было бы до этого правила или после сбоя): ответ
+# про один не архивирует второй — вопрос заново; набор шире действующего — тоже.
+db5, s5 = FakeDB(), CountingStore()
+for pid_, ver_ in (("PASS-A", "1"), ("PASS-B", "1")):
+    d_ = docx(header(ver_, pid=pid_))
+    s5.put(pc.copy_path(pc.read_header(d_)), d_)
+    db5.rows.append({"source_artifact_id": f"DOCX-{pid_}-v{ver_}", "sku_id": "99601000-B", "passport_id": pid_,
+                     "archived_locator": pc.ROOT + "/" + pc.copy_path(pc.read_header(d_)), "mime_type": pc.MIME,
+                     "sha256": hashlib.sha256(d_).hexdigest(), "lifecycle": "ACTIVE"})
+NEWP = docx(header("1", pid="PASS-C"))
+both = ("DOCX-PASS-A-v1", "DOCX-PASS-B-v1")
+r5 = lambda rep: pc.register(NEWP, "c.docx", actor="a", store=s5, conn=db5, replace=rep)  # noqa: E731
+check("два действующих: вопрос называет обе копии", asked(lambda: r5(()), both))
+check("ответ про одну из двух — вопрос заново, ничего не в архиве",
+      asked(lambda: r5(("DOCX-PASS-A-v1",)), both) and all(x["lifecycle"] == "ACTIVE" for x in db5.rows))
+check("набор шире действующего — вопрос заново",
+      asked(lambda: r5(both + ("DOCX-PASS-Z-v9",)), both) and len(db5.rows) == 2)
+check("подтверждены обе — обе в архиве, действует одна новая",
+      r5(both).status == "REGISTERED"
+      and sorted(x["lifecycle"] for x in db5.rows) == ["ACTIVE", "OLD", "OLD"])
 try:
     _st = reg(docx(header("2", pid="PASS-99601000-B-002"))).status
 except pc.CopyError as e:

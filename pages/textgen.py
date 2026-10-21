@@ -254,7 +254,10 @@ if pp_header:
             res = pc.register(pp_data, up.name, actor=auth.actor(), store=store, conn=conn, replace=replace)
         except pc.CopyError as e:
             if e.code == "OTHER_PASSPORT_ACTIVE":
+                # Вопрос — заново и с новым ключом кнопки: нажатие по прежнему
+                # вопросу не должно ответить на другой (проверка #164).
                 st.session_state["tg-pp-ask"] = (pp_sha, e.active)
+                st.rerun()           # соединение закроет finally
             else:
                 st.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
         except Exception as e:  # noqa: BLE001 — база: файл уже в томе, повтор его узнает
@@ -269,14 +272,20 @@ if pp_header:
         finally:
             conn.close()
 
+    ask_box = st.empty()
     if st.button(t("tg.pp.save"), type="primary", disabled=not may, key="tg-pp-save"):
         _save()
     ask = st.session_state.get("tg-pp-ask")
     if ask and ask[0] == pp_sha:
-        # Вопрос привязан к ЭТОМУ файлу: сменили файл — вопрос снят.
-        st.warning(t("tg.pp.ask_replace", sku=pp_header["sku_id"], ids=", ".join(ask[1]),
-                     pid=pp_header["passport_id"]))
-        if st.button(t("tg.pp.replace"), disabled=not may, key="tg-pp-replace"):
+        # Вопрос привязан к ЭТОМУ файлу и к ЭТОМУ набору копий: ключ кнопки несёт
+        # их отпечаток, поэтому новый вопрос — новая кнопка.
+        ask_key = hashlib.sha256("|".join(ask[1]).encode("utf-8")).hexdigest()[:12]
+        with ask_box.container():
+            st.warning(t("tg.pp.ask_replace", sku=pp_header["sku_id"], ids=", ".join(ask[1]),
+                         pid=pp_header["passport_id"]))
+            go = st.button(t("tg.pp.replace"), disabled=not may, key=f"tg-pp-replace-{ask_key}")
+        if go:
+            ask_box.empty()          # ответ получен — вопрос над итогом не висит
             _save(replace=tuple(ask[1]))
     lst, lerr = pc.copies(pp_header["sku_id"])
     st.markdown(f"**{t('tg.pp.list', sku=pp_header['sku_id'])}**")

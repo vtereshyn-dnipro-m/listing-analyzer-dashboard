@@ -166,9 +166,10 @@ def register(data: bytes, origin_name: str, *, actor: str, store: ArtifactStore,
     записи файла — файл остаётся, повторная загрузка того же файла его узнаёт.
 
     Один SKU — один действующий паспорт (решение владельца 21.10.2026). Если у SKU
-    уже действует паспорт с другим id, без `replace` — отказ OTHER_PASSPORT_ACTIVE
-    с этими id в `active`: страница спрашивает «заменить?». `replace` — ровно те id,
-    что человек видел в вопросе; разошлись (кто-то успел загрузить третий) — снова
+    уже действует паспорт с другим id, без `replace` — отказ OTHER_PASSPORT_ACTIVE,
+    в `active` — id действующих КОПИЙ (`DOCX-<паспорт>-v<версия>`, с версией): страница
+    спрашивает «заменить?». `replace` — ровно тот набор, что человек видел; разошёлся
+    хоть на одну копию (успели загрузить третий паспорт или новую версию) — снова
     вопрос, а не молчаливая замена. После замены прежние копии SKU — в OLD (архив)."""
     h = read_header(data)
     sha = hashlib.sha256(data).hexdigest()
@@ -196,7 +197,7 @@ def register(data: bytes, origin_name: str, *, actor: str, store: ArtifactStore,
         other = cur.fetchone()
         if other:
             raise CopyError("PASSPORT_OTHER_SKU", f"{pid} → {other[0]}")
-        cur.execute("SELECT DISTINCT passport_id FROM passport_source_artifacts WHERE sku_id = %s"
+        cur.execute("SELECT source_artifact_id FROM passport_source_artifacts WHERE sku_id = %s"
                     " AND passport_id <> %s AND lifecycle = 'ACTIVE'" + mine, (sku, pid) + scope)
         active = tuple(sorted(r[0] for r in cur.fetchall()))
         if active and active != tuple(sorted(replace)):
