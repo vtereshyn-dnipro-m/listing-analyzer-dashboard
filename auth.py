@@ -51,7 +51,12 @@ VIEWER = "viewer"
 CONTENT_MANAGER = "content_manager"
 APPROVER = "approver"
 ADMIN = "admin"
-ROLES = [VIEWER, CONTENT_MANAGER, APPROVER, ADMIN]
+# Роль пилота «Генератор текстов» (21.10.2026, решение владельца: Ярослав — не
+# администратор). Видит ТОЛЬКО страницу генератора: ни одной другой страницы и
+# ни одного действия. Роль заводится в базе Кабинета SQL-файлом
+# `migrations/kabinet/2026-10-21_ls_textgen_role.sql` — применяет владелец.
+TEXTGEN = "textgen_pilot"
+ROLES = [VIEWER, CONTENT_MANAGER, APPROVER, ADMIN, TEXTGEN]
 
 ANON = "listing-suite"
 
@@ -65,6 +70,7 @@ PAGES = [
     ("synthesis",   "pages/synthesis.py",    "nav.synthesis",   ":material/content_cut:",  "work"),
     ("photo",       "pages/photo.py",        "nav.photo",       ":material/photo_camera:", "work"),
     ("content",     "pages/content.py",      "nav.content",     ":material/translate:",    "work"),
+    ("textgen",     "pages/textgen.py",      "nav.textgen",     ":material/edit_note:",    "work"),
     ("matrix",      "pages/matrix_setup.py", "nav.matrix",      ":material/account_tree:", "settings"),
     ("methodology", "pages/methodology.py",  "nav.methodology", ":material/menu_book:",    "settings"),
     ("settings",    "pages/settings.py",     "nav.settings",    ":material/settings:",     "settings"),
@@ -92,7 +98,10 @@ _MATRIX = {
     "ls.settings.edit": {ADMIN},
 }
 for _ключ, *_ in PAGES:
-    _MATRIX["ls.page." + _ключ] = set(ROLES)
+    # Страницы видны всем прежним ролям, как и было. Роль пилота видит только
+    # генератор, а сам генератор — только администратор и роль пилота.
+    _MATRIX["ls.page." + _ключ] = set(ROLES) - {TEXTGEN}
+_MATRIX["ls.page.textgen"] = {ADMIN, TEXTGEN}
 
 
 class User:
