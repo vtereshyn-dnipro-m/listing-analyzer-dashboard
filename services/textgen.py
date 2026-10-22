@@ -295,3 +295,43 @@ def latest(sku: str, marketplace: str):
         " FROM content_versions WHERE sku = %(s)s AND marketplace = %(m)s AND proposal_id = ("
         " SELECT proposal_id FROM content_versions WHERE sku = %(s)s AND marketplace = %(m)s"
         " AND proposal_id LIKE 'TG-%%' ORDER BY id DESC LIMIT 1)", {"s": sku, "m": marketplace})
+
+
+# ------------------------------------------------------------------ SKU ↔ ASIN
+# Связь товара сверху (ASIN пилота) и товара генерации (SKU паспорта). Два
+# источника: справочник SKU Кабинета (`passport.sku_directory`, точный код и
+# наблюдаемые листинги) и матрица (`product_matrix.sku_group` на рынке ES).
+# В матрице у варианта бывает базовый код: у 99601000-B там «99601000» — поэтому
+# по ТОЧНОМУ коду сначала справочник, матрица — вторым источником, без угадывания
+# базового кода по суффиксу.
+def _split(row, col: str) -> list[str]:
+    from services.cells import cell_text      # NaN — пусто, не «nan» (правило 4)
+    return [a for a in cell_text(row, col).split() if a]
+
+
+def asins_for_sku(sku: str, directory, matrix_es) -> list[str]:
+    """ASIN ES товара. Рынок знает только матрица: без неё (не прочиталась) ES не
+    проверить, и ответ пустой — справочник отдаёт ASIN всех рынков (проверка #168).
+    Из справочника — только ASIN, что стоят на ES в матрице; из матрицы — по
+    точному SKU."""
+    if matrix_es is None:
+        return []
+    es = set(matrix_es["asin"]) if not matrix_es.empty else set()
+    out = set()
+    if directory is not None and not directory.empty:
+        for _, r in directory[directory["sku"] == sku].iterrows():
+            out |= {a for a in _split(r, "asins") if a in es}
+    if not matrix_es.empty:
+        from services.cells import cell_text
+        out |= {cell_text(r, "asin") for _, r in matrix_es.iterrows() if cell_text(r, "sku_group") == sku}
+    return sorted(a for a in out if a)
+
+
+def skus_for_asin(asin: str, directory, matrix_es) -> list[str]:
+    from services.cells import cell_text
+    out = set()
+    if directory is not None and not directory.empty:
+        out |= {cell_text(r, "sku") for _, r in directory.iterrows() if asin in _split(r, "asins")}
+    if matrix_es is not None and not matrix_es.empty:
+        out |= {cell_text(r, "sku_group") for _, r in matrix_es.iterrows() if cell_text(r, "asin") == asin}
+    return sorted(x for x in out if x)

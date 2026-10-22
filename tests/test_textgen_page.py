@@ -105,6 +105,11 @@ from services import textgen as tg  # noqa: E402
 
 GEN = {"copies": (pd.DataFrame(), None)}
 tg.active_copies = lambda: GEN["copies"]
+# Справочник SKU Кабинета: по умолчанию пуст (связь SKU ↔ ASIN — сценарии ниже).
+from services import passport as _passport_svc  # noqa: E402
+
+LINK = {"dir": pd.DataFrame(columns=["sku", "asins"])}
+_passport_svc.sku_directory = lambda: (LINK["dir"], LINK.get("err"))
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
@@ -499,6 +504,10 @@ _task_config = ai.task_config
 ai.task_config = lambda task: ("anthropic", "claude-sonnet-5")
 
 
+def esc(x: str) -> str:
+    return x.replace("$", "\\$")
+
+
 def _warn(at):
     return "\n".join(str(w.value) for w in at.warning)
 
@@ -506,14 +515,20 @@ def _warn(at):
 at = run()
 btn = at.button(key="tg-gen-go")
 check("генерация: кнопка есть и включена при методологии, цене и запасе лимита", not btn.disabled)
-check("генерация: расход за сегодня назван у кнопки",
-      lab("tg.gen.usage", n=0, n_max=10, a=0.0, a_max=1.0, b=0.0, b_max=10.0) in texts_of(at))
+check("генерация: расход за сегодня назван у кнопки, «$» экранирован для markdown",
+      esc(lab("tg.gen.usage", n=0, n_max=10, a=0.0, a_max=1.0, b=0.0, b_max=10.0)) in texts_of(at)
+      and "\\$0.00 / \\$1 на товар · пилот \\$0.00 / \\$10" in texts_of(at))
+check("лимиты в подсказке — словами владельца, «$» экранирован",
+      "10 вызовов на товар в сутки, \\$1 на товар в сутки, \\$10 в сутки на пилот" in texts_of(at))
 btn.click().run()
 check("нажатие — ровно один вызов генерации, модель — слой ai, автор и рынок переданы",
       len(GEN["calls"]) == 1 and GEN["calls"][0]["ai_call"] is ai.generate_json
       and GEN["calls"][0]["sku"] == "99601000-B" and GEN["calls"][0]["marketplace"] == "es"
       and GEN["calls"][0]["method"] == ("методология textgen", 1))
 check("итог генерации назван", any("TG-7" in str(x.value) for x in at.success))
+check("на всей странице нет неэкранированного «$» в тексте сообщений",
+      not any(re.search(r"(?<!\\)\$", str(e.value))
+              for coll in (at.caption, at.warning, at.success, at.info, at.error) for e in coll))
 check("настоящая модель при этом не вызывалась", STATE["ai_calls"] == [])
 
 GEN["usage"] = tg.Usage(calls_sku=10)
@@ -523,7 +538,7 @@ check("лимит 10 вызовов на товар — кнопка выклю�
 GEN["usage"] = tg.Usage(usd_pilot=9.99)
 at = run()
 check("лимит $10 на пилот (с оценкой следующего вызова) — кнопка выключена",
-      at.button(key="tg-gen-go").disabled and "$10" in _warn(at))
+      at.button(key="tg-gen-go").disabled and "\\$10" in _warn(at))
 GEN["usage"] = tg.Usage()
 METHOD["text"] = ""
 _st.cache_data.clear()       # методология кэшируется страницей на 120 с
@@ -556,6 +571,83 @@ auth.can = lambda a: a != "ls.textgen.accept"
 at = run()
 check("без права ls.textgen.accept «Сгенерировать» выключена", at.button(key="tg-gen-go").disabled)
 auth.can = _can
+
+# Связь SKU ↔ ASIN: справочник Кабинета по точному коду, матрица ES вторым источником.
+MATRIX_ES = pd.DataFrame([{"asin": "B0H75P364R", "sku_group": "S5_78739000"},
+                          {"asin": "B0GTRY26HB", "sku_group": "99601000"}])
+
+
+LINK["mx_err"] = None
+
+
+def _safe_read2(sql, params=None):
+    if "product_matrix" in sql:
+        if LINK["mx_err"]:
+            return pd.DataFrame(), LINK["mx_err"]
+        return MATRIX_ES, None
+    return _safe_read(sql, params)
+
+
+_db.safe_read = _safe_read2
+_st.cache_data.clear()
+LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0GTRY26HB"}])
+at = run()
+check("сверху у ASIN назван его SKU (матрица)", lab("tg.link.sku", skus="S5_78739000") in texts_of(at))
+check("внизу у SKU генерации — его ASIN ES (справочник по точному коду)",
+      lab("tg.link.asins", asins="B0GTRY26HB") in texts_of(at))
+check("ASIN сверху не этот товар — предупреждение о разных товарах",
+      lab("tg.link.mismatch", asin="B0H75P364R", sku="99601000-B", asins="B0GTRY26HB", top="S5_78739000") in _warn(at))
+LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0H75P364R"}])
+_st.cache_data.clear()
+at = run()
+check("совпали — предупреждения о разных товарах нет",
+      lab("tg.link.asins", asins="B0H75P364R") in texts_of(at)
+      and lab("tg.link.mismatch", asin="B0H75P364R", sku="99601000-B", asins="B0H75P364R", top="S5_78739000, 99601000-B")
+      not in _warn(at) and "tg.link.mismatch" not in _warn(at)
+      and not any(i18n.LANGS["ru"]["tg.link.mismatch"].split("{")[0] in str(w.value) for w in at.warning))
+LINK["dir"] = pd.DataFrame(columns=["sku", "asins"])
+_st.cache_data.clear()
+at = run()
+check("у SKU нет ASIN ES — сказано, а не молчание",
+      lab("tg.link.asins_none", sku="99601000-B") in texts_of(at)
+      and lab("tg.link.no_asin", sku="99601000-B", asin="B0H75P364R") in _warn(at))
+check("вариант 99601000-B не сопоставляется с базовым 99601000 матрицы по догадке",
+      tg.asins_for_sku("99601000-B", None, MATRIX_ES) == [])
+
+# Сбой источника — «не прочитано», а не «не найдено» (проверка #168).
+LINK["dir"], LINK["err"] = pd.DataFrame(columns=["sku", "asins"]), "OperationalError: kabinet down"
+_st.cache_data.clear()
+at = run()
+check("справочник не прочитан — сказано у генерации, а не «ASIN ES не найден» с предупреждением",
+      "kabinet down" in texts_of(at) and lab("tg.link.unread", sku="99601000-B") in texts_of(at)
+      and lab("tg.link.asins_none", sku="99601000-B") not in texts_of(at)
+      and lab("tg.link.no_asin", sku="99601000-B", asin="B0H75P364R") not in _warn(at))
+check("справочник не прочитан — матрица всё равно даёт SKU сверху", lab("tg.link.sku", skus="S5_78739000") in texts_of(at))
+check("подпись о сбое — и сверху, и у генерации (две)",
+      sum(1 for c in at.caption if "kabinet down" in str(c.value)) == 2)
+LINK["err"], LINK["mx_err"] = None, "OperationalError: matrix down"
+LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0GTRY26HB B0DEDEDEDE"}])
+_st.cache_data.clear()
+at = run()
+check("матрица не прочитана — ASIN справочника не выдаются за ES и «не найдено» не пишется",
+      "matrix down" in texts_of(at) and "B0DEDEDEDE" not in texts_of(at)
+      and lab("tg.link.sku_none") not in texts_of(at) and lab("tg.link.unread", sku="99601000-B") in texts_of(at))
+LINK["mx_err"] = None
+check("ASIN справочника с другого рынка не выдаётся за ES",
+      tg.asins_for_sku("99601000-B", LINK["dir"], MATRIX_ES) == ["B0GTRY26HB"])
+check("без матрицы ES не проверить — ответ пустой", tg.asins_for_sku("99601000-B", LINK["dir"], None) == [])
+NAN_DIR = pd.DataFrame([{"sku": "99601000-B", "asins": float("nan")}, {"sku": float("nan"), "asins": "B0GTRY26HB"}])
+check("NaN в ячейке справочника — не «nan» (правило 4)",
+      "nan" not in tg.asins_for_sku("99601000-B", NAN_DIR, MATRIX_ES)
+      and "nan" not in tg.skus_for_asin("B0GTRY26HB", NAN_DIR, MATRIX_ES))
+check("конкуренты в связь не идут (запрос матрицы)", "is_competitor IS NOT TRUE" in SRC)
+# «$» внутри `кода` не экранируется: там обратная косая осталась бы на экране.
+_st.cache_data.clear()
+at = run(title="DNIPRO-M Amoladora $ 125mm")
+check("запрещённый «$» в тайтле назван как `$`, без обратной косой",
+      any("`$`" in str(m.value) for m in at.markdown) and not any("`\\$`" in str(m.value) for m in at.markdown))
+LINK["dir"] = pd.DataFrame(columns=["sku", "asins"])
+_db.safe_read = _safe_read
 
 GEN["latest"] = (pd.DataFrame([
     {"field": f, "text": f"текст {f}", "text_len": 10, "version": 1, "proposal_id": "TG-7", "status": "draft",
