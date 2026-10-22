@@ -641,6 +641,11 @@ check("NaN в ячейке справочника — не «nan» (правил
       "nan" not in tg.asins_for_sku("99601000-B", NAN_DIR, MATRIX_ES)
       and "nan" not in tg.skus_for_asin("B0GTRY26HB", NAN_DIR, MATRIX_ES))
 check("конкуренты в связь не идут (запрос матрицы)", "is_competitor IS NOT TRUE" in SRC)
+# «$» внутри `кода` не экранируется: там обратная косая осталась бы на экране.
+_st.cache_data.clear()
+at = run(title="DNIPRO-M Amoladora $ 125mm")
+check("запрещённый «$» в тайтле назван как `$`, без обратной косой",
+      any("`$`" in str(m.value) for m in at.markdown) and not any("`\\$`" in str(m.value) for m in at.markdown))
 LINK["dir"] = pd.DataFrame(columns=["sku", "asins"])
 _db.safe_read = _safe_read
 

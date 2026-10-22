@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 
 import pandas as pd
 import streamlit as st
@@ -58,13 +59,22 @@ def section(text: str) -> None:
     say.markdown(eyebrow(text), unsafe_allow_html=True)
 
 
+def esc_dollar(text: str) -> str:
+    """«$» → «\\$» вне `кода`: Streamlit читает «$…$» в markdown как формулу, а
+    внутри обратных кавычек обратная косая черта не работает и осталась бы на
+    экране (проверка #168)."""
+    parts = re.split(r"(`[^`]*`)", str(text))
+    return "".join(p if p.startswith("`") and p.endswith("`") and len(p) > 1 else p.replace("$", "\\$")
+                   for p in parts)
+
+
 class _Say:
-    """st.caption / warning / … с экранированным «$»: Streamlit читает «$…$» в
-    markdown как формулу, и «$1 на товар … $10» превращалось в курсив без знаков."""
+    """st.caption / warning / … с экранированным «$» (см. esc_dollar): «$1 на
+    товар … $10» иначе превращалось в курсив без знаков."""
 
     def __getattr__(self, name):
         fn = getattr(st, name)
-        return lambda text, *a, **k: fn(str(text).replace("$", "\\$"), *a, **k)
+        return lambda text, *a, **k: fn(esc_dollar(text), *a, **k)
 
 
 say = _Say()
@@ -441,7 +451,8 @@ else:
     elif not g_asins:
         say.caption(t("tg.link.asins_none", sku=g_sku))
         say.warning(t("tg.link.no_asin", sku=g_sku, asin=asin))
-    elif asin not in g_asins:
+    elif asin not in g_asins and not link_errs:
+        # при сбое источника связь неполная — «про разные товары» не утверждаем
         say.warning(t("tg.link.mismatch", asin=asin, sku=g_sku, asins=", ".join(g_asins),
                       top=", ".join(top_skus) or "—"))
     say.caption(t("tg.gen.passport", pid=cell_text(g_copy, "passport_id"), aid=cell_text(g_copy, "source_artifact_id")))
