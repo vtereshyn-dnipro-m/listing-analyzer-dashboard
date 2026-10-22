@@ -304,27 +304,34 @@ def latest(sku: str, marketplace: str):
 # В матрице у варианта бывает базовый код: у 99601000-B там «99601000» — поэтому
 # по ТОЧНОМУ коду сначала справочник, матрица — вторым источником, без угадывания
 # базового кода по суффиксу.
-def _split(x) -> list[str]:
-    return [a for a in str(x or "").split() if a]
+def _split(row, col: str) -> list[str]:
+    from services.cells import cell_text      # NaN — пусто, не «nan» (правило 4)
+    return [a for a in cell_text(row, col).split() if a]
 
 
 def asins_for_sku(sku: str, directory, matrix_es) -> list[str]:
-    """ASIN ES товара: из справочника (только те, что есть на ES в матрице, если
-    матрица что-то знает про ES) и из матрицы по точному SKU."""
-    es = set(matrix_es["asin"]) if matrix_es is not None and not matrix_es.empty else set()
+    """ASIN ES товара. Рынок знает только матрица: без неё (не прочиталась) ES не
+    проверить, и ответ пустой — справочник отдаёт ASIN всех рынков (проверка #168).
+    Из справочника — только ASIN, что стоят на ES в матрице; из матрицы — по
+    точному SKU."""
+    if matrix_es is None:
+        return []
+    es = set(matrix_es["asin"]) if not matrix_es.empty else set()
     out = set()
     if directory is not None and not directory.empty:
         for _, r in directory[directory["sku"] == sku].iterrows():
-            out |= {a for a in _split(r.get("asins")) if not es or a in es}
-    if matrix_es is not None and not matrix_es.empty:
-        out |= set(matrix_es.loc[matrix_es["sku_group"] == sku, "asin"])
-    return sorted(out)
+            out |= {a for a in _split(r, "asins") if a in es}
+    if not matrix_es.empty:
+        from services.cells import cell_text
+        out |= {cell_text(r, "asin") for _, r in matrix_es.iterrows() if cell_text(r, "sku_group") == sku}
+    return sorted(a for a in out if a)
 
 
 def skus_for_asin(asin: str, directory, matrix_es) -> list[str]:
+    from services.cells import cell_text
     out = set()
     if directory is not None and not directory.empty:
-        out |= {str(r["sku"]) for _, r in directory.iterrows() if asin in _split(r.get("asins"))}
+        out |= {cell_text(r, "sku") for _, r in directory.iterrows() if asin in _split(r, "asins")}
     if matrix_es is not None and not matrix_es.empty:
-        out |= {str(s) for s in matrix_es.loc[matrix_es["asin"] == asin, "sku_group"] if s and str(s) != "nan"}
-    return sorted(out)
+        out |= {cell_text(r, "sku_group") for _, r in matrix_es.iterrows() if cell_text(r, "asin") == asin}
+    return sorted(x for x in out if x)

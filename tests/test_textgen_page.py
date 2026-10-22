@@ -109,7 +109,7 @@ tg.active_copies = lambda: GEN["copies"]
 from services import passport as _passport_svc  # noqa: E402
 
 LINK = {"dir": pd.DataFrame(columns=["sku", "asins"])}
-_passport_svc.sku_directory = lambda: (LINK["dir"], None)
+_passport_svc.sku_directory = lambda: (LINK["dir"], LINK.get("err"))
 
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
@@ -577,8 +577,13 @@ MATRIX_ES = pd.DataFrame([{"asin": "B0H75P364R", "sku_group": "S5_78739000"},
                           {"asin": "B0GTRY26HB", "sku_group": "99601000"}])
 
 
+LINK["mx_err"] = None
+
+
 def _safe_read2(sql, params=None):
     if "product_matrix" in sql:
+        if LINK["mx_err"]:
+            return pd.DataFrame(), LINK["mx_err"]
         return MATRIX_ES, None
     return _safe_read(sql, params)
 
@@ -608,6 +613,35 @@ check("у SKU нет ASIN ES — сказано, а не молчание",
       and lab("tg.link.no_asin", sku="99601000-B", asin="B0H75P364R") in _warn(at))
 check("вариант 99601000-B не сопоставляется с базовым 99601000 матрицы по догадке",
       tg.asins_for_sku("99601000-B", None, MATRIX_ES) == [])
+
+# Сбой источника — «не прочитано», а не «не найдено» (проверка #168).
+LINK["dir"], LINK["err"] = pd.DataFrame(columns=["sku", "asins"]), "OperationalError: kabinet down"
+_st.cache_data.clear()
+at = run()
+check("справочник не прочитан — сказано у генерации, а не «ASIN ES не найден» с предупреждением",
+      "kabinet down" in texts_of(at) and lab("tg.link.unread", sku="99601000-B") in texts_of(at)
+      and lab("tg.link.asins_none", sku="99601000-B") not in texts_of(at)
+      and lab("tg.link.no_asin", sku="99601000-B", asin="B0H75P364R") not in _warn(at))
+check("справочник не прочитан — матрица всё равно даёт SKU сверху", lab("tg.link.sku", skus="S5_78739000") in texts_of(at))
+check("подпись о сбое — и сверху, и у генерации (две)",
+      sum(1 for c in at.caption if "kabinet down" in str(c.value)) == 2)
+LINK["err"], LINK["mx_err"] = None, "OperationalError: matrix down"
+LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0GTRY26HB B0DEDEDEDE"}])
+_st.cache_data.clear()
+at = run()
+check("матрица не прочитана — ASIN справочника не выдаются за ES и «не найдено» не пишется",
+      "matrix down" in texts_of(at) and "B0DEDEDEDE" not in texts_of(at)
+      and lab("tg.link.sku_none") not in texts_of(at) and lab("tg.link.unread", sku="99601000-B") in texts_of(at))
+LINK["mx_err"] = None
+check("ASIN справочника с другого рынка не выдаётся за ES",
+      tg.asins_for_sku("99601000-B", LINK["dir"], MATRIX_ES) == ["B0GTRY26HB"])
+check("без матрицы ES не проверить — ответ пустой", tg.asins_for_sku("99601000-B", LINK["dir"], None) == [])
+NAN_DIR = pd.DataFrame([{"sku": "99601000-B", "asins": float("nan")}, {"sku": float("nan"), "asins": "B0GTRY26HB"}])
+check("NaN в ячейке справочника — не «nan» (правило 4)",
+      "nan" not in tg.asins_for_sku("99601000-B", NAN_DIR, MATRIX_ES)
+      and "nan" not in tg.skus_for_asin("B0GTRY26HB", NAN_DIR, MATRIX_ES))
+check("конкуренты в связь не идут (запрос матрицы)", "is_competitor IS NOT TRUE" in SRC)
+LINK["dir"] = pd.DataFrame(columns=["sku", "asins"])
 _db.safe_read = _safe_read
 
 GEN["latest"] = (pd.DataFrame([

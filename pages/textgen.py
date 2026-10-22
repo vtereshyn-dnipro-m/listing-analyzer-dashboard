@@ -1,13 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-pages/textgen.py — «Генератор текстов (пилот)», шаг 4: каркас БЕЗ модели.
+pages/textgen.py — «Генератор текстов (пилот)».
 
-Ярослав выбирает пилотный товар → видит характеристики (с источником каждого
-значения), чего не хватает, расхождения карточки, набор и ключи по типу товара
-→ пишет тайтл и Item Highlights руками → правила тайтла проверяют их на каждом
-изменении. Модель не вызывается, в Amazon ничего не уходит. В базу и в том UC
-пишет только загрузка паспорта docx (последний блок, право `ls.textgen.accept`,
-`services/passport_copies.py`).
+Верх — пилотный товар: характеристики (с источником каждого значения), чего не
+хватает, расхождения карточки, набор и ключи по типу товара; тайтл и Item
+Highlights пишутся руками, правила тайтла проверяют их на каждом изменении — без
+модели. Низ — паспорт SKU: загрузка копии docx в том UC и генерация по нему
+(`services/textgen.py`): платный вызов модели по нажатию с правом
+`ls.textgen.accept`, черновики в `content_versions`. В Amazon ничего не уходит.
 
 Данные и проверки — из существующих модулей, без копий:
 `services/product_specs.py` (характеристики), `services/seo.py` (ключи по типу,
@@ -55,7 +55,7 @@ st.title(t("nav.textgen"))
 
 
 def section(text: str) -> None:
-    st.markdown(eyebrow(text), unsafe_allow_html=True)
+    say.markdown(eyebrow(text), unsafe_allow_html=True)
 
 
 class _Say:
@@ -83,7 +83,9 @@ def _directory():
 @st.cache_data(ttl=600, show_spinner=False)
 def _matrix_es():
     from services.db import safe_read
-    df, err = safe_read("SELECT asin, sku_group FROM product_matrix WHERE marketplace = 'es'")
+    # конкуренты — не наши ASIN, даже с нашим sku_group (проверка #168)
+    df, err = safe_read("SELECT asin, sku_group FROM product_matrix"
+                        " WHERE marketplace = 'es' AND is_competitor IS NOT TRUE")
     if err:
         raise _ReadFailed(err)
     return df
@@ -154,13 +156,17 @@ asin = st.selectbox(t("tg.pick"), [a for a, _ in PILOT], format_func=_label, key
 mp = MP_BY_ASIN[asin]
 link_dir, link_mx, link_errs = _links()
 top_skus = tg.skus_for_asin(asin, link_dir, link_mx)
-say.caption(t("tg.link.sku", skus=", ".join(top_skus)) if top_skus else t("tg.link.sku_none"))
+if top_skus:
+    say.caption(t("tg.link.sku", skus=", ".join(top_skus)))
+elif not link_errs:
+    say.caption(t("tg.link.sku_none"))
 if link_errs:
+    # «не прочитано», а не «не найдено»: сбой источника не выдаётся за пустоту
     say.caption(t("tg.link.error", err="; ".join(link_errs)))
 
 raw, err = load_raw(asin, mp)
 if err:
-    st.error(t("tg.load_error", err=err))
+    say.error(t("tg.load_error", err=err))
     st.stop()
 specs = ps.extract(asin, mp, **raw)
 current_title = raw.get("title") or ""
@@ -172,7 +178,7 @@ c1.metric(t("tg.type"), t(f"tg.type.{specs.tool_type}") if specs.tool_type else 
 c2.metric(t("tg.model"), specs.model or "—")
 c3.metric(t("tg.power_source"), t("tg.corded") if specs.corded else
           (t("tg.cordless") if specs.corded is False else "—"))
-st.caption(t("tg.current_title", n=len(current_title), title=current_title or "—"))
+say.caption(t("tg.current_title", n=len(current_title), title=current_title or "—"))
 
 # ------------------------------------------------- характеристики
 section(t("tg.specs"))
@@ -184,20 +190,20 @@ if rows:
                                 "value": st.column_config.TextColumn(t("tg.col.value")),
                                 "src": st.column_config.TextColumn(t("tg.col.source"))})
 else:
-    st.caption(t("tg.no_specs"))
+    say.caption(t("tg.no_specs"))
 
 parts = ps.title_parts(specs)
-st.markdown(f"**{t('tg.for_title')}:** " + (", ".join(parts) if parts else "—"))
+say.markdown(f"**{t('tg.for_title')}:** " + (", ".join(parts) if parts else "—"))
 if specs.missing:
-    st.warning(t("tg.missing", fields=", ".join(t(f"tg.field.{f}") for f in specs.missing)))
+    say.warning(t("tg.missing", fields=", ".join(t(f"tg.field.{f}") for f in specs.missing)))
 for fld, have, other in specs.conflicts:
-    st.warning(t("tg.conflict", field=t(f"tg.field.{fld}"),
+    say.warning(t("tg.conflict", field=t(f"tg.field.{fld}"),
                  a=ps.fmt(fld, have.value), a_src=t(f"tg.src.{have.source}"),
                  b=ps.fmt(fld, other.value), b_src=t(f"tg.src.{other.source}")))
 if specs.kit:
-    st.markdown(f"**{t('tg.kit')}:** " + "; ".join(specs.kit))
+    say.markdown(f"**{t('tg.kit')}:** " + "; ".join(specs.kit))
 else:
-    st.caption(t("tg.no_kit"))
+    say.caption(t("tg.no_kit"))
 
 # --------------------------------------------------------- ключи
 section(t("tg.keys"))
@@ -205,17 +211,17 @@ keys_df = None
 if specs.tool_type:
     keys_df, kerr, n_asins = load_keys(specs.tool_type, mp, current_title)
     if kerr:
-        st.error(t("tg.keys_error", err=kerr))
+        say.error(t("tg.keys_error", err=kerr))
     elif keys_df is None or keys_df.empty:
-        st.caption(t("tg.keys_empty", n=n_asins))
+        say.caption(t("tg.keys_empty", n=n_asins))
     else:
-        st.caption(t("tg.keys_from", n=n_asins))
+        say.caption(t("tg.keys_from", n=n_asins))
 else:
-    st.caption(t("tg.keys_no_type"))
+    say.caption(t("tg.keys_no_type"))
 
 # ------------------------------------------------- ручной ввод
 section(t("tg.write"))
-st.caption(t("tg.write_hint"))
+say.caption(t("tg.write_hint"))
 title_in = st.text_input(t("tg.title_label"), key=f"tg-title-{asin}")
 hl_in = st.text_area(t("tg.hl_label"), key=f"tg-hl-{asin}", height=90)
 
@@ -225,23 +231,23 @@ def counter(n: int, limit: int) -> str:
     return f'<span style="color:{color};font-weight:600">{n} / {limit}</span>'
 
 
-st.markdown(f'{t("tg.title_len")}: ' + counter(len(title_in), tr.TITLE_LIMIT) + " · "
+say.markdown(f'{t("tg.title_len")}: ' + counter(len(title_in), tr.TITLE_LIMIT) + " · "
             + f'{t("tg.hl_len")}: ' + counter(len(hl_in), tr.Ruleset().highlight_limit),
             unsafe_allow_html=True)
 
 if title_in or hl_in:
     found = tr.check(title_in, hl_in, kind=specs.kind, model=specs.model if hl_in else None)
     if found:
-        st.error(t("tg.violations", n=len(found)))
+        say.error(t("tg.violations", n=len(found)))
         for v in found:
-            st.markdown(f"- **{t(f'tg.code.{v.code}')}** ({t(f'tg.where.{v.field}')})"
+            say.markdown(f"- **{t(f'tg.code.{v.code}')}** ({t(f'tg.where.{v.field}')})"
                         + (f": `{v.detail}`" if v.detail else ""))
     else:
-        st.success(t("tg.all_ok"))
+        say.success(t("tg.all_ok"))
     # Без модели префикс «Model …: » не проверить. «Нарушений нет» без этой
     # оговорки выдавало бы непроверенное за проверенное.
     if hl_in and not specs.model:
-        st.warning(t("tg.no_model_prefix"))
+        say.warning(t("tg.no_model_prefix"))
 
 if keys_df is not None and not keys_df.empty:
     typed = f"{title_in} {hl_in}"
@@ -274,7 +280,7 @@ if up is not None:
         say.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
 if pp_header:
     state = pp_header.get("state") or "—"
-    st.markdown(t("tg.pp.header", sku=pp_header["sku_id"], pid=pp_header["passport_id"],
+    say.markdown(t("tg.pp.header", sku=pp_header["sku_id"], pid=pp_header["passport_id"],
                   ver=pp_header["passport_version"], state=state))
     if state != "READY":
         say.warning(t("tg.pp.not_ready", state=state))
@@ -342,7 +348,7 @@ if pp_header:
             ask_box.empty()          # ответ получен — вопрос над итогом не висит
             _save(replace=tuple(ask[1]))
     lst, lerr = pc.copies(pp_header["sku_id"])
-    st.markdown(f"**{t('tg.pp.list', sku=pp_header['sku_id'])}**")
+    say.markdown(f"**{t('tg.pp.list', sku=pp_header['sku_id'])}**")
     if lerr:
         say.error(t("tg.pp.list_error", err=lerr))
     elif lst.empty:
@@ -426,8 +432,14 @@ else:
     g_mp = g2.selectbox(t("tg.gen.mp"), mps, index=mps.index("es"), format_func=str.upper, key="tg-gen-mp")
     g_copy = copies_df[copies_df["sku_id"] == g_sku].iloc[0].to_dict()
     g_asins = tg.asins_for_sku(g_sku, link_dir, link_mx)
-    say.caption(t("tg.link.asins", asins=", ".join(g_asins)) if g_asins else t("tg.link.asins_none", sku=g_sku))
-    if not g_asins:
+    if g_asins:
+        say.caption(t("tg.link.asins", asins=", ".join(g_asins)))
+    if link_errs:
+        say.caption(t("tg.link.error", err="; ".join(link_errs)))
+    if not g_asins and link_errs:
+        say.caption(t("tg.link.unread", sku=g_sku))
+    elif not g_asins:
+        say.caption(t("tg.link.asins_none", sku=g_sku))
         say.warning(t("tg.link.no_asin", sku=g_sku, asin=asin))
     elif asin not in g_asins:
         say.warning(t("tg.link.mismatch", asin=asin, sku=g_sku, asins=", ".join(g_asins),
@@ -526,7 +538,7 @@ else:
         say.caption(t("tg.gen.none", sku=g_sku, mp=g_mp.upper()))
     else:
         r0 = lat.iloc[0]
-        st.markdown("**" + t("tg.gen.latest", proposal=cell_text(r0, "proposal_id"), model=cell_text(r0, "model"),
+        say.markdown("**" + t("tg.gen.latest", proposal=cell_text(r0, "proposal_id"), model=cell_text(r0, "model"),
                              at=str(r0["created_at"])[:16]) + "**")
         order = {f: i for i, f in enumerate(tg.FIELDS)}
         limits = {"title": tr.TITLE_LIMIT, "highlight": tr.Ruleset().highlight_limit}
@@ -536,12 +548,12 @@ else:
             label = (t("tg.gen.field.bullet", n=f.split("_")[1]) if f.startswith("bullet_")
                      else t(f"tg.gen.field.{f}"))
             n = int(row["text_len"])
-            st.markdown(f"{label} · " + (counter(n, limits[f]) if f in limits else str(n)), unsafe_allow_html=True)
+            say.markdown(f"{label} · " + (counter(n, limits[f]) if f in limits else str(n)), unsafe_allow_html=True)
             st.code(cell_text(row, "text"), language=None, wrap_lines=True)
             raw = row["checks"]
             items = raw if isinstance(raw, list) else (json.loads(raw) if isinstance(raw, str) and raw else [])
             for v in items:
                 any_bad = True
-                st.markdown(_check_line(v))
+                say.markdown(_check_line(v))
         if not any_bad:
             say.success(t("tg.gen.ok_checks"))
