@@ -1,4 +1,4 @@
-# ОТПЕЧАТОК ИСТОЧНИКА: 68452d1d6b3e8555b25f1aefd84cfc76e91268cf2750283f81a87bc4819b4a05
+# ОТПЕЧАТОК ИСТОЧНИКА: 3294641c03c3cdaf5dae3ad25a3501b6bb9715a8f53f4afbb6773e94aae0ad01
 # access_screen.py — экран «Доступ»: один на два приложения.
 """Админка доступа (ТЗ 010): люди, роли, матрица прав, тестовый вход, журналы.
 
@@ -844,6 +844,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.action.page.reorder": "Страница: видеть «Автозаказ»",
         "auth.action.page.reviews": "Страница: видеть «Отзывы»",
         "auth.action.page.stock": "Страница: видеть «Остатки»",
+        "auth.action.page.tiktok": "Страница: видеть «TikTok Shop»",
         "auth.action.reorder.act": "Автозаказ: заказ и переброска",
         "auth.admin.actions": "Журнал действий",
         "auth.admin.bad_country": "Не код страны: {v} (у {email}). Нужны двухбуквенные коды из справочника.",
@@ -965,6 +966,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.log.act.page.reorder": "Открывал «Автозаказ»",
         "auth.log.act.page.reviews": "Открывал «Отзывы»",
         "auth.log.act.page.stock": "Открывал «Остатки»",
+        "auth.log.act.page.tiktok": "Открывал «TikTok Shop»",
         "auth.log.act.qa.new_token": "Выпускал токен тестового входа",
         "auth.log.act.qa.revoke": "Гасил токены тестового входа",
         "auth.log.act.reorder.act": "Подтверждал заказ или переброску",
@@ -1047,6 +1049,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.action.page.reorder": "Сторінка: бачити «Автозамовлення»",
         "auth.action.page.reviews": "Сторінка: бачити «Відгуки»",
         "auth.action.page.stock": "Сторінка: бачити «Залишки»",
+        "auth.action.page.tiktok": "Сторінка: бачити «TikTok Shop»",
         "auth.action.reorder.act": "Автозамовлення: замовлення і перекидання",
         "auth.admin.actions": "Журнал дій",
         "auth.admin.bad_country": "Не код країни: {v} (у {email}). Потрібні дволітерні коди з довідника.",
@@ -1168,6 +1171,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.log.act.page.reorder": "Відкривав «Автозаказ»",
         "auth.log.act.page.reviews": "Відкривав «Отзывы»",
         "auth.log.act.page.stock": "Відкривав «Остатки»",
+        "auth.log.act.page.tiktok": "Відкривав «TikTok Shop»",
         "auth.log.act.qa.new_token": "Випускав токен тестового входу",
         "auth.log.act.qa.revoke": "Гасив токени тестового входу",
         "auth.log.act.reorder.act": "Підтверджував замовлення або перекидання",
@@ -1250,6 +1254,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.action.page.reorder": "Page: see Reorder",
         "auth.action.page.reviews": "Page: see Reviews",
         "auth.action.page.stock": "Page: see Stock",
+        "auth.action.page.tiktok": "Page: see TikTok Shop",
         "auth.action.reorder.act": "Reorder: order and transfer",
         "auth.admin.actions": "Action log",
         "auth.admin.bad_country": "Not a country code: {v} (for {email}). Two-letter codes from the directory.",
@@ -1371,6 +1376,7 @@ def render(*, product: str, auth, get_connection, t, lang: str = "ru") -> None:
         "auth.log.act.page.reorder": "Opened «Автозаказ»",
         "auth.log.act.page.reviews": "Opened «Отзывы»",
         "auth.log.act.page.stock": "Opened «Остатки»",
+        "auth.log.act.page.tiktok": "Opened «TikTok Shop»",
         "auth.log.act.qa.new_token": "Issued a QA access token",
         "auth.log.act.qa.revoke": "Revoked QA access tokens",
         "auth.log.act.reorder.act": "Confirmed an order or transfer",
