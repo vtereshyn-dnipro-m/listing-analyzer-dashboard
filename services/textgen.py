@@ -295,3 +295,36 @@ def latest(sku: str, marketplace: str):
         " FROM content_versions WHERE sku = %(s)s AND marketplace = %(m)s AND proposal_id = ("
         " SELECT proposal_id FROM content_versions WHERE sku = %(s)s AND marketplace = %(m)s"
         " AND proposal_id LIKE 'TG-%%' ORDER BY id DESC LIMIT 1)", {"s": sku, "m": marketplace})
+
+
+# ------------------------------------------------------------------ SKU ↔ ASIN
+# Связь товара сверху (ASIN пилота) и товара генерации (SKU паспорта). Два
+# источника: справочник SKU Кабинета (`passport.sku_directory`, точный код и
+# наблюдаемые листинги) и матрица (`product_matrix.sku_group` на рынке ES).
+# В матрице у варианта бывает базовый код: у 99601000-B там «99601000» — поэтому
+# по ТОЧНОМУ коду сначала справочник, матрица — вторым источником, без угадывания
+# базового кода по суффиксу.
+def _split(x) -> list[str]:
+    return [a for a in str(x or "").split() if a]
+
+
+def asins_for_sku(sku: str, directory, matrix_es) -> list[str]:
+    """ASIN ES товара: из справочника (только те, что есть на ES в матрице, если
+    матрица что-то знает про ES) и из матрицы по точному SKU."""
+    es = set(matrix_es["asin"]) if matrix_es is not None and not matrix_es.empty else set()
+    out = set()
+    if directory is not None and not directory.empty:
+        for _, r in directory[directory["sku"] == sku].iterrows():
+            out |= {a for a in _split(r.get("asins")) if not es or a in es}
+    if matrix_es is not None and not matrix_es.empty:
+        out |= set(matrix_es.loc[matrix_es["sku_group"] == sku, "asin"])
+    return sorted(out)
+
+
+def skus_for_asin(asin: str, directory, matrix_es) -> list[str]:
+    out = set()
+    if directory is not None and not directory.empty:
+        out |= {str(r["sku"]) for _, r in directory.iterrows() if asin in _split(r.get("asins"))}
+    if matrix_es is not None and not matrix_es.empty:
+        out |= {str(s) for s in matrix_es.loc[matrix_es["asin"] == asin, "sku_group"] if s and str(s) != "nan"}
+    return sorted(out)

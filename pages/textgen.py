@@ -32,6 +32,7 @@ from components.ui import eyebrow, inject_fonts
 from i18n import t
 from services import ai
 from services import passport_copies as pc
+from services import passport as passport_svc
 from services import passport_facts as pf
 from services import product_specs as ps
 from services import seo
@@ -57,7 +58,49 @@ def section(text: str) -> None:
     st.markdown(eyebrow(text), unsafe_allow_html=True)
 
 
-st.info(t("tg.pilot_note"))
+class _Say:
+    """st.caption / warning / … с экранированным «$»: Streamlit читает «$…$» в
+    markdown как формулу, и «$1 на товар … $10» превращалось в курсив без знаков."""
+
+    def __getattr__(self, name):
+        fn = getattr(st, name)
+        return lambda text, *a, **k: fn(str(text).replace("$", "\\$"), *a, **k)
+
+
+say = _Say()
+say.info(t("tg.pilot_note"))
+
+
+# Связь SKU ↔ ASIN: справочник SKU Кабинета (точный код) и матрица ES.
+@st.cache_data(ttl=600, show_spinner=False)
+def _directory():
+    df, err = passport_svc.sku_directory()
+    if err:
+        raise _ReadFailed(err)
+    return df
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _matrix_es():
+    from services.db import safe_read
+    df, err = safe_read("SELECT asin, sku_group FROM product_matrix WHERE marketplace = 'es'")
+    if err:
+        raise _ReadFailed(err)
+    return df
+
+
+def _links():
+    """(справочник, матрица ES, причины сбоя) — сбой одного источника не гасит другой."""
+    errs, d, m = [], None, None
+    try:
+        d = _directory()
+    except Exception as e:  # noqa: BLE001
+        errs.append(t("tg.link.src_dir", err=str(e)[:120]))
+    try:
+        m = _matrix_es()
+    except Exception as e:  # noqa: BLE001
+        errs.append(t("tg.link.src_matrix", err=str(e)[:120]))
+    return d, m, errs
 
 
 # Кешируется только УДАЧНОЕ чтение: сбой поднимается исключением, а исключения
@@ -109,6 +152,11 @@ def _label(asin: str) -> str:
 
 asin = st.selectbox(t("tg.pick"), [a for a, _ in PILOT], format_func=_label, key="tg-asin")
 mp = MP_BY_ASIN[asin]
+link_dir, link_mx, link_errs = _links()
+top_skus = tg.skus_for_asin(asin, link_dir, link_mx)
+say.caption(t("tg.link.sku", skus=", ".join(top_skus)) if top_skus else t("tg.link.sku_none"))
+if link_errs:
+    say.caption(t("tg.link.error", err="; ".join(link_errs)))
 
 raw, err = load_raw(asin, mp)
 if err:
@@ -215,7 +263,7 @@ if keys_df is not None and not keys_df.empty:
 # Копия паспорта — в томе UC, неизменная; SKU, id и версия — из шапки файла
 # (services/passport_copies.py). Права — в момент нажатия, как везде.
 section(t("tg.pp.title"))
-st.caption(t("tg.pp.hint", volume=pc.VOLUME))
+say.caption(t("tg.pp.hint", volume=pc.VOLUME))
 up = st.file_uploader(t("tg.pp.upload"), type=["docx"], key="tg-pp-file")
 pp_header = None
 if up is not None:
@@ -223,17 +271,17 @@ if up is not None:
     try:
         pp_header = pc.read_header(pp_data)
     except pc.CopyError as e:
-        st.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
+        say.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
 if pp_header:
     state = pp_header.get("state") or "—"
     st.markdown(t("tg.pp.header", sku=pp_header["sku_id"], pid=pp_header["passport_id"],
                   ver=pp_header["passport_version"], state=state))
     if state != "READY":
-        st.warning(t("tg.pp.not_ready", state=state))
-    st.caption(t("tg.pp.path", path=f"{pc.ROOT}/{pc.copy_path(pp_header)}"))
+        say.warning(t("tg.pp.not_ready", state=state))
+    say.caption(t("tg.pp.path", path=f"{pc.ROOT}/{pc.copy_path(pp_header)}"))
     may = auth.can("ls.textgen.accept")
     if not may:
-        st.caption(t("tg.pp.denied_hint"))
+        say.caption(t("tg.pp.denied_hint"))
     pp_sha = hashlib.sha256(pp_data).hexdigest()
 
     def _save(replace: tuple = ()) -> None:
@@ -245,16 +293,16 @@ if pp_header:
         try:
             store = pc.volume_store()
         except pc.CopyError as e:
-            st.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
+            say.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
             return
         if store is None:
-            st.error(t("tg.pp.no_store"))
+            say.error(t("tg.pp.no_store"))
             return
         from services.db import get_conn
         try:
             conn = get_conn()
         except Exception as e:  # noqa: BLE001
-            st.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
+            say.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
             return
         try:
             res = pc.register(pp_data, up.name, actor=auth.actor(), store=store, conn=conn, replace=replace)
@@ -265,16 +313,16 @@ if pp_header:
                 st.session_state["tg-pp-ask"] = (pp_sha, e.active)
                 st.rerun()           # соединение закроет finally
             else:
-                st.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
+                say.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
         except Exception as e:  # noqa: BLE001 — база: файл уже в томе, повтор его узнает
-            st.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
+            say.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
         else:
             if res.status == "DUPLICATE":
-                st.info(t("tg.pp.duplicate", aid=res.artifact_id, loc=res.locator))
+                say.info(t("tg.pp.duplicate", aid=res.artifact_id, loc=res.locator))
             else:
-                st.success(t("tg.pp.saved", aid=res.artifact_id, loc=res.locator, sha=pp_sha[:12]))
+                say.success(t("tg.pp.saved", aid=res.artifact_id, loc=res.locator, sha=pp_sha[:12]))
                 if res.superseded:
-                    st.info(t("tg.pp.superseded", ids=", ".join(res.superseded)))
+                    say.info(t("tg.pp.superseded", ids=", ".join(res.superseded)))
         finally:
             conn.close()
 
@@ -287,7 +335,7 @@ if pp_header:
         # их отпечаток, поэтому новый вопрос — новая кнопка.
         ask_key = hashlib.sha256("|".join(ask[1]).encode("utf-8")).hexdigest()[:12]
         with ask_box.container():
-            st.warning(t("tg.pp.ask_replace", sku=pp_header["sku_id"], ids=", ".join(ask[1]),
+            say.warning(t("tg.pp.ask_replace", sku=pp_header["sku_id"], ids=", ".join(ask[1]),
                          pid=pp_header["passport_id"]))
             go = st.button(t("tg.pp.replace"), disabled=not may, key=f"tg-pp-replace-{ask_key}")
         if go:
@@ -296,9 +344,9 @@ if pp_header:
     lst, lerr = pc.copies(pp_header["sku_id"])
     st.markdown(f"**{t('tg.pp.list', sku=pp_header['sku_id'])}**")
     if lerr:
-        st.error(t("tg.pp.list_error", err=lerr))
+        say.error(t("tg.pp.list_error", err=lerr))
     elif lst.empty:
-        st.caption(t("tg.pp.none", sku=pp_header["sku_id"]))
+        say.caption(t("tg.pp.none", sku=pp_header["sku_id"]))
     else:
         view = pd.DataFrame({
             "id": lst["source_artifact_id"],
@@ -363,12 +411,12 @@ def _check_line(v: dict) -> str:
 
 
 section(t("tg.gen.title"))
-st.caption(t("tg.gen.hint"))
+say.caption(t("tg.gen.hint"))
 copies_df, copies_err = tg.active_copies()
 if copies_err:
-    st.error(t("tg.gen.copies_error", err=copies_err))
+    say.error(t("tg.gen.copies_error", err=copies_err))
 elif copies_df.empty:
-    st.caption(t("tg.gen.no_copies"))
+    say.caption(t("tg.gen.no_copies"))
 else:
     skus = list(copies_df["sku_id"])
     pre = pp_header["sku_id"] if pp_header and pp_header["sku_id"] in skus else skus[0]
@@ -377,16 +425,23 @@ else:
     mps = list(tg.LANGUAGE)
     g_mp = g2.selectbox(t("tg.gen.mp"), mps, index=mps.index("es"), format_func=str.upper, key="tg-gen-mp")
     g_copy = copies_df[copies_df["sku_id"] == g_sku].iloc[0].to_dict()
-    st.caption(t("tg.gen.passport", pid=cell_text(g_copy, "passport_id"), aid=cell_text(g_copy, "source_artifact_id")))
+    g_asins = tg.asins_for_sku(g_sku, link_dir, link_mx)
+    say.caption(t("tg.link.asins", asins=", ".join(g_asins)) if g_asins else t("tg.link.asins_none", sku=g_sku))
+    if not g_asins:
+        say.warning(t("tg.link.no_asin", sku=g_sku, asin=asin))
+    elif asin not in g_asins:
+        say.warning(t("tg.link.mismatch", asin=asin, sku=g_sku, asins=", ".join(g_asins),
+                      top=", ".join(top_skus) or "—"))
+    say.caption(t("tg.gen.passport", pid=cell_text(g_copy, "passport_id"), aid=cell_text(g_copy, "source_artifact_id")))
     try:
         g_conf, g_dropped = _copy_conflicts(cell_text(g_copy, "archived_locator"), cell_text(g_copy, "sha256"))
     except Exception as e:  # noqa: BLE001 — сбой называется: молчание выглядело бы «конфликтов нет»
         g_conf, g_dropped = [], []
-        st.warning(t("tg.gen.conflicts_error", err=f"{type(e).__name__}: {str(e)[:160]}"))
+        say.warning(t("tg.gen.conflicts_error", err=f"{type(e).__name__}: {str(e)[:160]}"))
     if g_conf:
-        st.warning(t("tg.gen.conflicts", fields=", ".join(g_conf)))
+        say.warning(t("tg.gen.conflicts", fields=", ".join(g_conf)))
     if g_dropped:
-        st.caption(t("tg.gen.dropped", rows=", ".join(g_dropped)))
+        say.caption(t("tg.gen.dropped", rows=", ".join(g_dropped)))
 
     from services.db import table_exists
     g_reason, g_detail = None, ""
@@ -395,10 +450,10 @@ else:
     g_method, g_mver = "", 0
     if table_exists("textgen_calls") is False:
         g_reason = "NO_TABLE"
-        st.warning(t("tg.gen.no_table"))
+        say.warning(t("tg.gen.no_table"))
     elif table_exists("content_versions") is False:
         g_reason = "NO_CONTENT_TABLE"
-        st.warning(t("tg.gen.err.NO_CONTENT_TABLE", detail="content_versions"))
+        say.warning(t("tg.gen.err.NO_CONTENT_TABLE", detail="content_versions"))
     else:
         g_usage, g_uerr = tg.usage_now(g_sku)
         try:
@@ -407,9 +462,9 @@ else:
             g_uerr = g_uerr or str(e)
         if g_uerr:
             g_reason = "USAGE"
-            st.error(t("tg.gen.usage_error", err=g_uerr))
+            say.error(t("tg.gen.usage_error", err=g_uerr))
         else:
-            st.caption(t("tg.gen.usage", n=g_usage.calls_sku, n_max=tg.LIMIT_CALLS_SKU_DAY, a=g_usage.usd_sku,
+            say.caption(t("tg.gen.usage", n=g_usage.calls_sku, n_max=tg.LIMIT_CALLS_SKU_DAY, a=g_usage.usd_sku,
                          a_max=tg.LIMIT_USD_SKU_DAY, b=g_usage.usd_pilot, b_max=tg.LIMIT_USD_PILOT_DAY))
             g_price = tg.price(g_model, get_setting)
             if not g_method.strip() or not g_mver:
@@ -425,26 +480,26 @@ else:
                 if why:
                     g_reason, g_detail = why
             if g_reason:
-                st.warning(t(f"tg.gen.err.{g_reason}", detail=g_detail))
+                say.warning(t(f"tg.gen.err.{g_reason}", detail=g_detail))
     g_may = auth.can("ls.textgen.accept")
     if not g_may:
-        st.caption(t("tg.pp.denied_hint"))
+        say.caption(t("tg.pp.denied_hint"))
     if st.button(t("tg.gen.button"), type="primary", disabled=bool(g_reason) or not g_may, key="tg-gen-go"):
         if auth.require("ls.textgen.accept", object_type="textgen", object_id=f"{g_sku}:{g_mp}"):
             try:
                 g_store = pc.volume_store()
             except pc.CopyError as e:
                 g_store = False
-                st.error(t("tg.gen.err.STORE", detail=e.detail))
+                say.error(t("tg.gen.err.STORE", detail=e.detail))
             if g_store is None:
-                st.error(t("tg.pp.no_store"))
+                say.error(t("tg.pp.no_store"))
             elif g_store:
                 from services.db import get_conn as _gen_conn
                 try:
                     g_conn = _gen_conn()
                 except Exception as e:  # noqa: BLE001
                     g_conn = None
-                    st.error(t("tg.gen.err.DB", detail=f"{type(e).__name__}: {str(e)[:160]}"))
+                    say.error(t("tg.gen.err.DB", detail=f"{type(e).__name__}: {str(e)[:160]}"))
                 if g_conn is not None:
                     try:
                         with st.spinner(t("tg.gen.running")):
@@ -455,20 +510,20 @@ else:
                                 ai_call=ai.generate_json, ai_usage=ai.usage_totals, ai_reset=ai.reset_usage,
                                 ai_error=ai.last_call_error)
                     except Exception as e:  # noqa: BLE001 — база или том: причина на экран
-                        st.error(t("tg.gen.err.DB", detail=f"{type(e).__name__}: {str(e)[:200]}"))
+                        say.error(t("tg.gen.err.DB", detail=f"{type(e).__name__}: {str(e)[:200]}"))
                     else:
                         if res.status == "OK":
-                            st.success(t("tg.gen.done", proposal=res.proposal_id, cost=res.cost_usd))
+                            say.success(t("tg.gen.done", proposal=res.proposal_id, cost=res.cost_usd))
                         else:
-                            st.error(t(f"tg.gen.err.{res.code}", detail=res.detail))
+                            say.error(t(f"tg.gen.err.{res.code}", detail=res.detail))
                     finally:
                         g_conn.close()
 
     lat, lat_err = tg.latest(g_sku, g_mp)
     if lat_err:
-        st.error(t("tg.gen.latest_error", err=lat_err))
+        say.error(t("tg.gen.latest_error", err=lat_err))
     elif lat.empty:
-        st.caption(t("tg.gen.none", sku=g_sku, mp=g_mp.upper()))
+        say.caption(t("tg.gen.none", sku=g_sku, mp=g_mp.upper()))
     else:
         r0 = lat.iloc[0]
         st.markdown("**" + t("tg.gen.latest", proposal=cell_text(r0, "proposal_id"), model=cell_text(r0, "model"),
@@ -489,4 +544,4 @@ else:
                 any_bad = True
                 st.markdown(_check_line(v))
         if not any_bad:
-            st.success(t("tg.gen.ok_checks"))
+            say.success(t("tg.gen.ok_checks"))
