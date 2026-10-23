@@ -57,10 +57,13 @@ def _norm(x: str) -> str:
     return re.sub(r"\s+", "", x).lower()
 
 
-def has_token(text: str, tokens: set[str]) -> str | None:
-    """Первое значение конфликта, найденное в тексте; None — нет."""
+def has_tokens(text: str, tokens: set[str]) -> list[str]:
+    """ВСЕ значения конфликта, найденные в тексте, в постоянном порядке (по
+    алфавиту). Раньше бралось первое из множества: при равной длине («20в»,
+    «36в», «40в») порядок множества зависел от запуска процесса, и подпись
+    FACT-006 менялась от перезапуска к перезапуску при том же паспорте."""
     flat = _norm(text)
-    return next((tk for tk in sorted(tokens, key=len, reverse=True) if tk and tk in flat), None)
+    return sorted(tk for tk in tokens if tk and tk in flat)
 
 
 @dataclass
@@ -85,9 +88,9 @@ class Facts:
                          if v and not h.strip().lower().startswith(SOURCE_COLS) and SOURCE_MARK not in h.lower()]
                 if not cells:
                     continue
-                hit = has_token(" ".join(r), tokens)
-                if hit:
-                    self.dropped.append(f"{r[0]} ({hit})")
+                hits = has_tokens(" ".join(r), tokens)
+                if hits:
+                    self.dropped.append(f"{r[0]} ({', '.join(hits)})")
                     continue
                 out.append("- " + " | ".join(cells))
         if self.conflicts:

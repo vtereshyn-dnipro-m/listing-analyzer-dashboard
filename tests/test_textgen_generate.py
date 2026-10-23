@@ -95,6 +95,30 @@ check("конфликты для экрана", facts.conflicts[0]["field"] == "
 check("строка факта со значением стороны конфликта снята кодом (не только словами модели)",
       "BP-240" not in text and "4 Ah" not in text and any(d.startswith("KIT-2") for d in facts.dropped))
 check("соседняя строка без значений конфликта осталась", "Колеса" in text)
+
+# Подпись снятой строки — ВСЕ совпавшие значения в постоянном порядке. Порядок
+# множества строк зависит от PYTHONHASHSEED, поэтому проверяется в отдельных
+# процессах с разным зерном: подпись обязана совпасть.
+FACT6 = pf.Facts([pf.Section("Технічні характеристики", [["ID", "Характеристика", "Значення"],
+    ["FACT-6", "Живлення", "20 В; номінальна 36 В, максимальна 40 В"]])],
+    [{"id": "C-3", "field": "Напруга", "a": "20 В; 36 В nominal / 40 В max", "b": "20 V", "status": "OPEN"}])
+FACT6.prompt_text()
+check("подпись снятой строки — все значения по алфавиту", FACT6.dropped == ["FACT-6 (20в, 36в, 40в)"])
+_probe = ("import sys; sys.path.insert(0, %r); from services import passport_facts as pf; "
+          "f = pf.Facts([pf.Section('T', [['ID', 'X', 'V'], ['FACT-6', 'Ж', '20 В; 36 В, 40 В']])], "
+          "[{'id': 'C', 'field': 'Н', 'a': '20 В; 36 В / 40 В', 'b': '20 V', 'status': 'O'}]); f.prompt_text(); "
+          "print(f.dropped[0])") % str(ROOT)
+import os  # noqa: E402
+import subprocess  # noqa: E402
+
+_outs = {subprocess.run([sys.executable, "-c", _probe], capture_output=True, text=True,
+                        env={**os.environ, "PYTHONHASHSEED": str(seed)}).stdout.strip() for seed in range(1, 9)}
+check(f"подпись не зависит от запуска процесса (8 зёрен хэша → {len(_outs)} вариант)",
+      _outs == {"FACT-6 (20в, 36в, 40в)"})
+check("CONFLICT_VALUE — все значения по алфавиту",
+      [v["detail"] for v in tg.run_checks({**{f: "x" for f in tg.FIELDS}, "description": "Batería 40 В y 20 В, 36 В"},
+                                          "M", pf.conflict_tokens(FACT6.conflicts)) if v["code"] == "CONFLICT_VALUE"]
+      == ["20в, 36в, 40в"])
 check("модель из раздела идентичности", tg.model_code(facts) == "DVB-200BC Dual")
 prompt = tg.build_prompt("99601000-B", "es", {"passport_id": "PASS-X", "passport_version": "2", "state": "NOT_READY"}, facts)
 check("язык площадки назван в промпте", "español" in prompt and "Amazon ES" in prompt)
