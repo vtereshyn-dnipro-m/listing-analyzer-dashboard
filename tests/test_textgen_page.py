@@ -595,6 +595,10 @@ at = run()
 check("сверху у ASIN назван его SKU (матрица)", lab("tg.link.sku", skus="S5_78739000") in texts_of(at))
 check("внизу у SKU генерации — его ASIN ES (справочник по точному коду)",
       lab("tg.link.asins", asins="B0GTRY26HB") in texts_of(at))
+GEN["calls"].clear()
+at.button(key="tg-gen-go").click().run()
+check("генерация получает ASIN товара на выбранной площадке",
+      GEN["calls"] and GEN["calls"][-1]["asins"] == ["B0GTRY26HB"])
 check("ASIN сверху не этот товар — предупреждение о разных товарах",
       lab("tg.link.mismatch", asin="B0H75P364R", sku="99601000-B", asins="B0GTRY26HB", top="S5_78739000") in _warn(at))
 LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0H75P364R"}])
@@ -623,6 +627,10 @@ check("справочник не прочитан — сказано у гене
       and lab("tg.link.asins_none", sku="99601000-B") not in texts_of(at)
       and lab("tg.link.no_asin", sku="99601000-B", asin="B0H75P364R") not in _warn(at))
 check("справочник не прочитан — матрица всё равно даёт SKU сверху", lab("tg.link.sku", skus="S5_78739000") in texts_of(at))
+GEN["calls"].clear()
+at.button(key="tg-gen-go").click().run()
+check("связь не прочитана — генерации уходит «не прочитано» (None), а не неполный список",
+      GEN["calls"] and GEN["calls"][-1]["asins"] is None)
 check("подпись о сбое — и сверху, и у генерации (две)",
       sum(1 for c in at.caption if "kabinet down" in str(c.value)) == 2)
 LINK["err"], LINK["mx_err"] = None, "OperationalError: matrix down"

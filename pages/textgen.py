@@ -91,14 +91,18 @@ def _directory():
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def _matrix_es():
+def _matrix_mp(mp: str):
     from services.db import safe_read
     # конкуренты — не наши ASIN, даже с нашим sku_group (проверка #168)
     df, err = safe_read("SELECT asin, sku_group FROM product_matrix"
-                        " WHERE marketplace = 'es' AND is_competitor IS NOT TRUE")
+                        " WHERE marketplace = %(mp)s AND is_competitor IS NOT TRUE", {"mp": mp})
     if err:
         raise _ReadFailed(err)
     return df
+
+
+def _matrix_es():
+    return _matrix_mp("es")
 
 
 def _links():
@@ -442,6 +446,15 @@ else:
     g_mp = g2.selectbox(t("tg.gen.mp"), mps, index=mps.index("es"), format_func=str.upper, key="tg-gen-mp")
     g_copy = copies_df[copies_df["sku_id"] == g_sku].iloc[0].to_dict()
     g_asins = tg.asins_for_sku(g_sku, link_dir, link_mx)
+    # ASIN для черновиков — на ВЫБРАННОЙ площадке (решение владельца 23.10.2026).
+    # Не прочитался хоть один источник связи — None: неполный список дал бы
+    # «ровно один» там, где их на деле два.
+    try:
+        g_mx_mp = link_mx if g_mp == "es" else _matrix_mp(g_mp)
+    except Exception:  # noqa: BLE001
+        g_mx_mp = None
+    g_link_asins = (None if link_errs or link_dir is None or g_mx_mp is None
+                    else tg.asins_for_sku(g_sku, link_dir, g_mx_mp))
     if g_asins:
         say.caption(t("tg.link.asins", asins=", ".join(g_asins)))
     if link_errs:
@@ -531,7 +544,7 @@ else:
                                 conn=g_conn, method=(g_method, g_mver), provider=g_prov, model=g_model,
                                 max_tokens=g_maxtok, setting=get_setting,
                                 ai_call=ai.generate_json, ai_usage=ai.usage_totals, ai_reset=ai.reset_usage,
-                                ai_error=ai.last_call_error)
+                                asins=g_link_asins, ai_error=ai.last_call_error)
                     except Exception as e:  # noqa: BLE001 — база или том: причина на экран
                         say.error(t("tg.gen.err.DB", detail=f"{type(e).__name__}: {str(e)[:200]}"))
                     else:
