@@ -449,11 +449,13 @@ else:
     # ASIN для черновиков — на ВЫБРАННОЙ площадке (решение владельца 23.10.2026).
     # Не прочитался хоть один источник связи — None: неполный список дал бы
     # «ровно один» там, где их на деле два.
-    try:
-        g_mx_mp = link_mx if g_mp == "es" else _matrix_mp(g_mp)
-    except Exception:  # noqa: BLE001
-        g_mx_mp = None
-    g_link_asins = (None if link_errs or link_dir is None or g_mx_mp is None
+    g_mx_mp, g_mx_err = link_mx, None
+    if g_mp != "es":
+        try:
+            g_mx_mp = _matrix_mp(g_mp)
+        except Exception as e:  # noqa: BLE001 — сбой называется, а не выдаётся за «ASIN нет»
+            g_mx_mp, g_mx_err = None, t("tg.link.src_matrix", err=str(e)[:120])
+    g_link_asins = (None if link_errs or g_mx_err or link_dir is None or g_mx_mp is None
                     else tg.asins_for_sku(g_sku, link_dir, g_mx_mp))
     if g_asins:
         say.caption(t("tg.link.asins", asins=", ".join(g_asins)))
@@ -468,6 +470,14 @@ else:
         # при сбое источника связь неполная — «про разные товары» не утверждаем
         say.warning(t("tg.link.mismatch", asin=asin, sku=g_sku, asins=", ".join(g_asins),
                       top=", ".join(top_skus) or "—"))
+    if g_mx_err:
+        say.caption(t("tg.link.error", err=g_mx_err))
+    # Какой ASIN уйдёт в черновики — видно ДО нажатия (для любой площадки).
+    say.caption(t("tg.link.draft_asin", mp=g_mp.upper(), asin=g_link_asins[0]) if g_link_asins and len(g_link_asins) == 1
+                else t("tg.link.draft_no_asin", mp=g_mp.upper(),
+                       why=t("tg.code.ASIN_UNREAD") if g_link_asins is None
+                       else t("tg.code.ASIN_AMBIGUOUS") + f" ({', '.join(g_link_asins)})" if g_link_asins
+                       else t("tg.code.ASIN_UNKNOWN")))
     say.caption(t("tg.gen.passport", pid=cell_text(g_copy, "passport_id"), aid=cell_text(g_copy, "source_artifact_id")))
     try:
         g_conf, g_dropped = _copy_conflicts(cell_text(g_copy, "archived_locator"), cell_text(g_copy, "sha256"))
@@ -577,7 +587,17 @@ else:
             raw = row["checks"]
             items = raw if isinstance(raw, list) else (json.loads(raw) if isinstance(raw, str) and raw else [])
             for v in items:
+                if v.get("code") in tg.ASIN_CODES:
+                    continue          # пометка про ASIN — не нарушение, она ниже отдельной строкой
                 any_bad = True
                 say.markdown(_check_line(v))
         if not any_bad:
             say.success(t("tg.gen.ok_checks"))
+        notes = [v for _, row in lat.iterrows() for v in (
+            row["checks"] if isinstance(row["checks"], list)
+            else (json.loads(row["checks"]) if isinstance(row["checks"], str) and row["checks"] else []))
+            if v.get("code") in tg.ASIN_CODES]
+        r_asin = cell_text(r0, "asin")
+        say.caption(t("tg.link.saved_asin", asin=r_asin) if r_asin else
+                    t("tg.link.saved_no_asin", why="; ".join(
+                        t(f"tg.code.{v['code']}") + (f" ({v['detail']})" if v.get("detail") else "") for v in notes) or "—"))

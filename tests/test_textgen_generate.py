@@ -275,6 +275,13 @@ got, why = _asin_case(None)
 check("связь не прочитана — пусто, ASIN_UNREAD", got == {None} and [v["code"] for v in why] == ["ASIN_UNREAD"])
 got, why = _asin_case(("nan", "B0GTRY26HB", "B0GTRY26HB"))
 check("мусор и повтор не мешают — один настоящий ASIN записан", got == {"B0GTRY26HB"} and not why)
+check("хвостовой перевод строки — не ASIN (fullmatch, как CHECK в базе)",
+      tg.pick_asin(["B0GTRY26HB\n"]) == (None, {"code": "ASIN_UNKNOWN", "field": "title", "detail": ""}))
+got, why = _asin_case((float("nan"), "B0GTRY26HB"))
+check("NaN в списке — не падение после оплаты, а пропуск (правило 4)", got == {"B0GTRY26HB"} and not why)
+db = DB()
+_r, _seen = run(db, method=("", 0), asins=(float("nan"),))
+check("ASIN решается до вызова модели: без методологии — отказ, вызова нет", _r.code == "NO_METHOD" and _seen["calls"] == 0)
 
 # --- лимиты: отказ ДО модели и без записи
 db = DB()

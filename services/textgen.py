@@ -180,7 +180,8 @@ def run_checks(texts: dict, model: str | None, conflict_tokens: set[str] = froze
 
 
 # ------------------------------------------------------------------ генерация
-ASIN_RE = re.compile(r"^B0[A-Z0-9]{8}$")      # тот же CHECK, что у content_versions.asin
+ASIN_RE = re.compile(r"B0[A-Z0-9]{8}")        # тот же CHECK, что у content_versions.asin — fullmatch
+ASIN_CODES = ("ASIN_UNREAD", "ASIN_UNKNOWN", "ASIN_AMBIGUOUS")   # пометки, а не нарушения тайтла
 
 
 def pick_asin(asins: list[str] | None) -> tuple[str | None, dict | None]:
@@ -188,7 +189,9 @@ def pick_asin(asins: list[str] | None) -> tuple[str | None, dict | None]:
     он; иначе пусто и причина. `asins` = None — связь SKU ↔ ASIN не прочиталась."""
     if asins is None:
         return None, {"code": "ASIN_UNREAD", "field": "title", "detail": ""}
-    ok = sorted({a for a in asins if ASIN_RE.match(a or "")})
+    # fullmatch и только строки: «$» в re.match пропускает хвостовой перевод строки,
+    # а NaN из pandas — float (правило 4); обе ошибки всплыли бы ПОСЛЕ оплаты вызова.
+    ok = sorted({a for a in asins if isinstance(a, str) and ASIN_RE.fullmatch(a)})
     if len(ok) == 1:
         return ok[0], None
     if not ok:
@@ -206,6 +209,8 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
     m_text, m_ver = method
     if not (m_text or "").strip() or not m_ver:
         return Result("BLOCKED", "NO_METHOD", SCOPE)
+    # ASIN решается ДО платного вызова: ничего, что может упасть, после него нет.
+    asin, why_no_asin = pick_asin(asins)
     if provider not in PROVIDERS:
         return Result("BLOCKED", "PROVIDER", provider)
     p = price(model, setting)
@@ -266,8 +271,7 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
 
     checks = run_checks(texts, model_code(facts), pf.conflict_tokens(facts.conflicts))
     # ASIN товара на этой площадке: один — во все черновики; иначе пусто, причина —
-    # в проверках тайтла (её видно на экране вместе с нарушениями).
-    asin, why_no_asin = pick_asin(asins)
+    # пометкой в checks тайтла (ASIN_CODES — не нарушение, экран показывает отдельно).
     if why_no_asin:
         checks.append(why_no_asin)
     with conn, conn.cursor() as cur:
@@ -314,7 +318,7 @@ def latest(sku: str, marketplace: str):
     """Последнее предложение генератора по SKU × рынку: (df, причина)."""
     from services.db import safe_read
     return safe_read(
-        "SELECT field, text, text_len, version, proposal_id, status, model, checks, created_at"
+        "SELECT field, text, text_len, version, proposal_id, status, model, checks, created_at, asin"
         " FROM content_versions WHERE sku = %(s)s AND marketplace = %(m)s AND proposal_id = ("
         " SELECT proposal_id FROM content_versions WHERE sku = %(s)s AND marketplace = %(m)s"
         " AND proposal_id LIKE 'TG-%%' ORDER BY id DESC LIMIT 1)", {"s": sku, "m": marketplace})
