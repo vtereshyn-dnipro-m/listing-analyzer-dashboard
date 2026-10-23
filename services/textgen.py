@@ -20,6 +20,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from dataclasses import dataclass, field
 
 from services import passport_copies as pc
@@ -179,9 +180,28 @@ def run_checks(texts: dict, model: str | None, conflict_tokens: set[str] = froze
 
 
 # ------------------------------------------------------------------ генерация
+ASIN_RE = re.compile(r"B0[A-Z0-9]{8}")        # тот же CHECK, что у content_versions.asin — fullmatch
+ASIN_CODES = ("ASIN_UNREAD", "ASIN_UNKNOWN", "ASIN_AMBIGUOUS")   # пометки, а не нарушения тайтла
+
+
+def pick_asin(asins: list[str] | None) -> tuple[str | None, dict | None]:
+    """ASIN для черновиков (решение владельца 23.10.2026): ровно один на площадке —
+    он; иначе пусто и причина. `asins` = None — связь SKU ↔ ASIN не прочиталась."""
+    if asins is None:
+        return None, {"code": "ASIN_UNREAD", "field": "title", "detail": ""}
+    # fullmatch и только строки: «$» в re.match пропускает хвостовой перевод строки,
+    # а NaN из pandas — float (правило 4); обе ошибки всплыли бы ПОСЛЕ оплаты вызова.
+    ok = sorted({a for a in asins if isinstance(a, str) and ASIN_RE.fullmatch(a)})
+    if len(ok) == 1:
+        return ok[0], None
+    if not ok:
+        return None, {"code": "ASIN_UNKNOWN", "field": "title", "detail": ""}
+    return None, {"code": "ASIN_AMBIGUOUS", "field": "title", "detail": ", ".join(ok)}
+
+
 def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn, method: tuple[str, int],
              provider: str, model: str, max_tokens: int, setting, ai_call, ai_usage, ai_reset,
-             ai_error=lambda: None) -> Result:
+             asins: list[str] | None, ai_error=lambda: None) -> Result:
     """Один вызов модели и черновики. `copy` — строка `passport_source_artifacts`
     (source_artifact_id, passport_id, archived_locator, sha256). Вызов модели и
     его учёт — через переданные функции: страница отдаёт `services/ai`, тест —
@@ -189,6 +209,8 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
     m_text, m_ver = method
     if not (m_text or "").strip() or not m_ver:
         return Result("BLOCKED", "NO_METHOD", SCOPE)
+    # ASIN решается ДО платного вызова: ничего, что может упасть, после него нет.
+    asin, why_no_asin = pick_asin(asins)
     if provider not in PROVIDERS:
         return Result("BLOCKED", "PROVIDER", provider)
     p = price(model, setting)
@@ -248,6 +270,10 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
         return Result("FAILED", "MODEL", err, call_id, cost_usd=real)
 
     checks = run_checks(texts, model_code(facts), pf.conflict_tokens(facts.conflicts))
+    # ASIN товара на этой площадке: один — во все черновики; иначе пусто, причина —
+    # пометкой в checks тайтла (ASIN_CODES — не нарушение, экран показывает отдельно).
+    if why_no_asin:
+        checks.append(why_no_asin)
     with conn, conn.cursor() as cur:
         cur.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (f"content:{sku}:{marketplace}",))
         for f in FIELDS:
@@ -258,10 +284,11 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
             cur.execute(
                 "INSERT INTO content_versions (sku, marketplace, field, text, version, proposal_id, created_by,"
                 " passport_id, passport_version, passport_sha256, passport_artifact_id, origin, model,"
-                " skill_version, checks) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'model', %s, %s, %s)",
+                " skill_version, checks, asin) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'model',"
+                " %s, %s, %s, %s)",
                 (sku, marketplace, f, texts[f], ver, proposal, actor, header["passport_id"],
                  str(header["passport_version"]), copy["sha256"], copy["source_artifact_id"], model, m_ver,
-                 json.dumps(mine, ensure_ascii=False)))
+                 json.dumps(mine, ensure_ascii=False), asin))
     return Result("OK", "", "", call_id, proposal, texts, checks, real)
 
 
@@ -291,7 +318,7 @@ def latest(sku: str, marketplace: str):
     """Последнее предложение генератора по SKU × рынку: (df, причина)."""
     from services.db import safe_read
     return safe_read(
-        "SELECT field, text, text_len, version, proposal_id, status, model, checks, created_at"
+        "SELECT field, text, text_len, version, proposal_id, status, model, checks, created_at, asin"
         " FROM content_versions WHERE sku = %(s)s AND marketplace = %(m)s AND proposal_id = ("
         " SELECT proposal_id FROM content_versions WHERE sku = %(s)s AND marketplace = %(m)s"
         " AND proposal_id LIKE 'TG-%%' ORDER BY id DESC LIMIT 1)", {"s": sku, "m": marketplace})

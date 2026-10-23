@@ -91,14 +91,18 @@ def _directory():
 
 
 @st.cache_data(ttl=600, show_spinner=False)
-def _matrix_es():
+def _matrix_mp(mp: str):
     from services.db import safe_read
     # конкуренты — не наши ASIN, даже с нашим sku_group (проверка #168)
     df, err = safe_read("SELECT asin, sku_group FROM product_matrix"
-                        " WHERE marketplace = 'es' AND is_competitor IS NOT TRUE")
+                        " WHERE marketplace = %(mp)s AND is_competitor IS NOT TRUE", {"mp": mp})
     if err:
         raise _ReadFailed(err)
     return df
+
+
+def _matrix_es():
+    return _matrix_mp("es")
 
 
 def _links():
@@ -442,6 +446,17 @@ else:
     g_mp = g2.selectbox(t("tg.gen.mp"), mps, index=mps.index("es"), format_func=str.upper, key="tg-gen-mp")
     g_copy = copies_df[copies_df["sku_id"] == g_sku].iloc[0].to_dict()
     g_asins = tg.asins_for_sku(g_sku, link_dir, link_mx)
+    # ASIN для черновиков — на ВЫБРАННОЙ площадке (решение владельца 23.10.2026).
+    # Не прочитался хоть один источник связи — None: неполный список дал бы
+    # «ровно один» там, где их на деле два.
+    g_mx_mp, g_mx_err = link_mx, None
+    if g_mp != "es":
+        try:
+            g_mx_mp = _matrix_mp(g_mp)
+        except Exception as e:  # noqa: BLE001 — сбой называется, а не выдаётся за «ASIN нет»
+            g_mx_mp, g_mx_err = None, t("tg.link.src_matrix", err=str(e)[:120])
+    g_link_asins = (None if link_errs or g_mx_err or link_dir is None or g_mx_mp is None
+                    else tg.asins_for_sku(g_sku, link_dir, g_mx_mp))
     if g_asins:
         say.caption(t("tg.link.asins", asins=", ".join(g_asins)))
     if link_errs:
@@ -455,6 +470,14 @@ else:
         # при сбое источника связь неполная — «про разные товары» не утверждаем
         say.warning(t("tg.link.mismatch", asin=asin, sku=g_sku, asins=", ".join(g_asins),
                       top=", ".join(top_skus) or "—"))
+    if g_mx_err:
+        say.caption(t("tg.link.error", err=g_mx_err))
+    # Какой ASIN уйдёт в черновики — видно ДО нажатия (для любой площадки), и решает
+    # его ТОТ ЖЕ pick_asin, что и запись: экран не обещает другого (проверка #171).
+    g_pick, g_why = tg.pick_asin(g_link_asins)
+    say.caption(t("tg.link.draft_asin", mp=g_mp.upper(), asin=g_pick) if g_pick
+                else t("tg.link.draft_no_asin", mp=g_mp.upper(), why=t(f"tg.code.{g_why['code']}")
+                       + (f" ({g_why['detail']})" if g_why.get("detail") else "")))
     say.caption(t("tg.gen.passport", pid=cell_text(g_copy, "passport_id"), aid=cell_text(g_copy, "source_artifact_id")))
     try:
         g_conf, g_dropped = _copy_conflicts(cell_text(g_copy, "archived_locator"), cell_text(g_copy, "sha256"))
@@ -531,7 +554,7 @@ else:
                                 conn=g_conn, method=(g_method, g_mver), provider=g_prov, model=g_model,
                                 max_tokens=g_maxtok, setting=get_setting,
                                 ai_call=ai.generate_json, ai_usage=ai.usage_totals, ai_reset=ai.reset_usage,
-                                ai_error=ai.last_call_error)
+                                asins=g_link_asins, ai_error=ai.last_call_error)
                     except Exception as e:  # noqa: BLE001 — база или том: причина на экран
                         say.error(t("tg.gen.err.DB", detail=f"{type(e).__name__}: {str(e)[:200]}"))
                     else:
@@ -564,7 +587,18 @@ else:
             raw = row["checks"]
             items = raw if isinstance(raw, list) else (json.loads(raw) if isinstance(raw, str) and raw else [])
             for v in items:
+                if v.get("code") in tg.ASIN_CODES:
+                    continue          # пометка про ASIN — не нарушение, она ниже отдельной строкой
                 any_bad = True
                 say.markdown(_check_line(v))
         if not any_bad:
             say.success(t("tg.gen.ok_checks"))
+        notes = [v for _, row in lat.iterrows() for v in (
+            row["checks"] if isinstance(row["checks"], list)
+            else (json.loads(row["checks"]) if isinstance(row["checks"], str) and row["checks"] else []))
+            if v.get("code") in tg.ASIN_CODES]
+        r_asin = cell_text(r0, "asin")
+        say.caption(t("tg.link.saved_asin", asin=r_asin) if r_asin else
+                    t("tg.link.saved_no_asin", why="; ".join(
+                        t(f"tg.code.{v['code']}") + (f" ({v['detail']})" if v.get("detail") else "") for v in notes)
+                        or t("tg.link.saved_no_reason")))

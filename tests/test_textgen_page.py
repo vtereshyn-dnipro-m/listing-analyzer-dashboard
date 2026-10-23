@@ -578,10 +578,17 @@ MATRIX_ES = pd.DataFrame([{"asin": "B0H75P364R", "sku_group": "S5_78739000"},
 
 
 LINK["mx_err"] = None
+LINK["de_err"] = None
+MATRIX_DE = pd.DataFrame([{"asin": "B0DEDEDEDE", "sku_group": "99601000-B"}])
 
 
 def _safe_read2(sql, params=None):
     if "product_matrix" in sql:
+        # площадка — из САМОГО запроса: подставлена параметром или вписана литералом
+        lit = re.search(r"marketplace = '([a-z.]+)'", sql)
+        mp = (params or {}).get("mp") if "%(mp)s" in sql else (lit.group(1) if lit else None)
+        if mp == "de":
+            return (pd.DataFrame(), LINK["de_err"]) if LINK["de_err"] else (MATRIX_DE, None)
         if LINK["mx_err"]:
             return pd.DataFrame(), LINK["mx_err"]
         return MATRIX_ES, None
@@ -595,6 +602,35 @@ at = run()
 check("сверху у ASIN назван его SKU (матрица)", lab("tg.link.sku", skus="S5_78739000") in texts_of(at))
 check("внизу у SKU генерации — его ASIN ES (справочник по точному коду)",
       lab("tg.link.asins", asins="B0GTRY26HB") in texts_of(at))
+GEN["calls"].clear()
+at.button(key="tg-gen-go").click().run()
+check("генерация получает ASIN товара на выбранной площадке",
+      GEN["calls"] and GEN["calls"][-1]["asins"] == ["B0GTRY26HB"])
+# Площадка DE: свой ASIN из матрицы DE, а не ES (у товара они разные).
+LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0GTRY26HB B0DEDEDEDE"}])
+_st.cache_data.clear()
+at = run()
+at.selectbox(key="tg-gen-mp").set_value("de").run()
+check("DE: до нажатия видно, какой ASIN уйдёт в черновики",
+      lab("tg.link.draft_asin", mp="DE", asin="B0DEDEDEDE") in texts_of(at))
+check("подпись до нажатия решает тот же pick_asin, что и запись",
+      "g_pick, g_why = tg.pick_asin(g_link_asins)" in SRC)
+GEN["calls"].clear()
+at.button(key="tg-gen-go").click().run()
+check("DE: генерация получает ASIN площадки DE, а не ES",
+      GEN["calls"] and GEN["calls"][-1]["asins"] == ["B0DEDEDEDE"] and GEN["calls"][-1]["marketplace"] == "de")
+LINK["de_err"] = "OperationalError: de down"
+_st.cache_data.clear()
+at = run()
+at.selectbox(key="tg-gen-mp").set_value("de").run()
+GEN["calls"].clear()
+at.button(key="tg-gen-go").click().run()
+check("DE: матрица не прочитана — сбой назван, в генерацию «не прочитано» (None), не «ASIN нет»",
+      "de down" in texts_of(at) and GEN["calls"] and GEN["calls"][-1]["asins"] is None)
+LINK["de_err"] = None
+LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0GTRY26HB"}])
+_st.cache_data.clear()
+at = run()
 check("ASIN сверху не этот товар — предупреждение о разных товарах",
       lab("tg.link.mismatch", asin="B0H75P364R", sku="99601000-B", asins="B0GTRY26HB", top="S5_78739000") in _warn(at))
 LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0H75P364R"}])
@@ -623,6 +659,10 @@ check("справочник не прочитан — сказано у гене
       and lab("tg.link.asins_none", sku="99601000-B") not in texts_of(at)
       and lab("tg.link.no_asin", sku="99601000-B", asin="B0H75P364R") not in _warn(at))
 check("справочник не прочитан — матрица всё равно даёт SKU сверху", lab("tg.link.sku", skus="S5_78739000") in texts_of(at))
+GEN["calls"].clear()
+at.button(key="tg-gen-go").click().run()
+check("связь не прочитана — генерации уходит «не прочитано» (None), а не неполный список",
+      GEN["calls"] and GEN["calls"][-1]["asins"] is None)
 check("подпись о сбое — и сверху, и у генерации (две)",
       sum(1 for c in at.caption if "kabinet down" in str(c.value)) == 2)
 LINK["err"], LINK["mx_err"] = None, "OperationalError: matrix down"
@@ -662,6 +702,21 @@ check("нарушение правил тайтла из checks названо",
 GEN["latest"] = (GEN["latest"][0].assign(checks="[]"), None)
 at = run()
 check("без нарушений — так и сказано", lab("tg.gen.ok_checks") in texts_of(at))
+_lat = GEN["latest"][0].copy()
+_lat["asin"] = None
+_lat.loc[_lat["field"] == "title", "checks"] = '[{"code": "ASIN_AMBIGUOUS", "field": "title", "detail": "B0A, B0B"}]'
+GEN["latest"] = (_lat, None)
+at = run()
+check("пометка про ASIN — не нарушение: «нарушений нет» и отдельная строка с причиной",
+      lab("tg.gen.ok_checks") in texts_of(at)
+      and lab("tg.link.saved_no_asin", why=lab("tg.code.ASIN_AMBIGUOUS") + " (B0A, B0B)") in texts_of(at))
+GEN["latest"] = (_lat.assign(checks="[]"), None)
+at = run()
+check("старые черновики без пометки — «причина не записана», а не прочерк",
+      lab("tg.link.saved_no_asin", why=lab("tg.link.saved_no_reason")) in texts_of(at))
+GEN["latest"] = (_lat.assign(asin="B0GTRY26HB", checks="[]"), None)
+at = run()
+check("сохранённый ASIN черновиков показан", lab("tg.link.saved_asin", asin="B0GTRY26HB") in texts_of(at))
 ai.task_config = _task_config
 
 print()
