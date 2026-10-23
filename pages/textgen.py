@@ -472,12 +472,12 @@ else:
                       top=", ".join(top_skus) or "—"))
     if g_mx_err:
         say.caption(t("tg.link.error", err=g_mx_err))
-    # Какой ASIN уйдёт в черновики — видно ДО нажатия (для любой площадки).
-    say.caption(t("tg.link.draft_asin", mp=g_mp.upper(), asin=g_link_asins[0]) if g_link_asins and len(g_link_asins) == 1
-                else t("tg.link.draft_no_asin", mp=g_mp.upper(),
-                       why=t("tg.code.ASIN_UNREAD") if g_link_asins is None
-                       else t("tg.code.ASIN_AMBIGUOUS") + f" ({', '.join(g_link_asins)})" if g_link_asins
-                       else t("tg.code.ASIN_UNKNOWN")))
+    # Какой ASIN уйдёт в черновики — видно ДО нажатия (для любой площадки), и решает
+    # его ТОТ ЖЕ pick_asin, что и запись: экран не обещает другого (проверка #171).
+    g_pick, g_why = tg.pick_asin(g_link_asins)
+    say.caption(t("tg.link.draft_asin", mp=g_mp.upper(), asin=g_pick) if g_pick
+                else t("tg.link.draft_no_asin", mp=g_mp.upper(), why=t(f"tg.code.{g_why['code']}")
+                       + (f" ({g_why['detail']})" if g_why.get("detail") else "")))
     say.caption(t("tg.gen.passport", pid=cell_text(g_copy, "passport_id"), aid=cell_text(g_copy, "source_artifact_id")))
     try:
         g_conf, g_dropped = _copy_conflicts(cell_text(g_copy, "archived_locator"), cell_text(g_copy, "sha256"))
@@ -600,4 +600,5 @@ else:
         r_asin = cell_text(r0, "asin")
         say.caption(t("tg.link.saved_asin", asin=r_asin) if r_asin else
                     t("tg.link.saved_no_asin", why="; ".join(
-                        t(f"tg.code.{v['code']}") + (f" ({v['detail']})" if v.get("detail") else "") for v in notes) or "—"))
+                        t(f"tg.code.{v['code']}") + (f" ({v['detail']})" if v.get("detail") else "") for v in notes)
+                        or t("tg.link.saved_no_reason")))
