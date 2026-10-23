@@ -227,7 +227,7 @@ USAGE = {"input_tokens": 9000, "output_tokens": 1200}
 
 
 def run(db, *, answer=GOOD, usage=USAGE, store=None, method=("методология", 3), model="claude-opus-5-5",
-        copy=COPY, raise_in_call=False, provider="anthropic"):
+        copy=COPY, raise_in_call=False, provider="anthropic", asins=("B0GTRY26HB",)):
     seen = {"calls": 0, "during": None}
 
     def ai_call(task, prompt, system=None):
@@ -241,7 +241,8 @@ def run(db, *, answer=GOOD, usage=USAGE, store=None, method=("методолог
     res = tg.generate(sku="99601000-B", marketplace="es", copy=copy, actor="yaroslav@dniprom.com",
                       store=store or Store(DOCX), conn=db, method=method, provider=provider, model=model,
                       max_tokens=8000, setting=lambda k, d="": d, ai_call=ai_call,
-                      ai_usage=lambda: dict(usage), ai_reset=lambda: None, ai_error=lambda: "разбор не удался")
+                      ai_usage=lambda: dict(usage), ai_reset=lambda: None, ai_error=lambda: "разбор не удался",
+                      asins=None if asins is None else list(asins))
     return res, seen
 
 
@@ -272,6 +273,39 @@ res2, _ = run(db, answer={**GOOD, "title": "Aspirador DNIPRO-M | Soplador!"})
 t2 = [c for c in db.content if c["field"] == "title" and c["version"] == 2]
 check("второй вызов — версия 2, нарушения тайтла названы",
       res2.status == "OK" and t2 and {v["code"] for v in json.loads(t2[0]["checks"])} >= {"BRAND_NOT_FIRST", "FORBIDDEN_CHAR"})
+
+# --- ASIN в черновиках (решение владельца 23.10.2026): ровно один на площадке —
+# во все 8; несколько / ни одного / связь не прочитана — пусто и причина у тайтла.
+db = DB()
+run(db)
+check("один ASIN на площадке — во всех 8 черновиках",
+      len(db.content) == 8 and {c.get("asin") for c in db.content} == {"B0GTRY26HB"}
+      and not any(v["code"].startswith("ASIN_") for c in db.content for v in json.loads(c["checks"])))
+
+
+def _asin_case(asins):
+    d = DB()
+    run(d, asins=asins)
+    title = next(c for c in d.content if c["field"] == "title")
+    return {c.get("asin") for c in d.content}, [v for v in json.loads(title["checks"]) if v["code"].startswith("ASIN_")]
+
+
+got, why = _asin_case(("B0GTRY26HB", "B0AAAAAAAA"))
+check("несколько ASIN — пусто, причина ASIN_AMBIGUOUS с обоими",
+      got == {None} and why == [{"code": "ASIN_AMBIGUOUS", "field": "title", "detail": "B0AAAAAAAA, B0GTRY26HB"}])
+got, why = _asin_case(())
+check("ни одного — пусто, ASIN_UNKNOWN", got == {None} and [v["code"] for v in why] == ["ASIN_UNKNOWN"])
+got, why = _asin_case(None)
+check("связь не прочитана — пусто, ASIN_UNREAD", got == {None} and [v["code"] for v in why] == ["ASIN_UNREAD"])
+got, why = _asin_case(("nan", "B0GTRY26HB", "B0GTRY26HB"))
+check("мусор и повтор не мешают — один настоящий ASIN записан", got == {"B0GTRY26HB"} and not why)
+check("хвостовой перевод строки — не ASIN (fullmatch, как CHECK в базе)",
+      tg.pick_asin(["B0GTRY26HB\n"]) == (None, {"code": "ASIN_UNKNOWN", "field": "title", "detail": ""}))
+got, why = _asin_case((float("nan"), "B0GTRY26HB"))
+check("NaN в списке — не падение после оплаты, а пропуск (правило 4)", got == {"B0GTRY26HB"} and not why)
+db = DB()
+_r, _seen = run(db, method=("", 0), asins=(float("nan"),))
+check("ASIN решается до вызова модели: без методологии — отказ, вызова нет", _r.code == "NO_METHOD" and _seen["calls"] == 0)
 
 # --- лимиты: отказ ДО модели и без записи
 db = DB()
