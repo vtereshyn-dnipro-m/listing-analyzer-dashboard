@@ -170,9 +170,9 @@ def run_checks(texts: dict, model: str | None, conflict_tokens: set[str] = froze
     # Значение конфликта всё-таки попало в текст (из названия товара, из знаний
     # модели) — нарушение, которое видит человек до приёмки.
     for f in FIELDS:
-        hit = pf.has_token(texts[f], conflict_tokens)
-        if hit:
-            out.append({"code": "CONFLICT_VALUE", "field": f, "detail": hit})
+        hits = pf.has_tokens(texts[f], conflict_tokens)
+        if hits:
+            out.append({"code": "CONFLICT_VALUE", "field": f, "detail": ", ".join(hits)})
     if not model:
         out.append({"code": "NO_MODEL_PREFIX_CHECK", "field": "highlight", "detail": ""})
     return out
