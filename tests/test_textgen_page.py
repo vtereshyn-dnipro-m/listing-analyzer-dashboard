@@ -494,9 +494,12 @@ tg.usage_now = lambda sku: (GEN["usage"], None)
 tg.latest = lambda sku, mp: GEN["latest"]
 
 
+GEN["stamped"] = True
+
+
 def _generate(**kw):
     GEN["calls"].append(kw)
-    return tg.Result("OK", proposal_id="TG-7", cost_usd=0.031)
+    return tg.Result("OK", proposal_id="TG-7", cost_usd=0.031, stamped=GEN["stamped"])
 
 
 tg.generate = _generate
@@ -530,6 +533,17 @@ check("на всей странице нет неэкранированного 
       not any(re.search(r"(?<!\\)\$", str(e.value))
               for coll in (at.caption, at.warning, at.success, at.info, at.error) for e in coll))
 check("настоящая модель при этом не вызывалась", STATE["ai_calls"] == [])
+import deploy_sync  # noqa: E402
+
+check("штамп: в генерацию передан коммит кода правил (deploy_sync)",
+      GEN["calls"][0].get("rules_version") == deploy_sync.current_commit())
+check("штамп записан — подписи про миграцию нет", tg.STAMP_MIGRATION not in texts_of(at))
+GEN["stamped"] = False
+at = run()
+at.button(key="tg-gen-go").click().run()
+check("штамп не записан (нет миграции) — сказано и назван файл",
+      lab("tg.gen.no_stamp", file=tg.STAMP_MIGRATION) in texts_of(at) and any("TG-7" in str(x.value) for x in at.success))
+GEN["stamped"] = True
 
 GEN["usage"] = tg.Usage(calls_sku=10)
 at = run()

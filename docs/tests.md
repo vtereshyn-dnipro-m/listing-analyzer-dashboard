@@ -53,6 +53,8 @@ python tests/test_textgen_page.py
 python tests/test_content_versions_sql.py
 python tests/test_passport_copies.py
 python tests/test_textgen_generate.py
+python tests/test_textgen_rules.py
+python tests/test_content_stamp_sql.py
 python tests/test_passport_copy_frozen_sql.py
 python tests/test_feed.py
 python tests/test_methodology_page.py
@@ -597,6 +599,20 @@ JSON-схем: каждая даёт ожидаемый схемный исхо�
 обрезка по границе слова, отказ резать при потере must_keep.
 
 ---
+
+`test_textgen_rules.py` — пять правил 21.10.2026 в проверках черновика генератора:
+капс = ценность (`BULLET_HEAD`), переключение первым у 99601000-B (`FIRST_BULLET`),
+цифра в тайтле подписана (`UNLABELED_VALUE`), бренд первым (`BRAND_NOT_FIRST`), «2800»
+не становится «0 - 2800» (`RANGE_FROM_SINGLE`, плюс живые 245 km/h и 45 л паспорта
+99601000-B). Нарушение ловится, верный текст проходит; живой TG-1 показывает
+«переключение не первым». Методология в `docs/textgen.md` сверяется по md5 с
+записанной в базу. Подробно — [docs/textgen.md](textgen.md).
+
+`test_content_stamp_sql.py` — миграция штампа версии черновика: ровно её операторы,
+функция версий — из `passport_copy_frozen.sql` плюс две колонки штампа в списке
+неизменяемых, колонки — те, что пишет код, другие миграции колонок
+`content_versions` не добавляют, `apply_migration.py` файл принимает, файл —
+отпечатком. Поведение проверено на PGlite.
 
 `test_textgen_generate.py` — генерация текстов по паспорту SKU (решение владельца
 21.10.2026): в модель идут только разделы-факты паспорта, поля «Конфлікти» —

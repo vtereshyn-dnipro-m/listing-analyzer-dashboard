@@ -28,6 +28,7 @@ import pandas as pd
 import streamlit as st
 
 import auth
+import deploy_sync
 
 from components.ui import eyebrow, inject_fonts
 from i18n import t
@@ -554,12 +555,15 @@ else:
                                 conn=g_conn, method=(g_method, g_mver), provider=g_prov, model=g_model,
                                 max_tokens=g_maxtok, setting=get_setting,
                                 ai_call=ai.generate_json, ai_usage=ai.usage_totals, ai_reset=ai.reset_usage,
-                                asins=g_link_asins, ai_error=ai.last_call_error)
+                                asins=g_link_asins, ai_error=ai.last_call_error,
+                                rules_version=deploy_sync.current_commit())
                     except Exception as e:  # noqa: BLE001 — база или том: причина на экран
                         say.error(t("tg.gen.err.DB", detail=f"{type(e).__name__}: {str(e)[:200]}"))
                     else:
                         if res.status == "OK":
                             say.success(t("tg.gen.done", proposal=res.proposal_id, cost=res.cost_usd))
+                            if not res.stamped:
+                                say.caption(t("tg.gen.no_stamp", file=tg.STAMP_MIGRATION))
                         else:
                             say.error(t(f"tg.gen.err.{res.code}", detail=res.detail))
                     finally:

@@ -12,7 +12,11 @@ $10 в сутки на весь пилот; сутки — по Киеву. Сч
 Цена модели неизвестна — генерации нет: лимит в долларах без цены не проверить.
 
 Результат — черновики `content_versions` (8 полей одним предложением `TG-<id>`)
-с проверками правил тайтла кодом. Модель и деньги — только по нажатию человека
+с проверками правил кодом: правила тайтла (`services/title_rules.py`) и правки
+Ярослава 21.10.2026 (`run_checks`). У каждого черновика — штамп версии: номер
+методологии, модель, `prompt_sha256` (ровно то, что ушло в модель) и
+`rules_version` (коммит кода правил) — после обновления правил видно, почему
+старый текст отличается от нового. Модель и деньги — только по нажатию человека
 с правом `ls.textgen.accept`; право проверяет страница.
 """
 from __future__ import annotations
@@ -68,6 +72,7 @@ class Result:
     texts: dict = field(default_factory=dict)
     checks: list = field(default_factory=list)
     cost_usd: float = 0.0
+    stamped: bool = False               # prompt_sha256 и rules_version записаны (есть миграция штампа)
 
 
 # ------------------------------------------------------------------ цена
@@ -162,12 +167,106 @@ def model_code(facts: pf.Facts) -> str | None:
     return None
 
 
-def run_checks(texts: dict, model: str | None, conflict_tokens: set[str] = frozenset()) -> list[dict]:
+# ------------------------------------------------------------------ правила 21.10.2026
+# Правки Ярослава по 99601000-B, по слову владельца общие для генерации всех
+# товаров (docs/textgen.md). Код ловит то, что видно по тексту; смысл заголовка
+# («ценность, а не название функции») по тексту не проверить — его держат
+# методология и человек при приёмке. Бренд первым — `title_rules` (BRAND_NOT_FIRST).
+
+# Заголовок буллета — капсом и через двоеточие: «CAMBIA DE ASPIRAR A SOPLAR SIN
+# DESMONTAR: …». Единицы при числе («4Ah», «20V», «45L») в заголовке капсом не
+# считаются нарушением: формат единиц слитный и со строчными.
+_BULLET_HEAD = re.compile(r"^\s*([^:\n]+?)\s*:\s+\S")
+_UNIT_TOKEN = re.compile(r"\d[\w³/.,]*")
+
+# Первый буллет — главная ценность. Ценность товара коду не известна; где её
+# решил человек, ожидание записано по (SKU, площадка): у 99601000-B — переключение
+# между всасыванием и выдуванием без разборки (правка Ярослава 21.10.2026).
+# Все шаблоны должны найтись в первом буллете (без учёта регистра).
+FIRST_BULLET = {
+    ("99601000-B", "es"): ("aspirar ↔ soplar sin desmontar",
+                           (r"aspir", r"sopl", r"sin\s+(?:desmont|herramient)")),
+}
+
+# Цифра в тайтле подписана тем, что она значит: «Aire 245km/h», «Bolsa 45L»,
+# «Tritura 15:1». Подпись ищется в той же части тайтла (между запятыми). Единицы,
+# которые говорят сами за себя (W, Nm, Ø…mm, rpm, Ah, J), сюда не входят.
+VALUE_LABELS = (
+    ("km/h", re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)?\s*km/h", re.I), ("aire", "velocidad")),
+    ("m³", re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)?\s*m(?:³|3)/(?:min|h)\b", re.I),
+     ("aire", "caudal", "aspiración", "aspiracion", "succión", "succion")),
+    ("L", re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)?\s*L\b"),
+     ("bolsa", "depósito", "deposito", "capacidad", "saco", "tanque")),
+    ("N:1", re.compile(r"(?<![\d.,])\d+\s*:\s*1\b"), ("tritura",)),
+)
+
+# Одиночное значение паспорта (N) не превращается в диапазон «0 - N»: у DTW-205BC
+# «2800» обороты стали «0 - 2800» (dnipro-m.ua и правка Алексея 21.10.2026).
+# Диапазон «0 - N» можно, только если он сам есть в паспорте.
+_NUM = re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)*")
+_RANGE = re.compile(r"(?<![\d.,])(\d+(?:[.,]\d+)*)\s*[-–—]\s*(\d+(?:[.,]\d+)*)")
+_ZERO_RANGE = re.compile(r"(?<![\d.,])0\s*[-–—]\s*(\d+(?:[.,]\d+)*)")
+_THOUSANDS = re.compile(r"^\d{1,3}(?:[.,]\d{3})+$")
+
+
+def _num(x: str) -> str:
+    """«2.800» и «2,800» — тысячи, то же, что «2800»; «3,9» — «3.9»."""
+    return re.sub(r"[.,]", "", x) if _THOUSANDS.match(x) else x.replace(",", ".")
+
+
+def passport_values(facts: pf.Facts | None) -> tuple[set[str], set[tuple[str, str]]]:
+    """Числа фактов паспорта и диапазоны «a - b» среди них. Колонка ID и
+    источники не в счёт: «FACT-99601000-B-010» и «SRC-…-0003» — не значения."""
+    nums, ranges = set(), set()
+    for s in (facts.sections if facts else []):
+        if not s.rows:
+            continue
+        head = s.rows[0]
+        for r in s.rows[1:]:
+            for i, (h, v) in enumerate(zip(head, r)):
+                hl = h.strip().lower()
+                if i == 0 or not v or hl.startswith(pf.SOURCE_COLS) or pf.SOURCE_MARK in hl:
+                    continue
+                nums |= {_num(m.group(0)) for m in _NUM.finditer(v)}
+                ranges |= {(_num(a), _num(b)) for a, b in _RANGE.findall(v)}
+    return nums, ranges
+
+
+def run_checks(texts: dict, model: str | None, conflict_tokens: set[str] = frozenset(), *,
+               facts: pf.Facts | None = None, sku: str | None = None,
+               marketplace: str | None = None) -> list[dict]:
     # kind=TOOL: тип товара (инструмент или аккумулятор/зарядка) паспорт не даёт
     # машинно; для аккумулятора правило вольтажа сработает лишним — это видно.
     found = tr.check(texts["title"], texts["highlight"], kind=tr.TOOL, model=model)
     out = [{"code": v.code, "field": "highlight" if v.field == "highlights" else v.field, "detail": v.detail}
            for v in found]
+    # Заголовок буллета капсом через двоеточие.
+    for f in FIELDS:
+        if not f.startswith("bullet_"):
+            continue
+        m = _BULLET_HEAD.match(texts[f])
+        head = m.group(1) if m else ""
+        letters = [c for c in _UNIT_TOKEN.sub("", head) if c.isalpha()]
+        if not (m and len(letters) >= 3 and all(c.isupper() for c in letters)):
+            out.append({"code": "BULLET_HEAD", "field": f, "detail": (head or texts[f])[:40]})
+    # Первый буллет — решённая человеком главная ценность товара.
+    exp = FIRST_BULLET.get((sku, marketplace))
+    if exp and not all(re.search(pat, texts["bullet_1"], re.I) for pat in exp[1]):
+        out.append({"code": "FIRST_BULLET", "field": "bullet_1", "detail": exp[0]})
+    # Цифра в тайтле подписана. Части — по запятой, но не по десятичной («3,5 m³/min»).
+    for part in re.split(r"(?<!\d),|,(?!\d)", texts["title"]):
+        low = part.lower()
+        for _, rx, labels in VALUE_LABELS:
+            for m in rx.finditer(part):
+                if not any(re.search(rf"(?<!\w){re.escape(lb)}", low) for lb in labels):
+                    out.append({"code": "UNLABELED_VALUE", "field": "title", "detail": m.group(0).strip()})
+    # Одиночное значение паспорта — не диапазон «0 - N».
+    nums, ranges = passport_values(facts)
+    for f in FIELDS:
+        for m in _ZERO_RANGE.finditer(texts[f]):
+            n = _num(m.group(1))
+            if n in nums and ("0", n) not in ranges:
+                out.append({"code": "RANGE_FROM_SINGLE", "field": f, "detail": f"{m.group(0)} → {m.group(1)}"})
     # Значение конфликта всё-таки попало в текст (из названия товара, из знаний
     # модели) — нарушение, которое видит человек до приёмки.
     for f in FIELDS:
@@ -199,18 +298,33 @@ def pick_asin(asins: list[str] | None) -> tuple[str | None, dict | None]:
     return None, {"code": "ASIN_AMBIGUOUS", "field": "title", "detail": ", ".join(ok)}
 
 
+# ------------------------------------------------------------------ штамп версии
+STAMP_MIGRATION = "2026-10-27_content_versions_stamp.sql"
+STAMP_COLUMNS = ("prompt_sha256", "rules_version")
+_COMMIT = re.compile(r"[0-9a-f]{40}")
+
+
+def prompt_sha256(system: str, prompt: str) -> str:
+    """Отпечаток ровно того, что ушло в модель: методология (system) и запрос.
+    Тот же отпечаток — тот же вход; другой — изменились правила, промпт или факты."""
+    return hashlib.sha256((system or "").encode("utf-8") + b"\x00" + (prompt or "").encode("utf-8")).hexdigest()
+
+
 def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn, method: tuple[str, int],
              provider: str, model: str, max_tokens: int, setting, ai_call, ai_usage, ai_reset,
-             asins: list[str] | None, ai_error=lambda: None) -> Result:
+             asins: list[str] | None, ai_error=lambda: None, rules_version: str | None = None) -> Result:
     """Один вызов модели и черновики. `copy` — строка `passport_source_artifacts`
     (source_artifact_id, passport_id, archived_locator, sha256). Вызов модели и
     его учёт — через переданные функции: страница отдаёт `services/ai`, тест —
-    подмену."""
+    подмену. `rules_version` — коммит кода правил (полный sha, 40 знаков); не
+    такой — пишется пусто: CHECK в базе отверг бы вставку уже ПОСЛЕ платного
+    вызова."""
     m_text, m_ver = method
     if not (m_text or "").strip() or not m_ver:
         return Result("BLOCKED", "NO_METHOD", SCOPE)
-    # ASIN решается ДО платного вызова: ничего, что может упасть, после него нет.
+    # ASIN и штамп решаются ДО платного вызова: ничего, что может упасть, после него нет.
     asin, why_no_asin = pick_asin(asins)
+    rules_ver = rules_version if isinstance(rules_version, str) and _COMMIT.fullmatch(rules_version) else None
     if provider not in PROVIDERS:
         return Result("BLOCKED", "PROVIDER", provider)
     p = price(model, setting)
@@ -229,6 +343,7 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
         return Result("FAILED", "COPY_OTHER_PASSPORT", f"{header['passport_id']} ≠ {copy['passport_id']}")
     facts = pf.read(data)
     prompt = build_prompt(sku, marketplace, header, facts)
+    p_sha = prompt_sha256(m_text, prompt)
     est = estimate(p, len(prompt) + len(m_text), max_tokens)
 
     with conn, conn.cursor() as cur:
@@ -239,6 +354,11 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
         cur.execute("SELECT to_regclass('listing_data.content_versions') IS NOT NULL")
         if not cur.fetchone()[0]:
             return Result("BLOCKED", "NO_CONTENT_TABLE", "content_versions")
+        # Код и миграция едут порознь: без колонок штампа черновик пишется как
+        # раньше, а страница называет миграцию.
+        cur.execute("SELECT count(*) FROM information_schema.columns WHERE table_schema = 'listing_data'"
+                    " AND table_name = 'content_versions' AND column_name = ANY(%s)", (list(STAMP_COLUMNS),))
+        stamped = int(cur.fetchone()[0]) == len(STAMP_COLUMNS)
         why = block_reason(day_usage(cur, sku), est)
         if why:
             return Result("BLOCKED", why[0], why[1])
@@ -269,7 +389,8 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
     if texts is None:
         return Result("FAILED", "MODEL", err, call_id, cost_usd=real)
 
-    checks = run_checks(texts, model_code(facts), pf.conflict_tokens(facts.conflicts))
+    checks = run_checks(texts, model_code(facts), pf.conflict_tokens(facts.conflicts),
+                        facts=facts, sku=sku, marketplace=marketplace)
     # ASIN товара на этой площадке: один — во все черновики; иначе пусто, причина —
     # пометкой в checks тайтла (ASIN_CODES — не нарушение, экран показывает отдельно).
     if why_no_asin:
@@ -281,15 +402,17 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
                         " WHERE sku = %s AND marketplace = %s AND field = %s", (sku, marketplace, f))
             ver = int(cur.fetchone()[0]) + 1
             mine = [c for c in checks if c["field"] == f]
+            stamp_cols, stamp_vals = ((", prompt_sha256, rules_version", ", %s, %s"), (p_sha, rules_ver)) \
+                if stamped else (("", ""), ())
             cur.execute(
                 "INSERT INTO content_versions (sku, marketplace, field, text, version, proposal_id, created_by,"
                 " passport_id, passport_version, passport_sha256, passport_artifact_id, origin, model,"
-                " skill_version, checks, asin) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'model',"
-                " %s, %s, %s, %s)",
+                f" skill_version, checks, asin{stamp_cols[0]}) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,"
+                f" 'model', %s, %s, %s, %s{stamp_cols[1]})",
                 (sku, marketplace, f, texts[f], ver, proposal, actor, header["passport_id"],
                  str(header["passport_version"]), copy["sha256"], copy["source_artifact_id"], model, m_ver,
-                 json.dumps(mine, ensure_ascii=False), asin))
-    return Result("OK", "", "", call_id, proposal, texts, checks, real)
+                 json.dumps(mine, ensure_ascii=False), asin) + stamp_vals)
+    return Result("OK", "", "", call_id, proposal, texts, checks, real, stamped=stamped)
 
 
 # ------------------------------------------------------------------ чтение для экрана
