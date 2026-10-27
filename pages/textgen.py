@@ -564,6 +564,8 @@ else:
                             say.success(t("tg.gen.done", proposal=res.proposal_id, cost=res.cost_usd))
                             if not res.stamped:
                                 say.caption(t("tg.gen.no_stamp", file=tg.STAMP_MIGRATION))
+                            elif not res.rules_version:
+                                say.caption(t("tg.gen.no_rules_version"))
                         else:
                             say.error(t(f"tg.gen.err.{res.code}", detail=res.detail))
                     finally:

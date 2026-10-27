@@ -290,8 +290,8 @@ check("чистый ответ — ни одного нарушения ни в 
 want_sha = tg.prompt_sha256(seen["system"], seen["prompt"])
 check("штамп: у всех 8 черновиков prompt_sha256 — отпечаток того, что ушло в модель (system + запрос)",
       res.stamped and {c.get("prompt_sha256") for c in db.content} == {want_sha} and len(want_sha) == 64)
-check("штамп: rules_version — коммит кода правил",
-      {c.get("rules_version") for c in db.content} == {COMMIT})
+check("штамп: rules_version — коммит кода правил, и результат его называет",
+      {c.get("rules_version") for c in db.content} == {COMMIT} and res.rules_version == COMMIT)
 check("штамп: модель и номер методологии — как и раньше",
       {(c["model"], c["skill_version"]) for c in db.content} == {("claude-opus-5-5", 3)})
 check("отпечаток меняется с методологией и с запросом, тот же вход — тот же отпечаток",
@@ -308,11 +308,13 @@ for bad in (None, "", "abc", COMMIT[:7], COMMIT.upper(), COMMIT + "0", "fp:1a2b3
     _d = DB()
     _r, _s = run(_d, rules_version=bad)
     if not (_r.status == "OK" and len(_d.content) == 8 and {c["rules_version"] for c in _d.content} == {None}
+            and _r.stamped and _r.rules_version is None
             and {c["prompt_sha256"] for c in _d.content} == {tg.prompt_sha256(_s["system"], _s["prompt"])}):
         check(f"rules_version {bad!r} не коммит — пусто, черновики записаны", False)
         break
 else:
-    check("rules_version не полный sha (пусто, короткий, заглавные, отпечаток fp:) — пусто, черновики записаны", True)
+    check("rules_version не полный sha (пусто, короткий, заглавные, отпечаток fp:) — пусто, черновики записаны, "
+          "результат говорит, что версии нет", True)
 _d = DB()
 _d.stamp_cols = False
 try:

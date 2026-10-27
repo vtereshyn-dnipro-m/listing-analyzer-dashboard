@@ -72,7 +72,8 @@ class Result:
     texts: dict = field(default_factory=dict)
     checks: list = field(default_factory=list)
     cost_usd: float = 0.0
-    stamped: bool = False               # prompt_sha256 и rules_version записаны (есть миграция штампа)
+    stamped: bool = False               # колонки штампа есть и записаны (миграция применена)
+    rules_version: str | None = None    # что записано в rules_version; None при stamped — коммит не прочитан
 
 
 # ------------------------------------------------------------------ цена
@@ -174,23 +175,30 @@ def model_code(facts: pf.Facts) -> str | None:
 # методология и человек при приёмке. Бренд первым — `title_rules` (BRAND_NOT_FIRST).
 
 # Заголовок буллета — капсом и через двоеточие: «CAMBIA DE ASPIRAR A SOPLAR SIN
-# DESMONTAR: …». Единицы при числе («4Ah», «20V», «45L») в заголовке капсом не
-# считаются нарушением: формат единиц слитный и со строчными.
-_BULLET_HEAD = re.compile(r"^\s*([^:\n]+?)\s*:\s+\S")
-_UNIT_TOKEN = re.compile(r"\d[\w³/.,]*")
+# DESMONTAR: …». Двоеточие между цифрами («TRITURA 15:1 LAS HOJAS: …») заголовок
+# не обрывает. Число с единицей («4Ah», «20V», «245 km/h», «3,5 m³/min») в заголовке
+# капсом нарушением не считается: единицы пишутся со строчными (проверка #175).
+_BULLET_HEAD = re.compile(r"^\s*((?:[^:\n]|(?<=\d):(?=\d))+?)\s*:\s+\S")
+_UNIT_TOKEN = re.compile(r"\d[\d.,:]*\s?(?:km/h|m[³3]/(?:min|h)|mAh|Ah|Nm|kW|W|V|L|J|mm|cm|kg|rpm|bpm|spm|"
+                         r"min|bar|dB|Pa|s|h)?(?![A-Za-z])")
 
 # Первый буллет — главная ценность. Ценность товара коду не известна; где её
 # решил человек, ожидание записано по (SKU, площадка): у 99601000-B — переключение
 # между всасыванием и выдуванием без разборки (правка Ярослава 21.10.2026).
-# Все шаблоны должны найтись в первом буллете (без учёта регистра).
+# Все шаблоны должны найтись в ЗАГОЛОВКЕ первого буллета (без учёта регистра): ценность
+# — то, что стоит капсом; упоминание в тексте ниже заголовка её не делает первой.
+# «Без разборки» — «sin desmontar/desmontaje»; «sin herramientas» — другое
+# (проверка #175).
 FIRST_BULLET = {
     ("99601000-B", "es"): ("aspirar ↔ soplar sin desmontar",
-                           (r"aspir", r"sopl", r"sin\s+(?:desmont|herramient)")),
+                           (r"aspir", r"sopl", r"sin\s+desmont")),
 }
 
 # Цифра в тайтле подписана тем, что она значит: «Aire 245km/h», «Bolsa 45L»,
 # «Tritura 15:1». Подпись ищется в той же части тайтла (между запятыми). Единицы,
-# которые говорят сами за себя (W, Nm, Ø…mm, rpm, Ah, J), сюда не входят.
+# которые говорят сами за себя (W, Nm, Ø…mm, rpm, Ah, J), сюда не входят. Слова
+# подписей — на языке площадки; есть только испанские (пилот — ES). На других
+# площадках правило молчит, а не ругает верные «Luft 245km/h» (проверка #175).
 VALUE_LABELS = (
     ("km/h", re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)?\s*km/h", re.I), ("aire", "velocidad")),
     ("m³", re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)?\s*m(?:³|3)/(?:min|h)\b", re.I),
@@ -199,12 +207,16 @@ VALUE_LABELS = (
      ("bolsa", "depósito", "deposito", "capacidad", "saco", "tanque")),
     ("N:1", re.compile(r"(?<![\d.,])\d+\s*:\s*1\b"), ("tritura",)),
 )
+LABELS_BY_MARKETPLACE = {"es": VALUE_LABELS}
 
 # Одиночное значение паспорта (N) не превращается в диапазон «0 - N»: у DTW-205BC
 # «2800» обороты стали «0 - 2800» (dnipro-m.ua и правка Алексея 21.10.2026).
-# Диапазон «0 - N» можно, только если он сам есть в паспорте.
-_NUM = re.compile(r"(?<![\d.,])\d+(?:[.,]\d+)*")
-_RANGE = re.compile(r"(?<![\d.,])(\d+(?:[.,]\d+)*)\s*[-–—]\s*(\d+(?:[.,]\d+)*)")
+# Одиночное — число, которое в паспорте не конец диапазона и не часть соотношения
+# («15:1»). Диапазон паспорта узнаётся в любой записи: «0-2800», «0…45», «0...45»,
+# «від 0 до 2800», «de 0 a 2800» (проверка #175).
+_NUM = re.compile(r"(?<![\d.,:])\d+(?:[.,]\d+)*(?![\d.,]*:\d)")
+_RANGE = re.compile(r"(?<![\d.,])(\d+(?:[.,]\d+)*)\s*(?:[-–—…]|\.\.\.|\s(?:до|по|to|a|hasta|bis)\s)\s*"
+                    r"(\d+(?:[.,]\d+)*)", re.I)
 _ZERO_RANGE = re.compile(r"(?<![\d.,])0\s*[-–—]\s*(\d+(?:[.,]\d+)*)")
 _THOUSANDS = re.compile(r"^\d{1,3}(?:[.,]\d{3})+$")
 
@@ -215,8 +227,9 @@ def _num(x: str) -> str:
 
 
 def passport_values(facts: pf.Facts | None) -> tuple[set[str], set[tuple[str, str]]]:
-    """Числа фактов паспорта и диапазоны «a - b» среди них. Колонка ID и
-    источники не в счёт: «FACT-99601000-B-010» и «SRC-…-0003» — не значения."""
+    """Одиночные числа фактов паспорта и диапазоны «a - b» среди них. Концы
+    диапазонов и соотношения одиночными не считаются. Колонка ID и источники не в
+    счёт: «FACT-99601000-B-010» и «SRC-…-0003» — не значения."""
     nums, ranges = set(), set()
     for s in (facts.sections if facts else []):
         if not s.rows:
@@ -227,8 +240,10 @@ def passport_values(facts: pf.Facts | None) -> tuple[set[str], set[tuple[str, st
                 hl = h.strip().lower()
                 if i == 0 or not v or hl.startswith(pf.SOURCE_COLS) or pf.SOURCE_MARK in hl:
                     continue
-                nums |= {_num(m.group(0)) for m in _NUM.finditer(v)}
-                ranges |= {(_num(a), _num(b)) for a, b in _RANGE.findall(v)}
+                found = _RANGE.findall(v)
+                ranges |= {(_num(a), _num(b)) for a, b in found}
+                ends = {_num(x) for pair in found for x in pair}
+                nums |= {_num(m.group(0)) for m in _NUM.finditer(v)} - ends
     return nums, ranges
 
 
@@ -247,16 +262,17 @@ def run_checks(texts: dict, model: str | None, conflict_tokens: set[str] = froze
         m = _BULLET_HEAD.match(texts[f])
         head = m.group(1) if m else ""
         letters = [c for c in _UNIT_TOKEN.sub("", head) if c.isalpha()]
-        if not (m and len(letters) >= 3 and all(c.isupper() for c in letters)):
+        if not (m and len(letters) >= 2 and all(c.isupper() for c in letters)):
             out.append({"code": "BULLET_HEAD", "field": f, "detail": (head or texts[f])[:40]})
     # Первый буллет — решённая человеком главная ценность товара.
     exp = FIRST_BULLET.get((sku, marketplace))
-    if exp and not all(re.search(pat, texts["bullet_1"], re.I) for pat in exp[1]):
+    head1 = _BULLET_HEAD.match(texts["bullet_1"])
+    if exp and not (head1 and all(re.search(pat, head1.group(1), re.I) for pat in exp[1])):
         out.append({"code": "FIRST_BULLET", "field": "bullet_1", "detail": exp[0]})
     # Цифра в тайтле подписана. Части — по запятой, но не по десятичной («3,5 m³/min»).
     for part in re.split(r"(?<!\d),|,(?!\d)", texts["title"]):
         low = part.lower()
-        for _, rx, labels in VALUE_LABELS:
+        for _, rx, labels in LABELS_BY_MARKETPLACE.get(marketplace, ()):
             for m in rx.finditer(part):
                 if not any(re.search(rf"(?<!\w){re.escape(lb)}", low) for lb in labels):
                     out.append({"code": "UNLABELED_VALUE", "field": "title", "detail": m.group(0).strip()})
@@ -412,7 +428,8 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
                 (sku, marketplace, f, texts[f], ver, proposal, actor, header["passport_id"],
                  str(header["passport_version"]), copy["sha256"], copy["source_artifact_id"], model, m_ver,
                  json.dumps(mine, ensure_ascii=False), asin) + stamp_vals)
-    return Result("OK", "", "", call_id, proposal, texts, checks, real, stamped=stamped)
+    return Result("OK", "", "", call_id, proposal, texts, checks, real, stamped=stamped,
+                  rules_version=rules_ver if stamped else None)
 
 
 # ------------------------------------------------------------------ чтение для экрана

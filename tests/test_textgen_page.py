@@ -495,11 +495,19 @@ tg.latest = lambda sku, mp: GEN["latest"]
 
 
 GEN["stamped"] = True
+GEN["rules_version"] = "f" * 40
+# Коммит подменён: без .git рядом (копия без репозитория) проверка сравнивала бы
+# None с None и ничего не запирала (проверка #175).
+import deploy_sync  # noqa: E402
+
+FAKE_COMMIT = "f" * 40
+deploy_sync.current_commit = lambda: FAKE_COMMIT
 
 
 def _generate(**kw):
     GEN["calls"].append(kw)
-    return tg.Result("OK", proposal_id="TG-7", cost_usd=0.031, stamped=GEN["stamped"])
+    return tg.Result("OK", proposal_id="TG-7", cost_usd=0.031, stamped=GEN["stamped"],
+                     rules_version=GEN["rules_version"] if GEN["stamped"] else None)
 
 
 tg.generate = _generate
@@ -533,10 +541,8 @@ check("на всей странице нет неэкранированного 
       not any(re.search(r"(?<!\\)\$", str(e.value))
               for coll in (at.caption, at.warning, at.success, at.info, at.error) for e in coll))
 check("настоящая модель при этом не вызывалась", STATE["ai_calls"] == [])
-import deploy_sync  # noqa: E402
-
 check("штамп: в генерацию передан коммит кода правил (deploy_sync)",
-      GEN["calls"][0].get("rules_version") == deploy_sync.current_commit())
+      GEN["calls"][0].get("rules_version") == FAKE_COMMIT)
 check("штамп записан — подписи про миграцию нет", tg.STAMP_MIGRATION not in texts_of(at))
 GEN["stamped"] = False
 at = run()
@@ -544,6 +550,16 @@ at.button(key="tg-gen-go").click().run()
 check("штамп не записан (нет миграции) — сказано и назван файл",
       lab("tg.gen.no_stamp", file=tg.STAMP_MIGRATION) in texts_of(at) and any("TG-7" in str(x.value) for x in at.success))
 GEN["stamped"] = True
+GEN["rules_version"] = None
+at = run()
+at.button(key="tg-gen-go").click().run()
+check("штамп записан, а коммит не прочитан — сказано, что версия правил пустая",
+      lab("tg.gen.no_rules_version") in texts_of(at) and tg.STAMP_MIGRATION not in texts_of(at))
+GEN["rules_version"] = "f" * 40
+at = run()
+at.button(key="tg-gen-go").click().run()
+check("штамп и версия записаны — ни одной подписи про штамп",
+      lab("tg.gen.no_rules_version") not in texts_of(at) and tg.STAMP_MIGRATION not in texts_of(at))
 
 GEN["usage"] = tg.Usage(calls_sku=10)
 at = run()
