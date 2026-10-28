@@ -57,6 +57,7 @@ python tests/test_textgen_rules.py
 python tests/test_passport_conflicts.py
 python tests/test_passport_one_source.py
 python tests/test_passport_sku_picker.py
+python tests/test_passport_card_photo.py
 python tests/test_content_stamp_sql.py
 python tests/test_passport_copy_frozen_sql.py
 python tests/test_feed.py
@@ -616,6 +617,12 @@ ES (по ASIN справочника и по sku_group); выбор — точн
 карточки и «Верификатора», карточка и вне текущего поиска; при сбое справочника —
 ошибка над списком; ручной поиск работает; тип задаёт правила генерации (вольтаж у
 аккумулятора) и называется в промпте.
+
+`test_passport_card_photo.py` — фото товара в карточке Реестра (28.10.2026): источник —
+последний удачный снапшот нашего листинга ES, картинка этого ASIN; SKU связан с листингом
+только по ASIN справочника Кабинета, не по `sku_group`; два ASIN с фото, конкурент, не ES,
+пустая, NaN и не-амазоновская ссылка — заглушка «фото отсутствует»; сбой чтения — заглушка и
+причина подписью; примеры владельца 99601000-B (фото, паспорт v2) и 08087000 (заглушка).
 
 `test_passport_one_source.py` — один паспорт на SKU для раздела и генератора,
 чеклист 28.10.2026 пункты 1–7, через AppTest на подменённых базах и томе: копия
