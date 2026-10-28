@@ -144,9 +144,21 @@ def sku_directory() -> tuple[pd.DataFrame, str | None]:
 # намеренно: решение 07.10.2026 — из базы Кабинета только `sku_master` и листинги.
 # Тип определяет правила генерации (`textgen.kind_of`: аккумулятор и зарядка —
 # вольтаж в тайтле можно).
-@st.cache_data(ttl=600, show_spinner=False)
+class _ListingUnread(Exception):
+    pass
+
+
 def listing_types_es() -> tuple[pd.DataFrame, str | None]:
-    """(asin, sku_group, тип) наших ES-листингов; сбой — (пусто, причина)."""
+    """(asin, sku_group, тип) наших ES-листингов; сбой — (пусто, причина). Кэшируется
+    только удача: сбой не залипает на 10 минут (проверка #178)."""
+    try:
+        return _listing_types_es(), None
+    except _ListingUnread as e:
+        return pd.DataFrame(columns=["asin", "sku_group", "type"]), str(e)
+
+
+@st.cache_data(ttl=600, show_spinner=False)
+def _listing_types_es() -> pd.DataFrame:
     from services import product_specs as ps
     df, err = safe_read(
         """SELECT pm.asin, pm.sku_group, ll.title, la.product_type
@@ -158,11 +170,11 @@ def listing_types_es() -> tuple[pd.DataFrame, str | None]:
              LEFT JOIN listing_attributes la ON la.asin = pm.asin AND la.marketplace = pm.marketplace
             WHERE pm.marketplace = 'es' AND pm.is_competitor IS NOT TRUE""")
     if err:
-        return pd.DataFrame(columns=["asin", "sku_group", "type"]), err
+        raise _ListingUnread(err)
     rows = [{"asin": cell_text(r, "asin"), "sku_group": cell_text(r, "sku_group"),
              "type": ps.detect_type(cell_text(r, "title"), cell_text(r, "product_type") or None)}
             for _, r in df.iterrows()]
-    return pd.DataFrame(rows, columns=["asin", "sku_group", "type"]), None
+    return pd.DataFrame(rows, columns=["asin", "sku_group", "type"])
 
 
 def sku_types(directory: pd.DataFrame, listing: pd.DataFrame) -> dict[str, str]:

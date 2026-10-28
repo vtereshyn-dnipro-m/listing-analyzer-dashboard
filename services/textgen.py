@@ -255,8 +255,8 @@ def passport_values(facts: pf.Facts | None) -> tuple[set[str], set[tuple[str, st
 def run_checks(texts: dict, model: str | None, conflict_tokens: set[str] = frozenset(), *,
                facts: pf.Facts | None = None, sku: str | None = None,
                marketplace: str | None = None, kind: str = tr.TOOL) -> list[dict]:
-    # kind=TOOL: тип товара (инструмент или аккумулятор/зарядка) паспорт не даёт
-    # машинно; для аккумулятора правило вольтажа сработает лишним — это видно.
+    # kind — по типу товара из листинга (textgen.kind_of): аккумулятор и зарядка —
+    # вольтаж в тайтле можно; тип неизвестен — правила инструмента.
     found = tr.check(texts["title"], texts["highlight"], kind=kind, model=model)
     out = [{"code": v.code, "field": "highlight" if v.field == "highlights" else v.field, "detail": v.detail}
            for v in found]

@@ -353,18 +353,26 @@ elif copies_df.empty:
 else:
     skus = list(copies_df["sku_id"])
     pre = pp_header["sku_id"] if pp_header and pp_header["sku_id"] in skus else skus[0]
-    # Тот же SKU, что выбран в разделе «Паспорт SKU» (pp-sku): контекст сменился —
-    # генератор встаёт на него. Значение пишется ДО создания виджета (правило 7б);
-    # дальше человек вправе выбрать здесь другой (поручение владельца 28.10.2026).
+    # Тот же SKU, что выбран в разделе «Паспорт SKU» (pp-sku), — поручение владельца
+    # 28.10.2026. Выбор человека здесь живёт отдельно от ключа виджета (tg-gen-choice):
+    # ключ виджета Streamlit удаляет при уходе со страницы, а выбор должен дожить до
+    # возвращения (проверка #178). Порядок: выбор здесь после последней смены контекста →
+    # SKU контекста → загруженный файл → первая копия. Значение пишется в ключ виджета
+    # ДО его создания на каждом прогоне (правило 7б).
     g_ctx = st.session_state.get("pp-sku")
-    if g_ctx in skus and st.session_state.get("tg-gen-ctx") != g_ctx:
-        st.session_state["tg-gen-sku"] = g_ctx
+    if st.session_state.get("tg-gen-ctx") != g_ctx:
+        st.session_state.pop("tg-gen-choice", None)     # контекст сменился — встаём на него
     st.session_state["tg-gen-ctx"] = g_ctx
-    if st.session_state.get("tg-gen-sku") not in skus:
-        st.session_state.pop("tg-gen-sku", None)
+    g_choice = st.session_state.get("tg-gen-choice")
+    g_want = (g_choice if g_choice in skus else g_ctx if g_ctx in skus
+              else pp_header["sku_id"] if pp_header and pp_header["sku_id"] in skus else pre)
+    st.session_state["tg-gen-sku"] = g_want
+
+    def _gen_chosen() -> None:
+        st.session_state["tg-gen-choice"] = st.session_state.get("tg-gen-sku")
+
     g1, g2 = st.columns(2)
-    g_sku = g1.selectbox(t("tg.gen.sku"), skus, key="tg-gen-sku",
-                         **({} if "tg-gen-sku" in st.session_state else {"index": skus.index(pre)}))
+    g_sku = g1.selectbox(t("tg.gen.sku"), skus, key="tg-gen-sku", on_change=_gen_chosen)
     mps = list(tg.LANGUAGE)
     g_mp = g2.selectbox(t("tg.gen.mp"), mps, index=mps.index("es"), format_func=str.upper, key="tg-gen-mp")
     g_copy = copies_df[copies_df["sku_id"] == g_sku].iloc[0].to_dict()

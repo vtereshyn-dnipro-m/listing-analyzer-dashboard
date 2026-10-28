@@ -133,17 +133,27 @@ def _pick_from_list(key: str) -> None:
     """Колбэк списка: выбор в списке — точный выбор SKU, как выбор строки
     Реестра. Пишет контекст до перерисовки (правило 7б)."""
     sku = st.session_state.get(key)
+    st.session_state["pp-show"] = None
+    st.session_state["pp-question"] = None
     if sku:
         st.session_state["pp-sku"] = sku
-        st.session_state["pp-show"] = None
-        st.session_state["pp-question"] = None
+    else:
+        # «— выберите товар —» — явный сброс товара, как «Сменить товар», а не тихий
+        # пропуск: карточка старого SKU не должна остаться (проверка #178)
+        st.session_state.pop("pp-sku", None)
 
 
 def _option_label(sku: str, names: dict, types: dict, passports: dict) -> str:
     if not sku:
         return t("pp.pick.none")
     p = passports.get(sku)
-    status = t("pp.pick.has", ver=p[0] or "—", state=state_label(p[1])) if p else t("pp.pick.absent")
+    if not p:
+        status = t("pp.pick.absent")
+    elif p[2] or not p[1]:
+        # копия есть, но шапка не прочиталась: не «Паспорт отсутствует» (проверка #178)
+        status = t("pp.pick.unread", ver=p[0] or "—")
+    else:
+        status = t("pp.pick.has", ver=p[0] or "—", state=state_label(p[1]))
     ty = types.get(sku)
     return " · ".join(x for x in (sku, names.get(sku) or "—",
                                    t(f"tg.type.{ty}") if ty else t("pp.pick.type_unknown"), status) if x)
@@ -159,7 +169,8 @@ def render_picker(directory: pd.DataFrame, dir_err, objects: pd.DataFrame) -> No
         st.error(t("pp.pick.dir_error", err=pv.esc(str(dir_err)[:200])))
     objs = objects if objects is not None and not objects.empty else pd.DataFrame(
         columns=["sku_id", "passport_version", "state", "product_name"])
-    passports = {txt(o["sku_id"]): (txt(o.get("passport_version")), o.get("state")) for _, o in objs.iterrows()}
+    passports = {txt(o["sku_id"]): (txt(o.get("passport_version")), txt(o.get("state")) or None,
+                                    txt(o.get("copy_error"))) for _, o in objs.iterrows()}
     names = {txt(r["sku"]): txt(r.get("name")) for _, r in directory.iterrows()} if not directory.empty else {}
     for _, o in objs.iterrows():
         names.setdefault(txt(o["sku_id"]), txt(o.get("product_name")))
@@ -189,9 +200,13 @@ def render_registry() -> None:
         at = data.get("read_at")
         st.error(t("pp.load_error", at=at.strftime("%d.%m.%Y %H:%M") if at is not None else "—"))
     directory, dir_err = pp.sku_directory()
-    render_picker(directory, dir_err, data.get("objects"))
-    if dir_err:
-        st.warning(t("pp.directory_error"))
+    # Список — над поиском, но заполняется ПОСЛЕ таблицы: клик по строке пишет
+    # pp-sku в этом же прогоне, и список должен показать уже его (проверка #178).
+    pick_box = st.container()
+
+    def _picker() -> None:
+        with pick_box:
+            render_picker(directory, dir_err, data.get("objects"))
 
     f = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
     query = f.text_input(t("pp.search"), key="pp-q", placeholder=t("pp.search_ph"))
@@ -208,6 +223,7 @@ def render_registry() -> None:
 
     if rows.empty:
         st.info(t("pp.nothing_found", q=query) if query else t("pp.empty_hint"))
+        _picker()
         _card_for_context(data, by_sku={})
         return
     st.caption(t("pp.found", n=total, shown=len(rows)))
@@ -251,6 +267,7 @@ def render_registry() -> None:
     if sel and sel != st.session_state.get("pp-table-last"):
         st.session_state["pp-sku"] = sel
     st.session_state["pp-table-last"] = sel
+    _picker()
     # Карточка — по выбранному SKU контекста, а не только по выделению в
     # таблице: вернувшись из другой вкладки, человек видит тот же товар
     # (ТЗ §8 — контекст сохраняется, смена товара только явная).

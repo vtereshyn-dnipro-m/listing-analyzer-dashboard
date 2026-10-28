@@ -779,6 +779,37 @@ check("в генераторе можно выбрать другой SKU, ко�
 at.session_state["pp-sku"] = "21680000"
 at.run()
 check("контекст не менялся — выбор в генераторе держится", at.selectbox(key="tg-gen-sku").value == "99601000-B")
+# Уход со страницы: Streamlit удаляет ключ виджета, а прочие ключи сеанса живут. Новый
+# прогон страницы получает ровно их — так выглядит повторный заход (проверка #178).
+KEEP = ("lang", "pp-sku", "tg-gen-ctx", "tg-gen-choice")
+
+
+def reenter(prev, **change):
+    nxt = AppTest.from_file(str(PAGE), default_timeout=60)
+    for k in KEEP:
+        if k in prev.session_state:
+            nxt.session_state[k] = prev.session_state[k]
+    for k, v in change.items():
+        nxt.session_state[k] = v
+    return nxt.run()
+
+
+at = reenter(at)
+check("вернулись на страницу — выбор человека в генераторе дожил", at.selectbox(key="tg-gen-sku").value == "99601000-B")
+at = reenter(at, **{"pp-sku": "99601000-B"})
+at = reenter(at, **{"pp-sku": "21680000"})         # контекст сменился в разделе «Паспорт SKU»
+check("контекст сменился, страницу открыли заново — генератор на SKU контекста",
+      at.selectbox(key="tg-gen-sku").value == "21680000")
+at = reenter(at)
+check("повторный заход без смены контекста — снова SKU контекста, а не первая копия",
+      at.selectbox(key="tg-gen-sku").value == "21680000")
+at = reenter(at, **{"tg-gen-choice": "00000000-X"})   # выбранная копия ушла (заменена или OLD)
+check("выбранной копии больше нет — без падения, на SKU контекста",
+      not at.exception and at.selectbox(key="tg-gen-sku").value == "21680000")
+_pp_svc.sku_type = lambda sku: (None, "листинги недоступны")
+at.run()
+check("тип не прочитался — причина названа, правила инструмента",
+      lab("tg.gen.type_error", err="листинги недоступны") in texts_of(at) and lab("tg.gen.type_unknown") in texts_of(at))
 _pp_svc.sku_type = _sku_type
 ai.task_config = _task_config
 
