@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import html
 import json
+import zlib
 
 import pandas as pd
 import streamlit as st
@@ -257,7 +258,8 @@ def render_picker(directory: pd.DataFrame, dir_err, objects: pd.DataFrame, u: di
 # новом наборе (правило 7б). Товар вне фильтра в выборе молча не держится: он
 # снимается, и сообщение называет, сколько и какие.
 def _multi_changed(key: str, options: list) -> None:
-    st.session_state["pp-multi"] = [s for s in (st.session_state.get(key) or []) if s in options]
+    opts = set(options)
+    st.session_state["pp-multi"] = [s for s in (st.session_state.get(key) or []) if s in opts]
     st.session_state["pp-multi-note"] = None
 
 
@@ -268,10 +270,15 @@ def _multi_set(skus: list) -> None:
 
 
 def prune_multi(allowed: list, ftype: str) -> list:
-    """Снимает из выбора товары вне фильтра — с сообщением, а не молча."""
+    """Снимает из выбора товары вне фильтра — с сообщением, а не молча. Сообщение
+    живёт до следующей смены типа или выбора: устаревшее не висит (проверка #181)."""
+    if st.session_state.get("pp-multi-ftype") != ftype:
+        st.session_state["pp-multi-ftype"] = ftype
+        st.session_state["pp-multi-note"] = None
     sel = list(st.session_state.get("pp-multi") or [])
-    keep = [s for s in sel if s in set(allowed)]
-    dropped = [s for s in sel if s not in set(allowed)]
+    ok = set(allowed)
+    keep = [s for s in sel if s in ok]
+    dropped = [s for s in sel if s not in ok]
     if dropped:
         st.session_state["pp-multi"] = keep
         st.session_state["pp-multi-gen"] = st.session_state.get("pp-multi-gen", 0) + 1
@@ -279,19 +286,32 @@ def prune_multi(allowed: list, ftype: str) -> list:
     return keep
 
 
-def render_multi(u: dict, ftype: str) -> None:
+def render_multi(u: dict, ftype: str, dir_err=None) -> None:
     allowed = allowed_skus(u, ftype)
-    sel = prune_multi(allowed, ftype)
+    if dir_err:
+        # справочник не прочитан — список неполный: выбор не снимается по нему
+        # (не «не входят в тип»), а сохраняется непроверенным (проверка #181)
+        sel = list(st.session_state.get("pp-multi") or [])
+        allowed = sorted(set(allowed) | set(sel))
+        if sel:
+            st.caption(t("pp.multi.unchecked"))
+    else:
+        sel = prune_multi(allowed, ftype)
     note = st.session_state.get("pp-multi-note")
     if note:
-        st.info(t("pp.multi.dropped", n=len(note[1]), ty=type_label(note[0]),
-                  skus=pv.esc(", ".join(note[1][:20]) + (" …" if len(note[1]) > 20 else ""))))
+        skus = pv.esc(", ".join(note[1][:20]) + (" …" if len(note[1]) > 20 else ""))
+        st.info(t("pp.multi.gone", n=len(note[1]), skus=skus) if note[0] == TYPE_ANY
+                else t("pp.multi.dropped", n=len(note[1]), ty=type_label(note[0]), skus=skus))
     gen = st.session_state.get("pp-multi-gen", 0)
     key = f"pp-multi-w-{gen}"
-    st.multiselect(t("pp.multi.label"), allowed, default=[s for s in sel if s in allowed], key=key,
+    # несколько товаров выбираются внутри типа (поручение владельца): на «Любом»
+    # поле выключено, уже выбранное видно и снимается «Очистить выбор»
+    st.multiselect(t("pp.multi.label"), allowed, default=[s for s in sel if s in set(allowed)], key=key,
                    format_func=lambda s: _option_label(s, u["names"], u["types"], u["passports"]),
                    on_change=_multi_changed, args=(key, allowed), placeholder=t("pp.multi.ph"),
-                   help=t("pp.multi.help"))
+                   help=t("pp.multi.help"), disabled=ftype == TYPE_ANY)
+    if ftype == TYPE_ANY:
+        st.caption(t("pp.multi.need_type"))
     row = st.container(horizontal=True, gap="small")
     row.button(t("pp.multi.all", n=len(allowed)), key="pp-multi-all", on_click=_multi_set, args=(allowed,),
                disabled=ftype == TYPE_ANY or not allowed,
@@ -314,6 +334,11 @@ def render_multi(u: dict, ftype: str) -> None:
     })
 
 
+def table_key(skus: list) -> str:
+    """Ключ таблицы Реестра по её строкам: другие строки — другой виджет."""
+    return f"pp-table-{zlib.crc32('|'.join(skus).encode()):08x}"
+
+
 def _reset_filters() -> None:
     for k in ("pp-q", "pp-states", "pp-mine", "pp-type"):
         st.session_state.pop(k, None)
@@ -328,17 +353,11 @@ def render_registry() -> None:
         st.error(t("pp.load_error", at=at.strftime("%d.%m.%Y %H:%M") if at is not None else "—"))
     directory, dir_err = pp.sku_directory()
     u = universe(directory, data.get("objects"))
-    # Список — над поиском, но заполняется ПОСЛЕ таблицы: клик по строке пишет
-    # pp-sku в этом же прогоне, и список должен показать уже его (проверка #178).
-    pick_box = st.container()
-
-    def _picker() -> None:
-        with pick_box:
-            render_picker(directory, dir_err, data.get("objects"), u, ftype)
-            render_multi(u, ftype)
 
     # Фильтр «Тип товара» (поручение владельца 28.10.2026): значения — из данных,
-    # тем же определителем, что у генератора; число товаров — по всему справочнику.
+    # тем же определителем, что у генератора. Числа в подписях — товары списка
+    # «Товар» (весь справочник): поиск, состояние и «Моё действие» этот список не
+    # сужают, как и до фильтра. Стоит над списком, который сужает.
     counts = type_counts(u)
     t_opts = ([TYPE_ANY] + sorted((c for c in counts if c != TYPE_UNKNOWN), key=type_label)
               + [TYPE_UNKNOWN])
@@ -346,9 +365,18 @@ def render_registry() -> None:
         # тип пропал из данных — «Любой», до создания виджета. Streamlit 1.66 и сам так
         # откатывает, но явная запись не зависит от версии
         st.session_state["pp-type"] = TYPE_ANY
+    ftype = st.selectbox(t("pp.f_type"), t_opts, key="pp-type",
+                         format_func=lambda c: type_label(c, len(u["skus"]) if c == TYPE_ANY else counts.get(c, 0)))
+    # Список — над поиском, но заполняется ПОСЛЕ таблицы: клик по строке пишет
+    # pp-sku в этом же прогоне, и список должен показать уже его (проверка #178).
+    pick_box = st.container()
+
+    def _picker() -> None:
+        with pick_box:
+            render_picker(directory, dir_err, data.get("objects"), u, ftype)
+            render_multi(u, ftype, dir_err)
+
     f = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
-    ftype = f.selectbox(t("pp.f_type"), t_opts, key="pp-type",
-                        format_func=lambda c: type_label(c, len(u["skus"]) if c == TYPE_ANY else counts.get(c, 0)))
     query = f.text_input(t("pp.search"), key="pp-q", placeholder=t("pp.search_ph"))
     states = f.multiselect(t("pp.f_state"), list(pp.STATES) + ["ABSENT"], key="pp-states",
                            format_func=lambda s: t(f"pp.state.{s}"), placeholder=t("pp.any"))
@@ -356,21 +384,26 @@ def render_registry() -> None:
                        format_func=lambda s: t(f"pp.mine.{s}"))
     f.button(t("pp.reset"), key="pp-reset", on_click=_reset_filters)
 
-    view, total = pp.search(directory, data.get("objects"), query)
+    # Тип слушает и таблица (правило 8), причём ДО предела поиска: «Найдено» и
+    # «показано» — одна выборка под типом (проверка #181)
+    keep = None if ftype == TYPE_ANY else set(allowed_skus(u, ftype))
+    view, total = pp.search(directory, data.get("objects"), query, keep)
     email, roles = me()
     rows = pp.registry_rows(view, data, pp.duplicate_map(directory), email, roles, load_error)
     rows = pp.filter_rows(rows, states, mine)
-    if ftype != TYPE_ANY and not rows.empty:
-        # тот же фильтр слушает таблица (правило 8): одна выборка на экран
-        rows = rows[rows["sku"].astype(str).map(lambda s: type_code(s, u["types"]) == ftype)]
     if ftype != TYPE_ANY:
         # два счётчика — про разное, и это сказано словами: список — весь справочник,
         # таблица — товары с паспортом (или под поиском)
-        st.caption(t("pp.type.counts", ty=type_label(ftype), k=len(allowed_skus(u, ftype)), all=len(u["skus"]),
-                     shown=len(rows)))
+        st.caption(t("pp.type.counts", ty=type_label(ftype), k=len(keep), all=len(u["skus"]),
+                     found=total, shown=len(rows)))
 
     if rows.empty:
-        st.info(t("pp.nothing_found", q=query) if query else t("pp.empty_hint"))
+        if ftype != TYPE_ANY:
+            # паспорта есть, но не этого типа — не «Паспортов пока нет» (проверка #181)
+            st.info(t("pp.type.empty_q", ty=type_label(ftype), q=query) if query
+                    else t("pp.type.empty", ty=type_label(ftype)))
+        else:
+            st.info(t("pp.nothing_found", q=query) if query else t("pp.empty_hint"))
         _picker()
         _card_for_context(data, by_sku={})
         return
@@ -391,8 +424,11 @@ def render_registry() -> None:
         # а не кнопка запуска; сама кнопка в карточке лишь открывает работу.
         "next": rows["action"].map(lambda a: t("pp.no_action_short") if a == pp.OPEN_WORK else t(f"pp.act.{a}")),
     })
+    # Ключ таблицы несёт её строки: фильтр сменил строки — выделение сбрасывается, а
+    # не переезжает на чужую строку по старому номеру (проверка #181: в Streamlit 1.66
+    # номер выделения переживает смену данных — карточка молча менялась или падала).
     pick = st.dataframe(
-        table, key="pp-table", hide_index=True, width="stretch",
+        table, key=table_key(list(rows["sku"].astype(str))), hide_index=True, width="stretch",
         on_select="rerun", selection_mode="single-row",
         column_config={
             "product": st.column_config.TextColumn(t("pp.col.product")),
@@ -411,7 +447,7 @@ def render_registry() -> None:
     by_sku = {r["sku"]: r for _, r in rows.iterrows()}
     # Выделение строки живёт в таблице между прогонами: применяется только когда
     # оно сменилось, иначе старая строка перебивала бы выбор из списка товаров.
-    sel = rows.iloc[picked[0]]["sku"] if picked else None
+    sel = rows.iloc[picked[0]]["sku"] if picked and picked[0] < len(rows) else None
     if sel and sel != st.session_state.get("pp-table-last"):
         set_context(sel)
     st.session_state["pp-table-last"] = sel
