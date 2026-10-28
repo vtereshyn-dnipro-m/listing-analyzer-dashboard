@@ -58,8 +58,8 @@ BEGIN
        OR copy_sha IS DISTINCT FROM NEW.artifact_sha256 THEN
         RAISE EXCEPTION 'listing_data.passport_conflict_decisions: SKU, паспорт или SHA не совпадают с копией %', NEW.source_artifact_id;
     END IF;
-    IF NEW.decided_at > now() + interval '5 minutes' THEN
-        RAISE EXCEPTION 'listing_data.passport_conflict_decisions: время решения % в будущем', NEW.decided_at;
+    IF NEW.decided_at > now() + interval '5 minutes' OR NEW.decided_at < now() - interval '5 minutes' THEN
+        RAISE EXCEPTION 'listing_data.passport_conflict_decisions: время решения % — не сейчас (ни в будущем, ни задним числом)', NEW.decided_at;
     END IF;
     RETURN NEW;
 END;
@@ -87,6 +87,7 @@ COMMIT;
 -- Проверка: таблица есть, приложение пишет, триггеры на месте, таблица пуста.
 SELECT to_regclass('listing_data.passport_conflict_decisions') IS NOT NULL AS exists,
        has_table_privilege('583bf6d1-6cd0-4a89-9c44-b387ec5c21cb', 'listing_data.passport_conflict_decisions', 'INSERT') AS app_can_insert,
+       has_table_privilege('583bf6d1-6cd0-4a89-9c44-b387ec5c21cb', 'listing_data.passport_conflict_decisions', 'SELECT') AS app_can_read,
        has_sequence_privilege('583bf6d1-6cd0-4a89-9c44-b387ec5c21cb', 'listing_data.passport_conflict_decisions_id_seq', 'USAGE') AS app_can_seq,
        (SELECT count(*) FROM listing_data.passport_conflict_decisions) AS rows;
 

@@ -22,10 +22,12 @@ from i18n import t
 from services import passport_copies as pc
 
 
-def render(prefix: str, say=st, sku_hint: str | None = None) -> dict | None:
+def render(prefix: str, say=st, sku_hint: str | None = None, lock_sku: bool = False) -> dict | None:
     """Поле загрузки, сохранение и список копий SKU. Возвращает шапку файла
     (или None). `sku_hint` — SKU, выбранный на странице: файл другого SKU
-    называется вслух, но сохраняется по своей шапке, как в генераторе."""
+    называется вслух. `lock_sku` — на странице выбранного товара («Создание»)
+    чужой паспорт не сохраняется вовсе (проверка #176); генератор SKU не
+    выбирает и сохраняет по шапке файла."""
     say.caption(t("tg.pp.hint", volume=pc.VOLUME))
     up = st.file_uploader(t("tg.pp.upload"), type=["docx"], key=f"{prefix}-file")
     header = None
@@ -40,12 +42,14 @@ def render(prefix: str, say=st, sku_hint: str | None = None) -> dict | None:
     state = header.get("state") or "—"
     say.markdown(t("tg.pp.header", sku=header["sku_id"], pid=header["passport_id"],
                    ver=header["passport_version"], state=state))
-    if sku_hint and header["sku_id"] != sku_hint:
-        say.warning(t("pp.up.other_sku", file_sku=header["sku_id"], sku=sku_hint))
+    other = bool(sku_hint) and header["sku_id"] != sku_hint
+    if other:
+        say.warning(t("pp.up.other_sku_locked" if lock_sku else "pp.up.other_sku",
+                      file_sku=header["sku_id"], sku=sku_hint))
     if state != "READY":
         say.warning(t("tg.pp.not_ready", state=state))
     say.caption(t("tg.pp.path", path=f"{pc.ROOT}/{pc.copy_path(header)}"))
-    may = auth.can("ls.textgen.accept")
+    may = auth.can("ls.textgen.accept") and not (lock_sku and other)
     if not may:
         say.caption(t("tg.pp.denied_hint"))
     sha = hashlib.sha256(data).hexdigest()

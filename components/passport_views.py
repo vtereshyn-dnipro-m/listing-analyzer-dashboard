@@ -31,7 +31,7 @@ from services import passport_decisions as pdec
 from services import passport_facts as pf
 from services import product_specs as ps
 from services import textgen as tg
-from services.cells import cell_text
+from components.ui import md_escape as esc
 from services.passport import txt
 
 KIT_SECTION = "комплектація"
@@ -51,6 +51,11 @@ def _copy_facts(locator: str, sha: str) -> pf.Facts:
     if hashlib.sha256(data).hexdigest() != sha:
         raise _ReadFailed(t("pp.view.sha_mismatch"))
     return pf.read(data)
+
+
+def copy_error_text(err: str) -> str:
+    """Код сбоя чтения копии (`passport.COPY_*`) — словами; текст исключения — как есть."""
+    return t(f"pp.view.err.{err}") if err in (pp.COPY_NO_STORE, pp.COPY_SHA_MISMATCH) else err
 
 
 def copy_facts(r: dict) -> tuple[pf.Facts | None, dict, str | None, bool]:
@@ -83,13 +88,13 @@ def render_passport(box, r: dict) -> None:
     """Комплектация и конфликты паспорта-копии (только чтение)."""
     if r.get("source") != "copy":
         return
-    box.markdown(t("pp.view.copy", aid=r["source_artifact_id"], loc=r["storage_path"]))
+    box.markdown(t("pp.view.copy", aid=esc(r["source_artifact_id"]), loc=esc(r["storage_path"])))
     facts, _dec, err, missing = copy_facts(r)
     if facts is None:
-        box.error(t("pp.view.read_error", err=err))
+        box.error(t("pp.view.read_error", err=esc(err)))
         return
     if err:
-        box.warning(t("pp.dec.load_error", err=err))
+        box.warning(t("pp.dec.load_error", err=esc(err)))
     kit = next((s for s in facts.sections if s.title.strip().lower().startswith(KIT_SECTION)), None)
     box.markdown(f"**{t('pp.view.kit')}**")
     if kit is None or len(kit.rows) < 2:
@@ -176,25 +181,26 @@ def render_sku_summary(r: dict) -> None:
                                                  "value": st.column_config.TextColumn(t("tg.col.value")),
                                                  "src": st.column_config.TextColumn(t("tg.col.source"))})
     if derr:
-        st.caption(t("tg.link.src_dir", err=str(derr)[:120]))
+        st.caption(t("tg.link.src_dir", err=esc(str(derr)[:120])))
     if es_err:
-        st.caption(t("tg.link.src_matrix", err=es_err[:120]))
+        # «не прочитано», а не «нет ASIN»: сбой матрицы не выдаётся за пустоту
+        st.caption(t("tg.link.src_matrix", err=esc(es_err[:120])))
         return
     if not es:
         st.caption(t("pp.sum.no_es"))
         return
     if len(es) > 1:
-        st.caption(t("pp.sum.many_es", asins=", ".join(es), asin=es[0]))
+        st.caption(t("pp.sum.many_es", asins=esc(", ".join(es)), asin=esc(es[0])))
     try:
         raw = _product(es[0])
     except _ReadFailed as e:
-        st.caption(t("tg.load_error", err=str(e)[:160]))
+        st.caption(t("tg.load_error", err=esc(str(e)[:160])))
         return
     specs = ps.extract(es[0], "es", **raw)
     c1, c2 = st.columns(2)
     c1.metric(t("tg.type"), t(f"tg.type.{specs.tool_type}") if specs.tool_type else t("tg.type_unknown"))
     c2.metric(t("tg.model"), specs.model or "—")
-    st.caption(t("pp.sum.title_now", asin=es[0], title=raw.get("title") or "—"))
+    st.caption(t("pp.sum.title_now", asin=esc(es[0]), title=esc(raw.get("title") or "—")))
     rows = [{"field": t(f"tg.field.{k}"), "value": ps.fmt(k, s.value), "src": t(f"tg.src.{s.source}")}
             for k, s in specs.values.items()]
     if rows:
@@ -205,7 +211,7 @@ def render_sku_summary(r: dict) -> None:
     else:
         st.caption(t("tg.no_specs"))
     if specs.kit:
-        st.caption(f"{t('tg.kit')}: " + "; ".join(specs.kit))
+        st.caption(f"{t('tg.kit')}: " + esc("; ".join(specs.kit)))
 
 
 # ---------------------------------------------------------------- решения верификатора
@@ -217,17 +223,17 @@ def render_conflict_decisions(r: dict) -> None:
     """Конфликты копии паспорта и решение по каждому (решение владельца 28.10.2026)."""
     if not r or r.get("source") != "copy":
         return
-    st.markdown(f"**{t('pp.dec.title', sku=r['sku'], aid=r['source_artifact_id'])}**")
+    st.markdown(f"**{t('pp.dec.title', sku=esc(r['sku']), aid=esc(r['source_artifact_id']))}**")
     st.caption(t("pp.dec.hint"))
     done = st.session_state.pop("pp-cfd-done", None)
     if done:
         st.success(t("pp.dec.saved", cid=done[0], id=done[1]))
     facts, decisions, err, missing = copy_facts(r)
     if facts is None:
-        st.error(t("pp.view.read_error", err=err))
+        st.error(t("pp.view.read_error", err=esc(err)))
         return
     if err:
-        st.error(t("pp.dec.load_error", err=err))
+        st.error(t("pp.dec.load_error", err=esc(err)))
     if not facts.conflicts:
         st.caption(t("pp.view.conflicts_none"))
         return
@@ -238,21 +244,25 @@ def render_conflict_decisions(r: dict) -> None:
     elif not may:
         st.caption(t("pp.dec.denied_hint"))
     g = _gen()
-    for c in facts.conflicts:
+    for i, c in enumerate(facts.conflicts):
         cid = txt(c.get("id"))
+        # В ключе — и место строки: повтор id или пустой id в таблице паспорта не
+        # должен ронять вкладку DuplicateElementKey (проверка #176).
+        k = f"{i}-{cid}-{g}"
         box = st.container(border=True)
-        box.markdown(f'**{cid}** · {txt(c.get("field"))} · {_state_of(c)}')
-        box.caption(t("pp.dec.sides", a=txt(c.get("a")), b=txt(c.get("b")), status=txt(c.get("status")) or "—"))
+        box.markdown(f'**{esc(cid) or "—"}** · {esc(txt(c.get("field")))} · {_state_of(c)}')
+        box.caption(t("pp.dec.sides", a=esc(txt(c.get("a"))), b=esc(txt(c.get("b"))),
+                      status=esc(txt(c.get("status"))) or "—"))
         if c.get("decision"):
-            box.caption(t("pp.dec.current", value=pf.decided_value(c), src=_source_of(c)))
+            box.caption(t("pp.dec.current", value=esc(pf.decided_value(c)), src=esc(_source_of(c))))
         if pf.is_closed_status(c.get("status")) and not c.get("decision"):
-            box.caption(t("pp.dec.closed_in_passport", src=txt(c.get("source")) or "—"))
+            box.caption(t("pp.dec.closed_in_passport", src=esc(txt(c.get("source"))) or "—"))
             continue
-        kind = box.radio(t("pp.dec.choice"), list(pf.DECISIONS), key=f"pp-cfd-kind-{cid}-{g}", horizontal=True,
-                         format_func=lambda k: t(f"pp.dec.kind.{k}"), index=None)
-        value = box.text_input(t("pp.dec.value"), key=f"pp-cfd-value-{cid}-{g}", help=t("pp.dec.value_help"))
-        source = box.text_input(t("pp.dec.source"), key=f"pp-cfd-src-{cid}-{g}", placeholder=t("pp.dec.source_ph"))
-        if box.button(t("pp.dec.save"), key=f"pp-cfd-save-{cid}-{g}", disabled=blocked or not may or kind is None):
+        kind = box.radio(t("pp.dec.choice"), list(pf.DECISIONS), key=f"pp-cfd-kind-{k}", horizontal=True,
+                         format_func=lambda x: t(f"pp.dec.kind.{x}"), index=None)
+        value = box.text_input(t("pp.dec.value"), key=f"pp-cfd-value-{k}", help=t("pp.dec.value_help"))
+        source = box.text_input(t("pp.dec.source"), key=f"pp-cfd-src-{k}", placeholder=t("pp.dec.source_ph"))
+        if box.button(t("pp.dec.save"), key=f"pp-cfd-save-{k}", disabled=blocked or not may or kind is None):
             _save_decision(box, r, facts, c, kind, value, source)
 
 

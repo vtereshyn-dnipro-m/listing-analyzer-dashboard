@@ -329,10 +329,8 @@ def _copy_conflicts(locator: str, sha: str, artifact_id: str) -> tuple[list[str]
     facts = _copy.deepcopy(_copy_facts(locator, sha))
     decisions, derr, _missing = pdec.load(artifact_id, sha)
     pf.apply_decisions(facts, decisions)
-    facts.prompt_text()
-    decided = [f"{c['field']} → {pf.decided_value(c)} ({(c.get('decision') or {}).get('decision_source', '')})"
-               for c in facts.conflicts if c.get("decision") and c["field"]]
-    return [c["field"] for c in facts.conflicts if pf.is_open(c) and c["field"]], list(facts.dropped), decided, derr
+    open_fields, dropped, decided = pf.conflict_summary(facts)
+    return open_fields, dropped, [f"{f} → {v} ({s})" for f, v, s in decided], derr
 
 
 def _check_line(v: dict) -> str:

@@ -147,26 +147,41 @@ def sku_directory() -> tuple[pd.DataFrame, str | None]:
 COPY_EVENT = "DOCX_COPY_REGISTERED"
 
 
-@st.cache_data(ttl=24 * 3600, show_spinner=False, max_entries=200)
-def copy_summary(locator: str, sha: str) -> dict:
-    """Шапка и модель копии по её месту в томе. Копия неизменна (триггер
-    passport_copy_frozen), поэтому кэш по SHA держится сутки. Сбой — в `error`,
-    а не пустота: «паспорт не прочитан» и «паспорта нет» — разные вещи."""
-    import hashlib
+COPY_NO_STORE, COPY_SHA_MISMATCH = "NO_STORE", "SHA_MISMATCH"     # коды → i18n pp.view.err.<код>
 
+
+class _CopyUnread(Exception):
+    pass
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False, max_entries=200)
+def _copy_summary(locator: str, sha: str) -> dict:
+    """Кэшируется только удача: сбой — исключение, а `st.cache_data` исключений
+    не запоминает (проверка #176: починили том — паспорт снова читается сразу,
+    а не через сутки)."""
     from services import passport_copies as pc
     from services import passport_facts as pf
+    store = pc.volume_store()
+    if store is None:
+        raise _CopyUnread(COPY_NO_STORE)
+    data = store.get(locator)
+    if hashlib.sha256(data).hexdigest() != sha:
+        raise _CopyUnread(COPY_SHA_MISMATCH)
+    h, facts = pc.read_header(data), pf.read(data)
+    return {"state": h.get("state") or None, "passport_version": h.get("passport_version"),
+            "passport_id": h.get("passport_id"), "model": pf.identity_value(facts, "модель"),
+            "name": pf.identity_value(facts, "назва"), "error": None}
+
+
+def copy_summary(locator: str, sha: str) -> dict:
+    """Шапка и модель копии по её месту в томе. Копия неизменна (триггер
+    passport_copy_frozen), поэтому удача кэшируется по SHA на сутки. Сбой — в
+    `error` (код или текст исключения), а не пустота: «паспорт не прочитан» и
+    «паспорта нет» — разные вещи."""
     try:
-        store = pc.volume_store()
-        if store is None:
-            return {"error": "нет доступа к тому"}
-        data = store.get(locator)
-        if hashlib.sha256(data).hexdigest() != sha:
-            return {"error": "SHA копии в томе не совпадает с записью"}
-        h, facts = pc.read_header(data), pf.read(data)
-        return {"state": h.get("state") or None, "passport_version": h.get("passport_version"),
-                "passport_id": h.get("passport_id"), "model": pf.identity_value(facts, "модель"),
-                "name": pf.identity_value(facts, "назва"), "error": None}
+        return _copy_summary(locator, sha)
+    except _CopyUnread as e:
+        return {"error": str(e)}
     except Exception as e:  # noqa: BLE001 — причина уходит на экран
         return {"error": f"{type(e).__name__}: {str(e)[:160]}"}
 

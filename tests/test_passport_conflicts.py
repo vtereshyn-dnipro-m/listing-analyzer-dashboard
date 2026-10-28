@@ -96,7 +96,10 @@ def run(status_kit, status_volt="OPEN_OWNER_DECISION", decisions=None):
 # ------------------------------------------------------------------ 1. статусы
 print("1. статус конфликта")
 for s in ("OPEN_OWNER_DECISION", "OPEN_MARKET_SCOPE_DECISION", "OPEN_EVIDENCE_DECISION", "", "  ", "UNKNOWN",
-          "RESOLVD", "NEEDS_DECISION", "закрито", None):
+          "RESOLVD", "NEEDS_DECISION", "закрито", None,
+          # «только явно» (проверка #176): начало целым словом, без «ещё не решено»
+          "RESOLVEDX", "DECIDEDLY_OPEN", "RESOLVED_PENDING_OWNER", "CLOSED_REOPENED", "DECIDED_NOT_YET", "SCOPED",
+          "CLOSED-REOPEN", "RESOLVED UNRESOLVED"):
     check(f"статус {s!r} — открытый", not pf.is_closed_status(s))
 for s in ("RESOLVED", "RESOLVED_BY_OWNER", "CLOSED", "closed_evidence", "DECIDED", "DECIDED_SIDE_B", "SCOPED_APART",
           " Resolved "):
@@ -139,7 +142,18 @@ f, text = run("OPEN_OWNER_DECISION", decisions={"CONFLICT-99": dict(DEC_B["CONFL
 check("решение по конфликту, которого в копии нет, не применяется",
       any(d.startswith("KIT-10") for d in f.dropped) and "РЕШЕНИЯ" not in text)
 f, text = run("OPEN_OWNER_DECISION", decisions={"CONFLICT-2": {"decision": "MAYBE", "decision_source": "x" * 9}})
-check("неизвестный вид решения не применяется", any(d.startswith("KIT-10") for d in f.dropped))
+check("неизвестный вид решения не применяется: конфликт открыт, раздела решений нет",
+      any(d.startswith("KIT-10") for d in f.dropped) and not f.conflicts[0].get("decision")
+      and pf.is_open(f.conflicts[0]) and "РЕШЕНИЯ" not in text and "- Комплектація АКБ і ЗП" in text)
+f = pf.read(passport([KIT + ("OPEN_OWNER_DECISION",), VOLT + ("OPEN_OWNER_DECISION",)]))
+pf.apply_decisions(f, DEC_B)
+open_f, dropped, decided = pf.conflict_summary(f)
+check("сводка для экрана: решённый — не среди открытых, а отдельно, со значением и источником",
+      open_f == ["Напруга"] and decided == [("Комплектація АКБ і ЗП", "Marketplace: 2× BP-240 4 Ah + FC-230 Dual",
+                                            "чат 21.10, Ярослав")] and any(d.startswith("FACT-6") for d in dropped))
+PAGE = (ROOT / "pages" / "textgen.py").read_text(encoding="utf-8")
+check("генератор берёт открытые и решённые из этой же сводки, своей логики не держит",
+      "pf.conflict_summary(facts)" in PAGE and "pf.is_open(" not in PAGE)
 check("токены CONFLICT_VALUE: после «сторона B» значения B разрешены",
       "bp-240" not in pf.conflict_tokens(run("OPEN_X", decisions=DEC_B)[0].conflicts)
       and "bp-240" in pf.conflict_tokens(run("OPEN_X")[0].conflicts))
@@ -327,6 +341,8 @@ check("копия действующая, SKU, паспорт и SHA совпа�
       and "FOR SHARE;" in B)
 check("ровно один выход RETURN NEW — после всех проверок", B.count("RETURN NEW;") == 1
       and B.index("RETURN NEW;") > B.index("NEW.decided_at > now()"))
+check("время решения — сейчас: ни в будущем, ни задним числом (проверка #176)",
+      "IF NEW.decided_at > now() + interval '5 minutes' OR NEW.decided_at < now() - interval '5 minutes' THEN RAISE EXCEPTION" in B)
 check("триггер на строки (вставка, правка, удаление) и на очистку таблицы",
       "BEFORE INSERT OR UPDATE OR DELETE ON listing_data.passport_conflict_decisions FOR EACH ROW" in SQL
       and "BEFORE TRUNC" + "ATE ON listing_data.passport_conflict_decisions FOR EACH STATEMENT" in SQL)
@@ -342,7 +358,7 @@ except SystemExit:
     vet_ok = False
 check("scratchpad/apply_migration.py принимает файл", vet_ok)
 check("файл не менялся без осознанной правки отпечатка",
-      hashlib.sha256(raw).hexdigest() == "a793207d08cad53728de6791358d0d2fe6cc1a8b69873b4cd69f0f25b56e957d")
+      hashlib.sha256(raw).hexdigest() == "e4044d5364efc2bda78f64ec7de39116505ae1b431649aade73c99e7e6997733")
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS else f"{len(FAILS)} провалов: {FAILS}")

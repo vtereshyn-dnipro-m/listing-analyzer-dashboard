@@ -393,6 +393,12 @@ check("блок: кнопка выключена без права и право
       and SRC.index('auth.require("ls.textgen.accept"') < SRC.index("pc.register("))
 check("блок: SKU и версия не вводятся руками — только из шапки", "text_input" not in SRC)
 check("блок: соединение закрывается", "conn.close()" in SRC.split("pc.register(", 1)[1])
+ok_branch = SRC.split("else:\n            if res.status == \"DUPLICATE\":", 1)[-1].split("finally:", 1)[0]
+check("блок: после сохранения Реестр перечитывается сразу (проверка #176)", "load_registry.clear()" in ok_branch)
+check("блок: на странице выбранного товара чужой паспорт не сохраняется (lock_sku)",
+      "may = auth.can(\"ls.textgen.accept\") and not (lock_sku and other)" in SRC
+      and 'passport_upload.render("pp-up", sku_hint=r["sku"], lock_sku=True)'
+      in (ROOT / "components" / "passport_area.py").read_text(encoding="utf-8"))
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS else f"{len(FAILS)} провалов: {FAILS}")

@@ -69,7 +69,8 @@ body = (_p("Паспорт SKU 99601000-B", "Title")
         + _tbl([("ID", "Поле", "Сторона A", "Сторона B", "Статус"),
                 ("CONFLICT-99601000-B-002", "Комплектація АКБ і ЗП", "UA: без АКБ та ЗП",
                  "Marketplace: 2× BP-240 4 Ah + FC-230 Dual", "OPEN_OWNER_DECISION"),
-                ("CONFLICT-99601000-B-005", "Гарантія", "36 months", "5 years", "RESOLVED_MARKET_SCOPE")]))
+                ("CONFLICT-99601000-B-005", "Гарантія", "36 months", "5 years", "RESOLVED_MARKET_SCOPE"),
+                ("CONFLICT-99601000-B-007", "Автономність", "до 39 хв *ManoMano*", "$5 [x]", "OPEN_EVIDENCE")]))
 _b = io.BytesIO()
 with zipfile.ZipFile(_b, "w") as z:
     z.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/'
@@ -87,7 +88,11 @@ DIRECTORY = pd.DataFrame([
 ])
 COPY = pd.DataFrame([dict(source_artifact_id=AID, sku_id="99601000-B", passport_id="PASS-99601000-B-001",
                           archived_locator=LOC, sha256=SHA, bytes=len(DOCX), lifecycle="ACTIVE",
-                          registered_by="agent:v.tereshyn@dniprom.com", recorded_at=TS)])
+                          registered_by="agent:v.tereshyn@dniprom.com", recorded_at=TS),
+                     # прежняя копия: в Реестр не идёт (проверка #176), в списке копий — есть
+                     dict(source_artifact_id="DOCX-PASS-99601000-B-001-v1", sku_id="99601000-B",
+                          passport_id="PASS-99601000-B-001", archived_locator=LOC.replace("/v2/", "/v1/"),
+                          sha256="d" * 64, bytes=1, lifecycle="OLD", registered_by="a", recorded_at=TS)])
 OBJ_COLS = ["passport_id", "lineage_id", "sku_id", "product_version", "product_name", "model", "state",
             "passport_version", "sha256", "storage_path", "materials_url", "limitations", "last_event_type",
             "last_event_at", "readback_sha256", "readback_at"]
@@ -104,11 +109,13 @@ def fake_sql(sql, con=None, params=None, **kw):
     if "FROM passport_objects" in q:
         return MODE["objects"].copy()
     if "FROM passport_source_artifacts" in q:
-        return COPY.copy()
+        return COPY[COPY["lifecycle"] == "ACTIVE"].copy() if "lifecycle = 'ACTIVE'" in q else COPY.copy()
     if "FROM passport_conflict_decisions" in q:
         rows = [d for d in DEC if (d["source_artifact_id"], d["artifact_sha256"]) == (params["a"], params["s"])]
         return pd.DataFrame([{k: d[k] for k in DEC_COLS} for d in rows], columns=DEC_COLS)
     if q.startswith("SELECT asin, sku_group FROM product_matrix WHERE marketplace"):
+        if MODE.get("matrix_fail"):
+            raise RuntimeError("матрица недоступна")
         return pd.DataFrame([{"asin": "B0GTRY26HB", "sku_group": "99601000"}])
     return pd.DataFrame()
 
@@ -236,6 +243,17 @@ d3 = pp.load_registry()
 check("том не читается — паспорт есть, но с причиной и без подтверждённой свежести",
       d3["objects"].iloc[0]["copy_error"].startswith("OSError") and d3["objects"].iloc[0]["readback_sha256"] is None)
 pc.volume_store = lambda: Store()
+pp.load_registry.clear()             # кэш Реестра — 60 с; кэш копии НЕ чистим: сбой не должен в нём остаться
+d4 = pp.load_registry()
+check("том починили — копия читается сразу, сбой не закэширован на сутки (проверка #176)",
+      not d4["objects"].iloc[0]["copy_error"] and d4["objects"].iloc[0]["model"] == "DVB-200BC Dual")
+pc.volume_store = lambda: None
+check("нет доступа к тому — код причины, а не текст мимо перевода",
+      pp.copy_summary(LOC, "e" * 64)["error"] == pp.COPY_NO_STORE)
+pc.volume_store = lambda: Store()
+check("SHA в томе другой — код причины", pp.copy_summary(LOC, "f" * 64)["error"] == pp.COPY_SHA_MISMATCH)
+check("в Реестр идёт только действующая копия: прежняя (OLD) — нет",
+      list(d4["objects"]["source_artifact_id"]) == [AID])
 
 
 # ================================================================ экран
@@ -281,6 +299,18 @@ check("(1) тип и модель — из листинга, текущий та
             title="Aspirador Soplador de Jardín Dnipro-M DVB-200BC Dual 20V, Triturador 15:1") in T)
 check("(1) ручного ввода фактов нет: на «Создании» только комментарий-контекст",
       [w.key for w in at.text_input] == [] and [w.key for w in at.text_area] == ["pp-comment-99601000-B"])
+MODE["matrix_fail"] = True
+at = page(**{"pp-tab": "create", "pp-sku": "99601000-B"})
+check("(1) матрица не прочиталась — сказано «не прочитано», а не «у SKU нет ASIN на ES»",
+      t("tg.link.src_matrix", err="RuntimeError: матрица недоступна")[:20] in texts(at)
+      and t("pp.sum.no_es") not in texts(at))
+MODE["matrix_fail"] = False
+MODE["objects"] = pd.DataFrame([dict(zip(OBJ_COLS, ("PSP-1", "L", "99601000-B", "1", None, "DVB-200BC", "READY", "3",
+                                                     "c" * 64, None, None, "[]", "APPLIED", TS, "c" * 64, TS)))])
+at = page(**{"pp-tab": "create", "pp-sku": "99601000-B"})
+check("паспорт ведёт движок — загрузки docx на «Создании» нет, сказано почему (второй паспорт)",
+      t("pp.up.engine") in texts(at) and t("tg.pp.hint", volume=pc.VOLUME) not in texts(at))
+MODE["objects"] = pd.DataFrame(columns=OBJ_COLS)
 
 print("(6) карточка паспорта")
 at = page(**{"pp-tab": "registry", "pp-sku": "99601000-B", "pp-q": "99601000-B", "pp-show": "passport"})
@@ -291,28 +321,42 @@ check("(6) комплектация с количествами: колёса 1,
 conf = next((f for f in frames(at) if {"a", "b", "state", "src"} <= set(f.columns)), None)
 check("(6) конфликты со статусом в паспорте и состоянием: 002 открыт, 005 закрыт в паспорте",
       conf is not None and dict(zip(conf["id"], conf["state"])) == {
-          "CONFLICT-99601000-B-002": t("pp.cf.open"), "CONFLICT-99601000-B-005": t("pp.cf.closed")}
+          "CONFLICT-99601000-B-002": t("pp.cf.open"), "CONFLICT-99601000-B-005": t("pp.cf.closed"),
+          "CONFLICT-99601000-B-007": t("pp.cf.open")}
       and dict(zip(conf["id"], conf["status"]))["CONFLICT-99601000-B-002"] == "OPEN_OWNER_DECISION")
+
+pc.volume_store = lambda: BadStore()
+at = page(**{"pp-tab": "registry", "pp-sku": "99601000-B", "pp-q": "99601000-B"})
+check("том не читается — в карточке Реестра причина названа сразу, паспорт не выдан за отсутствующий",
+      any("OSError: том недоступен" in str(e.value) for e in at.error) and t("pp.create_absent") not in texts(at))
+pc.volume_store = lambda: Store()
 
 print("(7) верификатор закрывает конфликт")
 at = page(**{"pp-tab": "verifier", "pp-sku": "99601000-B"})
 check("вкладка Верификатора открывается", not at.exception)
 CID = "CONFLICT-99601000-B-002"
-save = next((b for b in at.button if b.key == f"pp-cfd-save-{CID}-0"), None)
+check("стороны конфликта на экране как текст: «$» и «*», «[…]» экранированы (проверка #176)",
+      r"\$5 \[x\]" in texts(at) and r"\*ManoMano\*" in texts(at))
+save = next((b for b in at.button if b.key == f"pp-cfd-save-0-{CID}-0"), None)
 check("у открытого конфликта есть форма решения; без выбора стороны кнопка выключена", save is not None and save.disabled)
 check("у закрытого в паспорте — формы нет, сказано, что закрыт",
-      not any(b.key.startswith("pp-cfd-save-CONFLICT-99601000-B-005") for b in at.button)
+      not any(b.key.startswith("pp-cfd-save-1-CONFLICT-99601000-B-005") for b in at.button)
       and t("pp.dec.closed_in_passport", src="—") in texts(at))
-at.radio(key=f"pp-cfd-kind-{CID}-0").set_value("SIDE_B").run()
-at.button(key=f"pp-cfd-save-{CID}-0").click().run()
+at.radio(key=f"pp-cfd-kind-0-{CID}-0").set_value("SIDE_B").run()
+at.button(key=f"pp-cfd-save-0-{CID}-0").click().run()
 check("без источника — отказ словами, строки нет", not DEC and t("pp.dec.err.NO_SOURCE") in texts(at))
-at.text_input(key=f"pp-cfd-src-{CID}-0").set_value("чат 21.10, Ярослав").run()
-at.button(key=f"pp-cfd-save-{CID}-0").click().run()
+at.text_input(key=f"pp-cfd-src-0-{CID}-0").set_value("чат 21.10, Ярослав").run()
+_req = auth.require
+auth.require = lambda *a, **k: False              # кнопка включена, а право в момент нажатия снято
+at.button(key=f"pp-cfd-save-0-{CID}-0").click().run()
+check("право проверяется в момент нажатия: снято между отрисовкой и нажатием — строки нет", not DEC)
+auth.require = _req
+at.button(key=f"pp-cfd-save-0-{CID}-0").click().run()
 check(f"решение записано одной строкой: сторона B, источник, копия и SHA ({len(DEC)})",
       len(DEC) == 1 and DEC[0]["decision"] == "SIDE_B" and DEC[0]["decision_source"] == "чат 21.10, Ярослав"
       and (DEC[0]["source_artifact_id"], DEC[0]["artifact_sha256"], DEC[0]["sku_id"]) == (AID, SHA, "99601000-B"))
 check("номер решения на экране, поля пересозданы с новым ключом (правило 7б)",
-      t("pp.dec.saved", cid=CID, id=1) in texts(at) and any(b.key == f"pp-cfd-save-{CID}-1" for b in at.button)
+      t("pp.dec.saved", cid=CID, id=1) in texts(at) and any(b.key == f"pp-cfd-save-0-{CID}-1" for b in at.button)
       and not any(w.key.endswith("-0") and w.key.startswith("pp-cfd-") for w in at.text_input))
 check("конфликт показан решённым, с источником",
       t("pp.dec.current", value="Marketplace: 2× BP-240 4 Ah + FC-230 Dual",
@@ -328,16 +372,16 @@ _can, _req = auth.can, auth.require
 auth.can = lambda a: a != "ls.textgen.accept" and _can(a)
 at = page(**{"pp-tab": "verifier", "pp-sku": "99601000-B"})
 g = int(at.session_state["pp-cfd-gen"]) if "pp-cfd-gen" in at.session_state else 0
-at.radio(key=f"pp-cfd-kind-{CID}-{g}").set_value("SIDE_B").run()     # сторона выбрана: выключает право, а не выбор
+at.radio(key=f"pp-cfd-kind-0-{CID}-{g}").set_value("SIDE_B").run()     # сторона выбрана: выключает право, а не выбор
 check("без права ls.textgen.accept — кнопка выключена и при выбранной стороне, сказано, чьё это право",
-      at.button(key=f"pp-cfd-save-{CID}-{g}").disabled and t("pp.dec.denied_hint") in texts(at))
+      at.button(key=f"pp-cfd-save-0-{CID}-{g}").disabled and t("pp.dec.denied_hint") in texts(at))
 auth.can = _can
 MODE["no_decisions_table"] = True
 at = page(**{"pp-tab": "verifier", "pp-sku": "99601000-B"})
 g = int(at.session_state["pp-cfd-gen"]) if "pp-cfd-gen" in at.session_state else 0
-at.radio(key=f"pp-cfd-kind-{CID}-{g}").set_value("SIDE_B").run()
+at.radio(key=f"pp-cfd-kind-0-{CID}-{g}").set_value("SIDE_B").run()
 check("без миграции решений — кнопка выключена и при выбранной стороне, файл назван",
-      at.button(key=f"pp-cfd-save-{CID}-{g}").disabled
+      at.button(key=f"pp-cfd-save-0-{CID}-{g}").disabled
       and t("pp.dec.migration_missing", file="2026-10-28_passport_conflict_decisions.sql") in texts(at))
 MODE["no_decisions_table"] = False
 

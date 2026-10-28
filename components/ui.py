@@ -139,6 +139,16 @@ def mobile_switch() -> None:
               help=t("sidebar.mobile_help"))
 
 
+_MD_SPECIAL = re.compile(r"([\\`*_{}\[\]<>#|~$])")
+
+
+def md_escape(text) -> str:
+    """Внешний текст (тайтл с Amazon, стороны конфликта, введённое человеком) — в
+    st.markdown / st.caption как есть: «$…$» не формула, «*», «_», «[…]» не
+    разметка (проверка #176)."""
+    return _MD_SPECIAL.sub(r"\\\1", "" if text is None else str(text))
+
+
 def css_key(key: str) -> str:
     """Ключ контейнера, из которого Streamlit сделает РОВНО такой же класс.
 

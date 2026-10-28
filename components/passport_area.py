@@ -241,6 +241,9 @@ def render_card(r: pd.Series, data: dict) -> None:
         f'</div>', unsafe_allow_html=True)
     if r["duplicate_of"]:
         box.warning(t("pp.duplicate", skus=", ".join(r["duplicate_of"])))
+    if r.get("copy_error"):
+        # Паспорт-копия есть, но не прочитана: причина — сразу в карточке, а не «состояние —»
+        box.error(t("pp.view.read_error", err=pv.esc(pv.copy_error_text(r["copy_error"]))))
     if r["fresh"] in (pp.STALE, pp.LOAD_ERROR):
         box.warning(t("pp.mutations_locked"))
     for _, b in pp.active_blocks(data.get("blocks"), r["sku"]).iterrows():
@@ -295,8 +298,6 @@ def _render_detail(box, show: str, r: pd.Series, data: dict) -> None:
         if obj is not None:
             box.markdown(t("pp.passport_meta", pid=obj["passport_id"], ver=obj["passport_version"],
                            sha=txt(obj["sha256"])[:12]))
-        if r.get("copy_error"):
-            box.error(t("pp.view.read_error", err=r["copy_error"]))
         pv.render_passport(box, dict(r))
         box.caption(t("pp.read_only"))
     elif show == "compare":
@@ -336,7 +337,12 @@ def render_create(r: dict) -> None:
         st.info(t("pp.create_absent"))
     pv.render_sku_summary(r)
     st.markdown(f"**{t('pp.up.title')}**")
-    passport_upload.render("pp-up", sku_hint=r["sku"])
+    if r.get("source") == "engine":
+        # Паспорт ведёт движок графа: копия docx рядом стала бы вторым паспортом SKU,
+        # который увидит генератор (проверка #176).
+        st.caption(t("pp.up.engine"))
+    else:
+        passport_upload.render("pp-up", sku_hint=r["sku"], lock_sku=True)
     rec = render_materials(r["sku"])
     render_readiness(r, rec)
     row = st.container(horizontal=True, gap="small")

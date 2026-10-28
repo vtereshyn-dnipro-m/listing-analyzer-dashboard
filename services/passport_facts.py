@@ -45,13 +45,20 @@ _QTY = re.compile(r"\b\d+(?:[.,]\d+)?\s?(?:[×x]\s?\d+(?:[.,]\d+)?\s?)*"
 # прочее — OPEN_*, пустое, незнакомое, опечатка — открытый и вырезается: ошибиться
 # в сторону «не дать модели» дешевле, чем пропустить спорное значение. В каноне
 # словаря закрытых статусов нет — список ушёл вопросом Ярославу.
+# «Только явно» (проверка #176): начало — целым словом («RESOLVEDX»,
+# «DECIDEDLY_OPEN» — открытые), и ни одного слова, говорящего «ещё не решено»
+# («RESOLVED_PENDING_OWNER», «CLOSED_REOPENED», «DECIDED_NOT_YET» — открытые).
 CLOSED_STATUSES = ("RESOLVED", "CLOSED", "DECIDED", "SCOPED_APART")
+NOT_CLOSED_WORDS = {"OPEN", "REOPEN", "REOPENED", "PENDING", "NOT", "UNRESOLVED", "UNDECIDED", "TODO"}
 DECISIONS = ("SIDE_A", "SIDE_B", "VALUE")
 
 
 def is_closed_status(status) -> bool:
     s = status.strip().upper() if isinstance(status, str) else ""
-    return bool(s) and s.startswith(CLOSED_STATUSES)
+    words = [w for w in re.split(r"[\s_\-]+", s) if w]
+    if not words or NOT_CLOSED_WORDS & set(words):
+        return False
+    return any(words[:len(p.split("_"))] == p.split("_") for p in CLOSED_STATUSES)
 
 
 def is_open(c: dict) -> bool:
@@ -107,6 +114,16 @@ def identity_value(facts: "Facts", label: str) -> str | None:
             if name.strip().lower() == label and row.get("значення"):
                 return row["значення"].strip()
     return None
+
+
+def conflict_summary(facts: "Facts") -> tuple[list[str], list[str], list[tuple[str, str, str]]]:
+    """Для экрана: поля открытых конфликтов, строки фактов, снятые из-за них, и
+    решённые конфликты (поле, значение, источник). Один расчёт для генератора и
+    раздела Паспорта — экран не держит своей логики."""
+    facts.prompt_text()
+    decided = [(c["field"], decided_value(c), (c.get("decision") or {}).get("decision_source") or "")
+               for c in facts.conflicts if c.get("decision") and c["field"]]
+    return [c["field"] for c in facts.conflicts if is_open(c) and c["field"]], list(facts.dropped), decided
 
 
 def apply_decisions(facts: "Facts", decisions: dict) -> "Facts":
