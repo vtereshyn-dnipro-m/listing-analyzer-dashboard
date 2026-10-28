@@ -361,7 +361,8 @@ gen = lambda: at.session_state["pp-sku-gen"] if "pp-sku-gen" in at.session_state
 g0 = gen()
 check("выбор в списке растит поколение выбора (по нему генератор видит новое действие)", g0 >= 1)
 first = next(d.value for d in at.dataframe if isinstance(d.value, pd.DataFrame) and "next" in d.value.columns)
-at.session_state["pp-table"] = {"selection": {"rows": [0], "columns": [], "cells": []}}
+from components import passport_area as _pa  # noqa: E402
+at.session_state[_pa.table_key(list(first["sku"].astype(str)))] = {"selection": {"rows": [0], "columns": [], "cells": []}}
 at.run()
 row0 = first.iloc[0]["sku"]
 check(f"клик по строке ({row0}) — контекст и список на нём в этом же прогоне (проверка #178)",

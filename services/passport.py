@@ -585,9 +585,12 @@ def _norm(s: str) -> str:
     return re.sub(r"\s+", " ", s.strip().lower())
 
 
-def search(directory: pd.DataFrame, objects: pd.DataFrame, query: str) -> tuple[pd.DataFrame, int]:
+def search(directory: pd.DataFrame, objects: pd.DataFrame, query: str,
+           keep: set | None = None) -> tuple[pd.DataFrame, int]:
     """Строки справочника и Паспортов под запрос: SKU, название, модель, ASIN
-    или EAN. Без запроса — товары, у которых Паспорт уже есть.
+    или EAN. Без запроса — товары, у которых Паспорт уже есть. keep — SKU под
+    остальными фильтрами экрана (тип товара): режется ДО предела в SEARCH_LIMIT
+    строк, иначе нужный товар за пределом молча пропадал бы (проверка #181).
 
     Совпадение по названию или внешнему коду НЕ подтверждает SKU (ТЗ 9.3):
     оно только показывает строки, а точный товар человек выбирает сам.
@@ -604,6 +607,8 @@ def search(directory: pd.DataFrame, objects: pd.DataFrame, query: str) -> tuple[
         base = pd.concat([base, pd.DataFrame(extra)], ignore_index=True)
     model = {txt(o["sku_id"]): txt(o.get("model")) for _, o in objs.iterrows()}
     base["model"] = base["sku"].astype(str).map(model).fillna("")
+    if keep is not None:
+        base = base[base["sku"].astype(str).isin(keep)]
 
     q = _norm(query or "")
     if not q:
