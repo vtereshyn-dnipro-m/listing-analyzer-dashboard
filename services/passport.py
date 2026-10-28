@@ -137,6 +137,66 @@ def sku_directory() -> tuple[pd.DataFrame, str | None]:
         conn.close()
 
 
+# ---------------------------------------------------------------- тип товара
+# Тип — из данных товара, а не руками (поручение владельца 28.10.2026): листинг ES
+# нашего SKU — тайтл последнего удачного снапшота и productType атрибутов, тем же
+# `product_specs.detect_type`, что у генератора. Категорий ERP Кабинета здесь нет
+# намеренно: решение 07.10.2026 — из базы Кабинета только `sku_master` и листинги.
+# Тип определяет правила генерации (`textgen.kind_of`: аккумулятор и зарядка —
+# вольтаж в тайтле можно).
+@st.cache_data(ttl=600, show_spinner=False)
+def listing_types_es() -> tuple[pd.DataFrame, str | None]:
+    """(asin, sku_group, тип) наших ES-листингов; сбой — (пусто, причина)."""
+    from services import product_specs as ps
+    df, err = safe_read(
+        """SELECT pm.asin, pm.sku_group, ll.title, la.product_type
+             FROM product_matrix pm
+             LEFT JOIN LATERAL (
+                   SELECT s.title FROM listing_snapshots s
+                    WHERE s.asin = pm.asin AND s.marketplace = pm.marketplace AND s.ok IS TRUE
+                    ORDER BY s.fetched_at DESC LIMIT 1) ll ON true
+             LEFT JOIN listing_attributes la ON la.asin = pm.asin AND la.marketplace = pm.marketplace
+            WHERE pm.marketplace = 'es' AND pm.is_competitor IS NOT TRUE""")
+    if err:
+        return pd.DataFrame(columns=["asin", "sku_group", "type"]), err
+    rows = [{"asin": cell_text(r, "asin"), "sku_group": cell_text(r, "sku_group"),
+             "type": ps.detect_type(cell_text(r, "title"), cell_text(r, "product_type") or None)}
+            for _, r in df.iterrows()]
+    return pd.DataFrame(rows, columns=["asin", "sku_group", "type"]), None
+
+
+def sku_types(directory: pd.DataFrame, listing: pd.DataFrame) -> dict[str, str]:
+    """SKU → тип по его ES-листингам: ASIN из справочника, что стоят в матрице ES,
+    и ASIN матрицы с точным sku_group. Разные типы у одного SKU — самый частый,
+    при равенстве — первый по алфавиту (стабильно от запуска к запуску)."""
+    if listing is None or listing.empty:
+        return {}
+    by_asin = {a: ty for a, ty in zip(listing["asin"], listing["type"]) if a and ty}
+    by_group: dict[str, list] = {}
+    for g, ty in zip(listing["sku_group"], listing["type"]):
+        if g and ty:
+            by_group.setdefault(g, []).append(ty)
+    out = {}
+    for _, r in (directory if directory is not None else pd.DataFrame()).iterrows():
+        sku = cell_text(r, "sku")
+        found = [by_asin[a] for a in cell_text(r, "asins").split() if a in by_asin] + by_group.get(sku, [])
+        if found:
+            out[sku] = sorted(set(found), key=lambda x: (-found.count(x), x))[0]
+    return out
+
+
+def sku_type(sku: str) -> tuple[str | None, str | None]:
+    """Тип одного SKU для страниц: (тип или None, причина сбоя чтения)."""
+    directory, derr = sku_directory()
+    listing, lerr = listing_types_es()
+    if lerr:
+        return None, lerr
+    view = directory[directory["sku"].astype(str) == sku] if not directory.empty else directory
+    if view.empty:
+        view = pd.DataFrame([{"sku": sku, "asins": ""}])
+    return sku_types(view, listing).get(sku), derr
+
+
 # ---------------------------------------------------------------- копии docx
 # Один паспорт на SKU для всего приложения (решение владельца 28.10.2026): раздел
 # «Паспорт SKU» и генератор видят одно и то же. Сейчас паспорта приходят копиями

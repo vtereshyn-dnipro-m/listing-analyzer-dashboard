@@ -132,11 +132,24 @@ def block_reason(u: Usage, est: float) -> tuple[str, str] | None:
 
 
 # ------------------------------------------------------------------ промпт
-def build_prompt(sku: str, marketplace: str, header: dict, facts: pf.Facts) -> str:
+def kind_of(tool_type: str | None) -> str:
+    """Правила по типу товара: аккумулятор и зарядка — POWER_PACK (вольтаж в тайтле
+    можно), прочее и неизвестный тип — инструмент (нельзя): ошибиться в сторону
+    запрета дешевле."""
+    from services import product_specs as ps
+    tt = ps.TYPE_BY_KEY.get(tool_type) if tool_type else None
+    return tt.kind if tt else tr.TOOL
+
+
+def build_prompt(sku: str, marketplace: str, header: dict, facts: pf.Facts, tool_type: str | None = None) -> str:
     lang = LANGUAGE.get(marketplace, "English")
+    kind = kind_of(tool_type)
+    typed = (f"Тип товара (из листинга, код): {tool_type}; правила — "
+             f"{'аккумулятор или зарядка: вольтаж в тайтле можно' if kind != tr.TOOL else 'инструмент'}.\n"
+             if tool_type else "")
     return (f"Площадка: Amazon {marketplace.upper()}. Язык всех текстов: {lang}.\n"
             f"SKU: {sku}. Паспорт {header.get('passport_id')} v{header.get('passport_version')}, "
-            f"состояние {header.get('state') or '—'}.\n\n"
+            f"состояние {header.get('state') or '—'}.\n{typed}\n"
             f"ФАКТЫ ПАСПОРТА\n{facts.prompt_text()}\n\n"
             "Ответ — только JSON, без пояснений:\n"
             '{"title": "…", "highlight": "…", "bullets": ["…", "…", "…", "…", "…"], "description": "…"}')
@@ -241,10 +254,10 @@ def passport_values(facts: pf.Facts | None) -> tuple[set[str], set[tuple[str, st
 
 def run_checks(texts: dict, model: str | None, conflict_tokens: set[str] = frozenset(), *,
                facts: pf.Facts | None = None, sku: str | None = None,
-               marketplace: str | None = None) -> list[dict]:
+               marketplace: str | None = None, kind: str = tr.TOOL) -> list[dict]:
     # kind=TOOL: тип товара (инструмент или аккумулятор/зарядка) паспорт не даёт
     # машинно; для аккумулятора правило вольтажа сработает лишним — это видно.
-    found = tr.check(texts["title"], texts["highlight"], kind=tr.TOOL, model=model)
+    found = tr.check(texts["title"], texts["highlight"], kind=kind, model=model)
     out = [{"code": v.code, "field": "highlight" if v.field == "highlights" else v.field, "detail": v.detail}
            for v in found]
     # Заголовок буллета капсом через двоеточие.
@@ -320,7 +333,8 @@ def prompt_sha256(system: str, prompt: str) -> str:
 
 def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn, method: tuple[str, int],
              provider: str, model: str, max_tokens: int, setting, ai_call, ai_usage, ai_reset,
-             asins: list[str] | None, ai_error=lambda: None, rules_version: str | None = None) -> Result:
+             asins: list[str] | None, ai_error=lambda: None, rules_version: str | None = None,
+             tool_type: str | None = None) -> Result:
     """Один вызов модели и черновики. `copy` — строка `passport_source_artifacts`
     (source_artifact_id, passport_id, archived_locator, sha256). Вызов модели и
     его учёт — через переданные функции: страница отдаёт `services/ai`, тест —
@@ -354,7 +368,7 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
     # вырезается и идёт в модель отдельным разделом (решение владельца 28.10.2026).
     with conn, conn.cursor() as cur:
         pf.apply_decisions(facts, pdec.read_with(cur, copy["source_artifact_id"], copy["sha256"]))
-    prompt = build_prompt(sku, marketplace, header, facts)
+    prompt = build_prompt(sku, marketplace, header, facts, tool_type)
     p_sha = prompt_sha256(m_text, prompt)
     est = estimate(p, len(prompt) + len(m_text), max_tokens)
 
@@ -402,7 +416,7 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
         return Result("FAILED", "MODEL", err, call_id, cost_usd=real)
 
     checks = run_checks(texts, model_code(facts), pf.conflict_tokens(facts.conflicts),
-                        facts=facts, sku=sku, marketplace=marketplace)
+                        facts=facts, sku=sku, marketplace=marketplace, kind=kind_of(tool_type))
     # ASIN товара на этой площадке: один — во все черновики; иначе пусто, причина —
     # пометкой в checks тайтла (ASIN_CODES — не нарушение, экран показывает отдельно).
     if why_no_asin:

@@ -752,6 +752,34 @@ check("старые черновики без пометки — «причин�
 GEN["latest"] = (_lat.assign(asin="B0GTRY26HB", checks="[]"), None)
 at = run()
 check("сохранённый ASIN черновиков показан", lab("tg.link.saved_asin", asin="B0GTRY26HB") in texts_of(at))
+# --- генератор на том же SKU, что выбран в разделе «Паспорт SKU», и тип товара в
+# генерацию (поручение владельца 28.10.2026: выпадающий список товаров)
+import services.passport as _pp_svc  # noqa: E402
+
+GEN["copies"] = (pd.DataFrame([dict(GEN["copies"][0].iloc[0]),
+                               {"source_artifact_id": "DOCX-PASS-21680000-001-v1", "sku_id": "21680000",
+                                "passport_id": "PASS-21680000-001", "sha256": "1" * 64,
+                                "archived_locator": "/Volumes/dnipro_m/listing_data/passports/y.docx",
+                                "recorded_at": "2026-10-28"}]), None)
+_sku_type = _pp_svc.sku_type
+_pp_svc.sku_type = lambda sku: ({"21680000": "battery"}.get(sku), None)
+at = AppTest.from_file(str(PAGE), default_timeout=60)
+at.session_state["lang"] = "ru"
+at.session_state["pp-sku"] = "21680000"
+at.run()
+check("генератор встаёт на SKU, выбранный в разделе «Паспорт SKU»", at.selectbox(key="tg-gen-sku").value == "21680000")
+check("тип товара из листинга назван у генерации", lab("tg.gen.type", type=lab("tg.type.battery")) in texts_of(at))
+GEN["calls"].clear()
+at.button(key="tg-gen-go").click().run()
+check("тип товара уходит в генерацию — по нему правила (аккумулятор: вольтаж в тайтле можно)",
+      GEN["calls"] and GEN["calls"][-1].get("tool_type") == "battery")
+at.selectbox(key="tg-gen-sku").set_value("99601000-B").run()
+check("в генераторе можно выбрать другой SKU, контекст его не перебивает",
+      at.selectbox(key="tg-gen-sku").value == "99601000-B" and lab("tg.gen.type_unknown") in texts_of(at))
+at.session_state["pp-sku"] = "21680000"
+at.run()
+check("контекст не менялся — выбор в генераторе держится", at.selectbox(key="tg-gen-sku").value == "99601000-B")
+_pp_svc.sku_type = _sku_type
 ai.task_config = _task_config
 
 print()

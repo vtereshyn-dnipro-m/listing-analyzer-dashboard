@@ -353,11 +353,27 @@ elif copies_df.empty:
 else:
     skus = list(copies_df["sku_id"])
     pre = pp_header["sku_id"] if pp_header and pp_header["sku_id"] in skus else skus[0]
+    # Тот же SKU, что выбран в разделе «Паспорт SKU» (pp-sku): контекст сменился —
+    # генератор встаёт на него. Значение пишется ДО создания виджета (правило 7б);
+    # дальше человек вправе выбрать здесь другой (поручение владельца 28.10.2026).
+    g_ctx = st.session_state.get("pp-sku")
+    if g_ctx in skus and st.session_state.get("tg-gen-ctx") != g_ctx:
+        st.session_state["tg-gen-sku"] = g_ctx
+    st.session_state["tg-gen-ctx"] = g_ctx
+    if st.session_state.get("tg-gen-sku") not in skus:
+        st.session_state.pop("tg-gen-sku", None)
     g1, g2 = st.columns(2)
-    g_sku = g1.selectbox(t("tg.gen.sku"), skus, index=skus.index(pre), key="tg-gen-sku")
+    g_sku = g1.selectbox(t("tg.gen.sku"), skus, key="tg-gen-sku",
+                         **({} if "tg-gen-sku" in st.session_state else {"index": skus.index(pre)}))
     mps = list(tg.LANGUAGE)
     g_mp = g2.selectbox(t("tg.gen.mp"), mps, index=mps.index("es"), format_func=str.upper, key="tg-gen-mp")
     g_copy = copies_df[copies_df["sku_id"] == g_sku].iloc[0].to_dict()
+    # Тип товара — из данных листинга (как в Реестре): он определяет правила
+    # генерации — аккумулятор и зарядка с вольтажем в тайтле, инструмент без.
+    g_type, g_terr = passport_svc.sku_type(g_sku)
+    if g_terr:
+        say.caption(t("tg.gen.type_error", err=str(g_terr)[:160]))
+    say.caption(t("tg.gen.type", type=t(f"tg.type.{g_type}")) if g_type else t("tg.gen.type_unknown"))
     g_asins = tg.asins_for_sku(g_sku, link_dir, link_mx)
     # ASIN для черновиков — на ВЫБРАННОЙ площадке (решение владельца 23.10.2026).
     # Не прочитался хоть один источник связи — None: неполный список дал бы
@@ -473,7 +489,7 @@ else:
                                 max_tokens=g_maxtok, setting=get_setting,
                                 ai_call=ai.generate_json, ai_usage=ai.usage_totals, ai_reset=ai.reset_usage,
                                 asins=g_link_asins, ai_error=ai.last_call_error,
-                                rules_version=deploy_sync.current_commit())
+                                rules_version=deploy_sync.current_commit(), tool_type=g_type)
                     except Exception as e:  # noqa: BLE001 — база или том: причина на экран
                         say.error(t("tg.gen.err.DB", detail=f"{type(e).__name__}: {str(e)[:200]}"))
                     else:
