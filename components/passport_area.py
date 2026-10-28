@@ -50,6 +50,7 @@ WARN_BG = "#FDF3D8"
 WARN_INK = "#854F0B"
 RED = "#A32D2D"
 NEUTRAL_BG = "#F1EFE9"
+BG = "#FAFAF8"
 
 TABS = ("registry", "create", "verifier")
 
@@ -318,13 +319,35 @@ def _last_text(r) -> str:
     return f'{pd.Timestamp(at).strftime("%d.%m.%Y %H:%M")} · {r["last_event_type"]}'
 
 
+def photo_html(ph: dict) -> str:
+    """Фото товара в карточке — или явная заглушка «фото отсутствует». Размер
+    рамки задан заранее: медленная загрузка не двигает карточку. alt пустой:
+    ссылка, которая не загрузилась, не рисует битую картинку. Одной строкой
+    (правило 1), кавычек внутри атрибутов нет (правило 2)."""
+    frame = (f"flex:0 0 88px;width:88px;height:88px;border:1px solid {BORDER};border-radius:6px;"
+             f"overflow:hidden;display:flex;align-items:center;justify-content:center;")
+    if ph.get("url"):
+        return (f'<div class="pp-photo" style="{frame}background:{BG};">'
+                f'<img src="{html.escape(ph["url"], quote=True)}" alt="" loading="lazy" '
+                f'title="{html.escape(t("pp.photo.src", asin=ph["asin"]), quote=True)}" '
+                f'style="max-width:100%;max-height:100%;object-fit:contain;"></div>')
+    why = t(f"pp.photo.why.{ph.get('why') or 'no_listing'}", err=str(ph.get("err") or "")[:160])
+    return (f'<div class="pp-photo-none" title="{html.escape(why, quote=True)}" '
+            f'style="{frame}background:{NEUTRAL_BG};color:{MUTED};font-size:11px;line-height:1.2;'
+            f'text-align:center;padding:4px;">{html.escape(t("pp.photo.none"))}</div>')
+
+
 def render_card(r: pd.Series, data: dict) -> None:
     """Карточка выбранного SKU (ТЗ 9.5): одно основное действие, вторичные —
-    «Открыть Паспорт» и «Открыть папку материалов»."""
+    «Открыть Паспорт» и «Открыть папку материалов». Рядом с названием — фото
+    товара или заглушка (поручение владельца 28.10.2026)."""
     box = st.container(border=True)
     bg, fg = STATE_STYLE.get(r["state"], STATE_STYLE[None])
     fbg, ffg = FRESH_STYLE[r["fresh"]]
+    ph = pp.sku_photo(r["sku"])
     box.markdown(
+        '<div style="display:flex;gap:14px;align-items:flex-start;">' + photo_html(ph)
+        + '<div style="min-width:0;">'
         f'<div style="font-size:18px;font-weight:600;">{html.escape(r["name"] or "—")}</div>'
         f'<div class="ls-mono" style="color:{MUTED};">{html.escape(r["sku"])}'
         f'{" · " + html.escape(r["model"]) if r["model"] else ""}'
@@ -332,7 +355,10 @@ def render_card(r: pd.Series, data: dict) -> None:
         f'<div style="margin-top:6px;">{chip(state_label(r["state"]), bg, fg)} '
         f'{chip(t("pp.fresh." + r["fresh"]), fbg, ffg)}'
         f'{" " + chip(t("pp.ver_short", v=r["passport_version"]), NEUTRAL_BG, INK) if r["passport_version"] else ""}'
-        f'</div>', unsafe_allow_html=True)
+        f'</div></div></div>', unsafe_allow_html=True)
+    if ph.get("why") == "error":
+        # сбой чтения — не тихая заглушка: причина доходит до экрана
+        box.caption(t("pp.photo.why.error", err=pv.esc(str(ph.get("err") or "")[:160])))
     if r["duplicate_of"]:
         box.warning(t("pp.duplicate", skus=", ".join(r["duplicate_of"])))
     if r.get("copy_error"):
