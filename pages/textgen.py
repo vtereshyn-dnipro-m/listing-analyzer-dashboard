@@ -356,13 +356,16 @@ else:
     # Тот же SKU, что выбран в разделе «Паспорт SKU» (pp-sku), — поручение владельца
     # 28.10.2026. Выбор человека здесь живёт отдельно от ключа виджета (tg-gen-choice):
     # ключ виджета Streamlit удаляет при уходе со страницы, а выбор должен дожить до
-    # возвращения (проверка #178). Порядок: выбор здесь после последней смены контекста →
-    # SKU контекста → загруженный файл → первая копия. Значение пишется в ключ виджета
-    # ДО его создания на каждом прогоне (правило 7б).
+    # возвращения (проверка #178). Порядок: выбор здесь после последнего выбора товара в
+    # разделе → SKU контекста → загруженный файл → первая копия. Смена контекста — по
+    # поколению выбора pp-sku-gen (passport_area.set_context), а не по значению: A → B →
+    # снова A в Реестре — новое действие человека, и оно перебивает выбор здесь. Значение
+    # пишется в ключ виджета ДО его создания на каждом прогоне (правило 7б).
     g_ctx = st.session_state.get("pp-sku")
-    if st.session_state.get("tg-gen-ctx") != g_ctx:
+    g_mark = (g_ctx, st.session_state.get("pp-sku-gen", 0))
+    if st.session_state.get("tg-gen-ctx") != g_mark:
         st.session_state.pop("tg-gen-choice", None)     # контекст сменился — встаём на него
-    st.session_state["tg-gen-ctx"] = g_ctx
+    st.session_state["tg-gen-ctx"] = g_mark
     g_choice = st.session_state.get("tg-gen-choice")
     g_want = (g_choice if g_choice in skus else g_ctx if g_ctx in skus
               else pp_header["sku_id"] if pp_header and pp_header["sku_id"] in skus else pre)

@@ -86,19 +86,31 @@ def me() -> tuple[str, tuple]:
 
 
 # ---------------------------------------------------------------- навигация
+def set_context(sku: str | None) -> None:
+    """Явный выбор товара в разделе: пишет pp-sku и растит поколение выбора
+    pp-sku-gen. Генератор сравнивает поколение, а не значение: выбор A → B → снова A
+    в Реестре — тоже новое действие человека (проверка #178)."""
+    if sku:
+        st.session_state["pp-sku"] = sku
+    else:
+        st.session_state.pop("pp-sku", None)
+    st.session_state["pp-sku-gen"] = st.session_state.get("pp-sku-gen", 0) + 1
+
+
 def _go(tab: str, sku: str | None = None, question: str | None = None, show: str | None = None) -> None:
     """Колбэк перехода: пишет ключ сегмента ДО его создания на следующем
     прогоне (правило 7б), поэтому только из колбэка."""
     st.session_state["pp-tab"] = tab
     if sku is not None:
-        st.session_state["pp-sku"] = sku
+        set_context(sku)
     st.session_state["pp-question"] = question
     st.session_state["pp-show"] = show
 
 
 def _change_product() -> None:
-    for k in ("pp-sku", "pp-question", "pp-show"):
+    for k in ("pp-question", "pp-show"):
         st.session_state.pop(k, None)
+    set_context(None)
     st.session_state["pp-tab"] = "registry"
 
 
@@ -135,12 +147,9 @@ def _pick_from_list(key: str) -> None:
     sku = st.session_state.get(key)
     st.session_state["pp-show"] = None
     st.session_state["pp-question"] = None
-    if sku:
-        st.session_state["pp-sku"] = sku
-    else:
-        # «— выберите товар —» — явный сброс товара, как «Сменить товар», а не тихий
-        # пропуск: карточка старого SKU не должна остаться (проверка #178)
-        st.session_state.pop("pp-sku", None)
+    # «— выберите товар —» — явный сброс товара, как «Сменить товар», а не тихий
+    # пропуск: карточка старого SKU не должна остаться (проверка #178)
+    set_context(sku or None)
 
 
 def _option_label(sku: str, names: dict, types: dict, passports: dict) -> str:
@@ -265,7 +274,7 @@ def render_registry() -> None:
     # оно сменилось, иначе старая строка перебивала бы выбор из списка товаров.
     sel = rows.iloc[picked[0]]["sku"] if picked else None
     if sel and sel != st.session_state.get("pp-table-last"):
-        st.session_state["pp-sku"] = sel
+        set_context(sel)
     st.session_state["pp-table-last"] = sel
     _picker()
     # Карточка — по выбранному SKU контекста, а не только по выделению в

@@ -345,6 +345,9 @@ check("SKU выбран в другом месте — список стоит �
 print("клик по строке таблицы после выбора в списке")
 at = page(**{"pp-tab": "registry"})
 picker(at).set_value("21680000").run()
+gen = lambda: at.session_state["pp-sku-gen"] if "pp-sku-gen" in at.session_state else 0  # noqa: E731
+g0 = gen()
+check("выбор в списке растит поколение выбора (по нему генератор видит новое действие)", g0 >= 1)
 first = next(d.value for d in at.dataframe if isinstance(d.value, pd.DataFrame) and "next" in d.value.columns)
 at.session_state["pp-table"] = {"selection": {"rows": [0], "columns": [], "cells": []}}
 at.run()
@@ -353,8 +356,12 @@ check(f"клик по строке ({row0}) — контекст и список
       ctx(at) == row0 and picker(at).value == row0)
 at.run()
 check("следующий прогон — выделение строки не перебивает и не мигает", ctx(at) == row0 and picker(at).value == row0)
+check("клик по строке растит поколение выбора, повторный прогон — нет", gen() == g0 + 1)
 picker(at).set_value("21680000").run()
 check("после клика по строке выбор в списке снова работает", ctx(at) == "21680000" and picker(at).value == "21680000")
+g1 = gen()
+at.button(key="pp-change").click().run()
+check("«Сменить товар» — сброс и новое поколение выбора", ctx(at) is None and gen() == g1 + 1)
 
 print("копия не прочиталась / листинги не прочитались")
 _store = pc.volume_store

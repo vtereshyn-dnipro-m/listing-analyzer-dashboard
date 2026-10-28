@@ -781,7 +781,7 @@ at.run()
 check("контекст не менялся — выбор в генераторе держится", at.selectbox(key="tg-gen-sku").value == "99601000-B")
 # Уход со страницы: Streamlit удаляет ключ виджета, а прочие ключи сеанса живут. Новый
 # прогон страницы получает ровно их — так выглядит повторный заход (проверка #178).
-KEEP = ("lang", "pp-sku", "tg-gen-ctx", "tg-gen-choice")
+KEEP = ("lang", "pp-sku", "pp-sku-gen", "tg-gen-ctx", "tg-gen-choice")
 
 
 def reenter(prev, **change):
@@ -802,6 +802,22 @@ check("контекст сменился, страницу открыли зан
       at.selectbox(key="tg-gen-sku").value == "21680000")
 at = reenter(at)
 check("повторный заход без смены контекста — снова SKU контекста, а не первая копия",
+      at.selectbox(key="tg-gen-sku").value == "21680000")
+# Реестр: A, в генераторе X, в Реестре B и снова A — генератор не открывали между ними.
+# Последнее действие человека — выбор A в Реестре, генератор встаёт на A (проверка #178).
+import components.passport_area as _parea  # noqa: E402
+at.selectbox(key="tg-gen-sku").set_value("99601000-B").run()
+_sess = {"pp-sku": at.session_state["pp-sku"], "pp-sku-gen": at.session_state["pp-sku-gen"]
+         if "pp-sku-gen" in at.session_state else 0}
+_st_state = _parea.st.session_state
+_parea.st.session_state = _sess
+try:
+    _parea.set_context("99601000-B")
+    _parea.set_context("21680000")
+finally:
+    _parea.st.session_state = _st_state
+at = reenter(at, **_sess)
+check("Реестр: A → в генераторе X → в Реестре B и снова A — генератор на A, а не на X",
       at.selectbox(key="tg-gen-sku").value == "21680000")
 at = reenter(at, **{"tg-gen-choice": "00000000-X"})   # выбранная копия ушла (заменена или OLD)
 check("выбранной копии больше нет — без падения, на SKU контекста",
