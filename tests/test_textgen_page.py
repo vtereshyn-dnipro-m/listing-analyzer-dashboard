@@ -26,6 +26,7 @@ tests/test_textgen_page.py — «Генератор текстов (пилот)�
 """
 from __future__ import annotations
 
+import json
 import pathlib
 import re
 import sys
@@ -515,6 +516,7 @@ def _generate(**kw):
                      rules_version=GEN["rules_version"] if GEN["stamped"] else None)
 
 
+_REAL_GENERATE = tg.generate          # настоящий — для T-22 ниже
 tg.generate = _generate
 _task_config = ai.task_config
 ai.task_config = lambda task: ("anthropic", "claude-sonnet-5")
@@ -648,8 +650,6 @@ at = run()
 at.selectbox(key="tg-gen-mp").set_value("de").run()
 check("DE: до нажатия видно, какой ASIN уйдёт в черновики",
       lab("tg.link.draft_asin", mp="DE", asin="B0DEDEDEDE") in texts_of(at))
-check("подпись до нажатия решает тот же pick_asin, что и запись",
-      "g_pick, g_why = tg.pick_asin(g_link_asins)" in SRC)
 GEN["calls"].clear()
 at.button(key="tg-gen-go").click().run()
 check("DE: генерация получает ASIN площадки DE, а не ES",
@@ -721,6 +721,115 @@ _st.cache_data.clear()
 at = run(title="DNIPRO-M Amoladora $ 125mm")
 check("запрещённый «$» в тайтле назван как `$`, без обратной косой",
       any("`$`" in str(m.value) for m in at.markdown) and not any("`\\$`" in str(m.value) for m in at.markdown))
+
+# T-22: подпись «какой ASIN уйдёт в черновики» = то, что записано. «Сгенерировать»
+# жмётся с НАСТОЯЩИМ tg.generate; подменены только база, том и вызов модели
+# (fixture_textgen_db — те же DB, Cur, Store, что в test_textgen_generate.py).
+# Подпись сверяется с asin и кодом причины в записанных черновиках, а записанное —
+# с ожидаемым для входа: сравнение подписи с pick_asin от тех же аргументов не
+# поймало бы, если generate начнёт решать ASIN иначе.
+from fixture_textgen_db import DB as _GenDB, Store as _GenStore  # noqa: E402
+
+
+def _gp(text, style=None):
+    ppr = f'<w:pPr><w:pStyle w:val="{style}"/></w:pPr>' if style else ""
+    return f"<w:p>{ppr}<w:r><w:t>{text}</w:t></w:r></w:p>"
+
+
+def _gtbl(rows):
+    return "<w:tbl>" + "".join("<w:tr>" + "".join(f"<w:tc>{_gp(c)}</w:tc>" for c in r) + "</w:tr>"
+                               for r in rows) + "</w:tbl>"
+
+
+_gb = io.BytesIO()
+with zipfile.ZipFile(_gb, "w") as _z:
+    _z.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                "<w:body>" + _gp("Паспорт SKU 99601000-B", "Title")
+                + _gtbl([("Параметр", "Значення"), ("passport_id", "PASS-99601000-B-001"), ("passport_version", "2"),
+                         ("state", "NOT_READY"), ("sku_id", "99601000-B")])
+                + _gp("Ідентичність товару", "Heading1")
+                + _gtbl([("Поле", "Значення", "Статус", "Джерело"), ("Модель", "DVB-200BC Dual", "PROPOSED", "SRC-1")])
+                + _gp("Технічні характеристики", "Heading1")
+                + _gtbl([("ID", "Характеристика", "Значення", "Статус", "Джерело"),
+                         ("FACT-1", "Об’єм мішка", "45 л", "PROPOSED", "SRC-1")])
+                + "</w:body></w:document>")
+GEN_DOCX = _gb.getvalue()
+GEN_ANSWER = {"title": "DNIPRO-M Aspirador Soplador de Hojas, Aire 245km/h, Tritura 15:1, Bolsa 45L",
+              "highlight": "Model DVB-200BC Dual: soplador aspirador de hojas con batería, motor brushless",
+              "bullets": ["CAMBIA DE ASPIRAR A SOPLAR SIN DESMONTAR: texto"] + [f"VALOR {i}: texto" for i in range(2, 6)],
+              "description": "Descripción."}
+_saved = {"generate": tg.generate, "copies": GEN["copies"], "conn": _db.get_conn, "store": pc.volume_store,
+          "mx": MATRIX_ES, "ai": {n: getattr(ai, n) for n in ("generate_json", "usage_totals", "reset_usage",
+                                                             "last_call_error")}}
+tg.generate = _REAL_GENERATE
+GEN["copies"] = (pd.DataFrame([{"source_artifact_id": "DOCX-PASS-99601000-B-001-v2", "sku_id": "99601000-B",
+                                "passport_id": "PASS-99601000-B-001", "sha256": hashlib.sha256(GEN_DOCX).hexdigest(),
+                                "archived_locator": "/Volumes/dnipro_m/listing_data/passports/v2.docx",
+                                "recorded_at": "2026-10-21"}]), None)
+pc.volume_store = lambda: _GenStore(GEN_DOCX)
+ai.generate_json = lambda task, prompt, system=None: dict(GEN_ANSWER)
+ai.usage_totals = lambda: {"input_tokens": 9000, "output_tokens": 1200}
+ai.reset_usage = lambda: None
+ai.last_call_error = lambda: None
+
+
+def asin_case(name, *, directory, matrix_es, err=None, expect_asin=None, expect_code=None, expect_detail=""):
+    """Подпись до нажатия ↔ записанные черновики ↔ ожидаемое для входа."""
+    global MATRIX_ES
+    MATRIX_ES = matrix_es
+    LINK["dir"], LINK["err"] = directory, err
+    db = _GenDB()
+    _db.get_conn = lambda: db
+    _st.cache_data.clear()
+    at = run()
+    caps = [str(c.value) for c in at.caption]
+    at.button(key="tg-gen-go").click().run()
+    rows = db.content
+    title = next((r for r in rows if r.get("field") == "title"), None)
+    codes = [v for v in json.loads(title["checks"]) if v["code"].startswith("ASIN_")] if title else []
+    rec_asin = {r.get("asin") for r in rows}
+    ok_written = bool(rows) and len(rec_asin) == 1 and len(codes) <= 1 and not at.exception
+    got_asin = next(iter(rec_asin)) if ok_written else "—"
+    got_code = codes[0]["code"] if codes else None
+    got_detail = codes[0].get("detail", "") if codes else ""
+    # подпись, которую экран показал ДО нажатия, построенная из ЗАПИСАННОГО
+    from_record = (lab("tg.link.draft_asin", mp="ES", asin=got_asin) if got_asin and not got_code
+                   else lab("tg.link.draft_no_asin", mp="ES", why=lab(f"tg.code.{got_code}")
+                            + (f" ({got_detail})" if got_detail else "")) if got_code else None)
+    check(f"{name}: черновики записаны настоящим generate (один ASIN на все поля)", ok_written)
+    check(f"{name}: записано ожидаемое — asin {expect_asin}, причина {expect_code or 'нет'}"
+          + (f" ({expect_detail})" if expect_detail else ""),
+          got_asin == expect_asin and got_code == expect_code and got_detail == expect_detail)
+    check(f"{name}: подпись до нажатия называет ровно записанное", from_record is not None and from_record in caps)
+    # любая подпись о черновиках — по началу обоих шаблонов; кроме построенной из записанного, других нет
+    heads = tuple(i18n.LANGS["ru"][k].split("{")[0] for k in ("tg.link.draft_asin", "tg.link.draft_no_asin"))
+    check(f"{name}: другой подписи о черновиках на экране нет",
+          [c for c in caps if c.startswith(heads)] == [from_record])
+    return at, db
+
+
+ONE = "B0GTRY26HB"
+MX = pd.DataFrame([{"asin": ONE, "sku_group": "99601000"}, {"asin": "B0AAAAAAAA", "sku_group": "99601000"}])
+asin_case("один ASIN", directory=pd.DataFrame([{"sku": "99601000-B", "asins": ONE}]), matrix_es=MX, expect_asin=ONE)
+asin_case("тот же ASIN с пробелами из справочника (_split их снимает)",
+          directory=pd.DataFrame([{"sku": "99601000-B", "asins": f"  {ONE}  "}]), matrix_es=MX, expect_asin=ONE)
+asin_case("ASIN в нижнем регистре из матрицы (fullmatch отбрасывает, годных нет)",
+          directory=pd.DataFrame(columns=["sku", "asins"]),
+          matrix_es=pd.DataFrame([{"asin": ONE.lower(), "sku_group": "99601000-B"}]),
+          expect_asin=None, expect_code="ASIN_UNKNOWN")
+asin_case("два ASIN", directory=pd.DataFrame([{"sku": "99601000-B", "asins": f"{ONE} B0AAAAAAAA"}]), matrix_es=MX,
+          expect_asin=None, expect_code="ASIN_AMBIGUOUS", expect_detail=f"B0AAAAAAAA, {ONE}")
+asin_case("ни одного ASIN", directory=pd.DataFrame(columns=["sku", "asins"]), matrix_es=MX,
+          expect_asin=None, expect_code="ASIN_UNKNOWN")
+asin_case("сбой связи (справочник не прочитан)", directory=pd.DataFrame(columns=["sku", "asins"]), matrix_es=MX,
+          err="OperationalError: kabinet down", expect_asin=None, expect_code="ASIN_UNREAD")
+
+tg.generate = _saved["generate"]
+GEN["copies"] = _saved["copies"]
+_db.get_conn, pc.volume_store, MATRIX_ES = _saved["conn"], _saved["store"], _saved["mx"]
+for _n, _f in _saved["ai"].items():
+    setattr(ai, _n, _f)
+LINK["err"] = None
 LINK["dir"] = pd.DataFrame(columns=["sku", "asins"])
 _db.safe_read = _safe_read
 
