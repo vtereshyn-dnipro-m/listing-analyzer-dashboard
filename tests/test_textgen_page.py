@@ -752,6 +752,110 @@ check("старые черновики без пометки — «причин�
 GEN["latest"] = (_lat.assign(asin="B0GTRY26HB", checks="[]"), None)
 at = run()
 check("сохранённый ASIN черновиков показан", lab("tg.link.saved_asin", asin="B0GTRY26HB") in texts_of(at))
+# --- генератор на том же SKU, что выбран в разделе «Паспорт SKU», и тип товара в
+# генерацию (поручение владельца 28.10.2026: выпадающий список товаров)
+import services.passport as _pp_svc  # noqa: E402
+
+GEN["copies"] = (pd.DataFrame([dict(GEN["copies"][0].iloc[0]),
+                               {"source_artifact_id": "DOCX-PASS-21680000-001-v1", "sku_id": "21680000",
+                                "passport_id": "PASS-21680000-001", "sha256": "1" * 64,
+                                "archived_locator": "/Volumes/dnipro_m/listing_data/passports/y.docx",
+                                "recorded_at": "2026-10-28"}]), None)
+_sku_type = _pp_svc.sku_type
+_pp_svc.sku_type = lambda sku: ({"21680000": "battery"}.get(sku), None)
+at = AppTest.from_file(str(PAGE), default_timeout=60)
+at.session_state["lang"] = "ru"
+at.session_state["pp-sku"] = "21680000"
+at.run()
+check("генератор встаёт на SKU, выбранный в разделе «Паспорт SKU»", at.selectbox(key="tg-gen-sku").value == "21680000")
+check("тип товара из листинга назван у генерации", lab("tg.gen.type", type=lab("tg.type.battery")) in texts_of(at))
+GEN["calls"].clear()
+at.button(key="tg-gen-go").click().run()
+check("тип товара уходит в генерацию — по нему правила (аккумулятор: вольтаж в тайтле можно)",
+      GEN["calls"] and GEN["calls"][-1].get("tool_type") == "battery")
+at.selectbox(key="tg-gen-sku").set_value("99601000-B").run()
+check("в генераторе можно выбрать другой SKU, контекст его не перебивает",
+      at.selectbox(key="tg-gen-sku").value == "99601000-B" and lab("tg.gen.type_unknown") in texts_of(at))
+at.session_state["pp-sku"] = "21680000"
+at.run()
+check("контекст не менялся — выбор в генераторе держится", at.selectbox(key="tg-gen-sku").value == "99601000-B")
+# Уход со страницы: Streamlit удаляет ключ виджета, а прочие ключи сеанса живут. Новый
+# прогон страницы получает ровно их — так выглядит повторный заход (проверка #178).
+KEEP = ("lang", "pp-sku", "pp-sku-gen", "tg-gen-ctx", "tg-gen-choice")
+
+
+def reenter(prev, **change):
+    nxt = AppTest.from_file(str(PAGE), default_timeout=60)
+    for k in KEEP:
+        if k in prev.session_state:
+            nxt.session_state[k] = prev.session_state[k]
+    for k, v in change.items():
+        nxt.session_state[k] = v
+    return nxt.run()
+
+
+at = reenter(at)
+check("вернулись на страницу — выбор человека в генераторе дожил", at.selectbox(key="tg-gen-sku").value == "99601000-B")
+at = reenter(at, **{"pp-sku": "99601000-B"})
+at = reenter(at, **{"pp-sku": "21680000"})         # контекст сменился в разделе «Паспорт SKU»
+check("контекст сменился, страницу открыли заново — генератор на SKU контекста",
+      at.selectbox(key="tg-gen-sku").value == "21680000")
+at = reenter(at)
+check("повторный заход без смены контекста — снова SKU контекста, а не первая копия",
+      at.selectbox(key="tg-gen-sku").value == "21680000")
+# Реестр: A, в генераторе X, в Реестре B и снова A — генератор не открывали между ними.
+# Последнее действие человека — выбор A в Реестре, генератор встаёт на A (проверка #178).
+import components.passport_area as _parea  # noqa: E402
+at.selectbox(key="tg-gen-sku").set_value("99601000-B").run()
+_sess = {"pp-sku": at.session_state["pp-sku"], "pp-sku-gen": at.session_state["pp-sku-gen"]
+         if "pp-sku-gen" in at.session_state else 0}
+_st_state = _parea.st.session_state
+_parea.st.session_state = _sess
+try:
+    _parea.set_context("99601000-B")
+    _parea.set_context("21680000")
+finally:
+    _parea.st.session_state = _st_state
+at = reenter(at, **_sess)
+check("Реестр: A → в генераторе X → в Реестре B и снова A — генератор на A, а не на X",
+      at.selectbox(key="tg-gen-sku").value == "21680000")
+
+
+def registry_does(at, *calls):
+    """Действия в разделе «Паспорт SKU» настоящими колбэками passport_area — на ключах
+    сеанса, которые переживают переход между страницами."""
+    sess = {k: at.session_state[k] for k in ("pp-sku", "pp-sku-gen") if k in at.session_state}
+    real = _parea.st.session_state
+    _parea.st.session_state = sess
+    try:
+        for fn, *args in calls:
+            fn(*args)
+    finally:
+        _parea.st.session_state = real
+    return sess
+
+
+# Решение владельца 28.10.2026: кнопки карточки на том же товаре выбор в генераторе
+# не снимают; сброс — только при смене товара.
+at.selectbox(key="tg-gen-sku").set_value("99601000-B").run()
+at = reenter(at, **registry_does(at, (_parea._go, "registry", "21680000", None, "passport")))
+check("генератор X, в карточке A «Открыть Паспорт» того же A — генератор остаётся на X",
+      at.selectbox(key="tg-gen-sku").value == "99601000-B")
+at = reenter(at, **registry_does(at, (_parea._go, "create", "21680000")))
+check("генератор X, в карточке A «Создать» того же A — генератор остаётся на X",
+      at.selectbox(key="tg-gen-sku").value == "99601000-B")
+at = reenter(at, **registry_does(at, (_parea._go, "registry", "99601000-B", None, "passport"),
+                                 (_parea._go, "registry", "21680000", None, "passport")))
+check("переход из карточки на другой товар и обратно — смена товара, генератор на A",
+      at.selectbox(key="tg-gen-sku").value == "21680000")
+at = reenter(at, **{"tg-gen-choice": "00000000-X"})   # выбранная копия ушла (заменена или OLD)
+check("выбранной копии больше нет — без падения, на SKU контекста",
+      not at.exception and at.selectbox(key="tg-gen-sku").value == "21680000")
+_pp_svc.sku_type = lambda sku: (None, "листинги недоступны")
+at.run()
+check("тип не прочитался — причина названа, правила инструмента",
+      lab("tg.gen.type_error", err="листинги недоступны") in texts_of(at) and lab("tg.gen.type_unknown") in texts_of(at))
+_pp_svc.sku_type = _sku_type
 ai.task_config = _task_config
 
 print()

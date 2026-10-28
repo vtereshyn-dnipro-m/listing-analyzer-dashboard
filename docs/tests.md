@@ -56,6 +56,7 @@ python tests/test_textgen_generate.py
 python tests/test_textgen_rules.py
 python tests/test_passport_conflicts.py
 python tests/test_passport_one_source.py
+python tests/test_passport_sku_picker.py
 python tests/test_content_stamp_sql.py
 python tests/test_passport_copy_frozen_sql.py
 python tests/test_feed.py
@@ -608,6 +609,13 @@ JSON-схем: каждая даёт ожидаемый схемный исхо�
 чужой копии или конфликту не действует, генерация читает решения до вызова модели;
 сервис решений и миграция `passport_conflict_decisions` (только дописывание, сверка
 копии и SHA, `apply_migration` принимает). Поведение миграции проверено на PGlite.
+
+`test_passport_sku_picker.py` — выпадающий список товаров в Реестре (28.10.2026): список
+из справочника Кабинета, в строке SKU, название, тип и статус паспорта; тип — из листинга
+ES (по ASIN справочника и по sku_group); выбор — точный SKU контекста для «Создания»,
+карточки и «Верификатора», карточка и вне текущего поиска; при сбое справочника —
+ошибка над списком; ручной поиск работает; тип задаёт правила генерации (вольтаж у
+аккумулятора) и называется в промпте.
 
 `test_passport_one_source.py` — один паспорт на SKU для раздела и генератора,
 чеклист 28.10.2026 пункты 1–7, через AppTest на подменённых базах и томе: копия

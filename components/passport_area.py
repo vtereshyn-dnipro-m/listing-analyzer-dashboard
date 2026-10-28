@@ -86,19 +86,35 @@ def me() -> tuple[str, tuple]:
 
 
 # ---------------------------------------------------------------- навигация
+def set_context(sku: str | None) -> None:
+    """Явный выбор товара в разделе: пишет pp-sku и, если товар сменился, растит
+    поколение выбора pp-sku-gen. Генератор сравнивает поколение, а не значение: выбор
+    A → B → снова A в Реестре — новое действие человека (проверка #178). Кнопки карточки
+    на том же товаре («Открыть Паспорт», «Создать») поколение не растят и выбор в
+    генераторе не снимают (решение владельца 28.10.2026)."""
+    prev = st.session_state.get("pp-sku")
+    if sku:
+        st.session_state["pp-sku"] = sku
+    else:
+        st.session_state.pop("pp-sku", None)
+    if (sku or None) != prev:
+        st.session_state["pp-sku-gen"] = st.session_state.get("pp-sku-gen", 0) + 1
+
+
 def _go(tab: str, sku: str | None = None, question: str | None = None, show: str | None = None) -> None:
     """Колбэк перехода: пишет ключ сегмента ДО его создания на следующем
     прогоне (правило 7б), поэтому только из колбэка."""
     st.session_state["pp-tab"] = tab
     if sku is not None:
-        st.session_state["pp-sku"] = sku
+        set_context(sku)
     st.session_state["pp-question"] = question
     st.session_state["pp-show"] = show
 
 
 def _change_product() -> None:
-    for k in ("pp-sku", "pp-question", "pp-show"):
+    for k in ("pp-question", "pp-show"):
         st.session_state.pop(k, None)
+    set_context(None)
     st.session_state["pp-tab"] = "registry"
 
 
@@ -129,6 +145,61 @@ def _registry_data() -> tuple[dict, bool]:
     return st.session_state.get("pp-last-good", data), data["error"] is not None
 
 
+def _pick_from_list(key: str) -> None:
+    """Колбэк списка: выбор в списке — точный выбор SKU, как выбор строки
+    Реестра. Пишет контекст до перерисовки (правило 7б)."""
+    sku = st.session_state.get(key)
+    st.session_state["pp-show"] = None
+    st.session_state["pp-question"] = None
+    # «— выберите товар —» — явный сброс товара, как «Сменить товар», а не тихий
+    # пропуск: карточка старого SKU не должна остаться (проверка #178)
+    set_context(sku or None)
+
+
+def _option_label(sku: str, names: dict, types: dict, passports: dict) -> str:
+    if not sku:
+        return t("pp.pick.none")
+    p = passports.get(sku)
+    if not p:
+        status = t("pp.pick.absent")
+    elif p[2] or not p[1]:
+        # копия есть, но шапка не прочиталась: не «Паспорт отсутствует» (проверка #178)
+        status = t("pp.pick.unread", ver=p[0] or "—")
+    else:
+        status = t("pp.pick.has", ver=p[0] or "—", state=state_label(p[1]))
+    ty = types.get(sku)
+    return " · ".join(x for x in (sku, names.get(sku) or "—",
+                                   t(f"tg.type.{ty}") if ty else t("pp.pick.type_unknown"), status) if x)
+
+
+def render_picker(directory: pd.DataFrame, dir_err, objects: pd.DataFrame) -> None:
+    """Выпадающий список товаров (поручение владельца 28.10.2026): сам из справочника
+    Кабинета, руками товары не вводятся; в строке — SKU, название, тип и статус
+    паспорта. Справочник не прочитался — ошибка над списком, а в списке остаются
+    товары с паспортом: молча пустым он не бывает. Ключ виджета несёт текущий SKU
+    контекста — выбор в другом месте пересоздаёт список на нём (правило 7б)."""
+    if dir_err:
+        st.error(t("pp.pick.dir_error", err=pv.esc(str(dir_err)[:200])))
+    objs = objects if objects is not None and not objects.empty else pd.DataFrame(
+        columns=["sku_id", "passport_version", "state", "product_name"])
+    passports = {txt(o["sku_id"]): (txt(o.get("passport_version")), txt(o.get("state")) or None,
+                                    txt(o.get("copy_error"))) for _, o in objs.iterrows()}
+    names = {txt(r["sku"]): txt(r.get("name")) for _, r in directory.iterrows()} if not directory.empty else {}
+    for _, o in objs.iterrows():
+        names.setdefault(txt(o["sku_id"]), txt(o.get("product_name")))
+    listing, lerr = pp.listing_types_es()
+    types = pp.sku_types(directory, listing) if not directory.empty else {}
+    if lerr:
+        st.caption(t("pp.pick.type_error", err=pv.esc(str(lerr)[:160])))
+    skus = sorted(set(names) | set(passports))
+    ctx = st.session_state.get("pp-sku")
+    options = [""] + skus
+    key = f"pp-pick-{ctx or ''}"
+    st.selectbox(t("pp.pick.label"), options, index=options.index(ctx) if ctx in options else 0, key=key,
+                 format_func=lambda s: _option_label(s, names, types, passports),
+                 on_change=_pick_from_list, args=(key,), help=t("pp.pick.help"))
+
+
 def _reset_filters() -> None:
     for k in ("pp-q", "pp-states", "pp-mine"):
         st.session_state.pop(k, None)
@@ -142,8 +213,13 @@ def render_registry() -> None:
         at = data.get("read_at")
         st.error(t("pp.load_error", at=at.strftime("%d.%m.%Y %H:%M") if at is not None else "—"))
     directory, dir_err = pp.sku_directory()
-    if dir_err:
-        st.warning(t("pp.directory_error"))
+    # Список — над поиском, но заполняется ПОСЛЕ таблицы: клик по строке пишет
+    # pp-sku в этом же прогоне, и список должен показать уже его (проверка #178).
+    pick_box = st.container()
+
+    def _picker() -> None:
+        with pick_box:
+            render_picker(directory, dir_err, data.get("objects"))
 
     f = st.container(horizontal=True, vertical_alignment="bottom", gap="small")
     query = f.text_input(t("pp.search"), key="pp-q", placeholder=t("pp.search_ph"))
@@ -160,6 +236,8 @@ def render_registry() -> None:
 
     if rows.empty:
         st.info(t("pp.nothing_found", q=query) if query else t("pp.empty_hint"))
+        _picker()
+        _card_for_context(data, by_sku={})
         return
     st.caption(t("pp.found", n=total, shown=len(rows)))
 
@@ -196,12 +274,28 @@ def render_registry() -> None:
         })
     picked = (pick.selection.rows if pick and getattr(pick, "selection", None) else [])
     by_sku = {r["sku"]: r for _, r in rows.iterrows()}
-    if picked:
-        st.session_state["pp-sku"] = rows.iloc[picked[0]]["sku"]
+    # Выделение строки живёт в таблице между прогонами: применяется только когда
+    # оно сменилось, иначе старая строка перебивала бы выбор из списка товаров.
+    sel = rows.iloc[picked[0]]["sku"] if picked else None
+    if sel and sel != st.session_state.get("pp-table-last"):
+        set_context(sel)
+    st.session_state["pp-table-last"] = sel
+    _picker()
     # Карточка — по выбранному SKU контекста, а не только по выделению в
     # таблице: вернувшись из другой вкладки, человек видит тот же товар
     # (ТЗ §8 — контекст сохраняется, смена товара только явная).
-    current = by_sku.get(st.session_state.get("pp-sku"))
+    _card_for_context(data, by_sku)
+
+
+def _card_for_context(data: dict, by_sku: dict) -> None:
+    """Карточка товара контекста — и когда его нет в текущем поиске: выбранный в
+    списке товар без паспорта поиском без запроса не показывается, а карточка
+    нужна (поручение владельца 28.10.2026)."""
+    sku = st.session_state.get("pp-sku")
+    current = by_sku.get(sku)
+    if current is None and sku:
+        r = context_row()
+        current = pd.Series(r) if r else None
     if current is not None:
         render_card(current, data)
     else:
