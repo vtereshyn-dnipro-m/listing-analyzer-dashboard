@@ -28,6 +28,7 @@ import re
 from dataclasses import dataclass, field
 
 from services import passport_copies as pc
+from services import passport_decisions as pdec
 from services import passport_facts as pf
 from services import title_rules as tr
 
@@ -156,16 +157,7 @@ def parse_answer(data) -> dict | None:
 
 
 def model_code(facts: pf.Facts) -> str | None:
-    for s in facts.sections:
-        if not s.rows:
-            continue
-        head = [h.strip().lower() for h in s.rows[0]]
-        for r in s.rows[1:]:
-            row = dict(zip(head, r))
-            name = row.get("поле") or row.get("характеристика") or ""
-            if name.strip().lower() == "модель" and row.get("значення"):
-                return row["значення"].strip()
-    return None
+    return pf.identity_value(facts, "модель")
 
 
 # ------------------------------------------------------------------ правила 21.10.2026
@@ -358,6 +350,10 @@ def generate(*, sku: str, marketplace: str, copy: dict, actor: str, store, conn,
     if header["passport_id"] != copy["passport_id"]:
         return Result("FAILED", "COPY_OTHER_PASSPORT", f"{header['passport_id']} ≠ {copy['passport_id']}")
     facts = pf.read(data)
+    # Решения верификатора по конфликтам этой копии — до промпта: решённое не
+    # вырезается и идёт в модель отдельным разделом (решение владельца 28.10.2026).
+    with conn, conn.cursor() as cur:
+        pf.apply_decisions(facts, pdec.read_with(cur, copy["source_artifact_id"], copy["sha256"]))
     prompt = build_prompt(sku, marketplace, header, facts)
     p_sha = prompt_sha256(m_text, prompt)
     est = estimate(p, len(prompt) + len(m_text), max_tokens)

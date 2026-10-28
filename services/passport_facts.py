@@ -1,10 +1,13 @@
 """Факты паспорта SKU (docx) для генерации текстов (решение владельца 21.10.2026).
 
 Паспорт — каноническая форма: заголовки разделов (стиль Heading1) и таблицы под
-ними. В модель идут только разделы-источники фактов. «Конфлікти» не идут вовсе —
-их факты не использовать (решение владельца по 99601000-B), они выводятся на
-экран списком «нужно решение». Служебные разделы (прогалины, источники, контроль
-версии) тоже не идут: это не факты о товаре.
+ними. В модель идут только разделы-источники фактов. Раздел «Конфлікти» сам в
+модель не идёт: значения ОТКРЫТОГО конфликта не использовать (решение владельца
+по 99601000-B), они выводятся на экран списком «нужно решение». Конфликт,
+закрытый статусом в самом паспорте, значений не вырезает; конфликт, решённый
+верификатором (`passport_conflict_decisions`, решение владельца 28.10.2026), —
+тоже, а решённое значение идёт в модель отдельным разделом. Служебные разделы
+(прогалины, источники, контроль версии) не идут: это не факты о товаре.
 
 Разбор чистый — без Streamlit и базы; копию паспорта читает вызывающий.
 """
@@ -37,20 +40,100 @@ _QTY = re.compile(r"\b\d+(?:[.,]\d+)?\s?(?:[×x]\s?\d+(?:[.,]\d+)?\s?)*"
                   re.I)
 
 
+# Статус конфликта в паспорте (решение владельца 28.10.2026): закрытым считается
+# только статус, начинающийся с RESOLVED, CLOSED, DECIDED или SCOPED_APART. Всё
+# прочее — OPEN_*, пустое, незнакомое, опечатка — открытый и вырезается: ошибиться
+# в сторону «не дать модели» дешевле, чем пропустить спорное значение. В каноне
+# словаря закрытых статусов нет — список ушёл вопросом Ярославу.
+# «Только явно» (проверка #176): начало — целым словом («RESOLVEDX»,
+# «DECIDEDLY_OPEN» — открытые), и ни одного слова, говорящего «ещё не решено»
+# («RESOLVED_PENDING_OWNER», «CLOSED_REOPENED», «DECIDED_NOT_YET» — открытые).
+CLOSED_STATUSES = ("RESOLVED", "CLOSED", "DECIDED", "SCOPED_APART")
+NOT_CLOSED_WORDS = {"OPEN", "REOPEN", "REOPENED", "PENDING", "NOT", "UNRESOLVED", "UNDECIDED", "TODO"}
+DECISIONS = ("SIDE_A", "SIDE_B", "VALUE")
+
+
+def is_closed_status(status) -> bool:
+    s = status.strip().upper() if isinstance(status, str) else ""
+    words = [w for w in re.split(r"[\s_\-]+", s) if w]
+    if not words or NOT_CLOSED_WORDS & set(words):
+        return False
+    return any(words[:len(p.split("_"))] == p.split("_") for p in CLOSED_STATUSES)
+
+
+def is_open(c: dict) -> bool:
+    """Открыт: нет решения верификатора и статус в паспорте не закрытый."""
+    return not c.get("decision") and not is_closed_status(c.get("status"))
+
+
+def decided_value(c: dict) -> str:
+    """Значение, выбранное решением: записанное значение, а без него — текст
+    выбранной стороны (A или B). Своё значение (VALUE) пишется всегда."""
+    d = c.get("decision") or {}
+    kind = d.get("decision")
+    if isinstance(d.get("value"), str) and d["value"].strip():
+        return d["value"].strip()
+    return c.get("a", "") if kind == "SIDE_A" else c.get("b", "") if kind == "SIDE_B" else ""
+
+
 @dataclass
 class Section:
     title: str
     rows: list[list[str]] = field(default_factory=list)   # первая строка — шапка таблицы
 
 
+def side_tokens(text: str) -> set[str]:
+    """Коды и величины текста, нормализованные (без пробелов, нижний регистр)."""
+    text = text or ""
+    return {_norm(m.group(0)) for m in _CODE.finditer(text)} | {_norm(m.group(0)) for m in _QTY.finditer(text)}
+
+
 def conflict_tokens(conflicts: list[dict]) -> set[str]:
-    """Коды и величины из сторон конфликтов, нормализованные (без пробелов, нижний регистр)."""
+    """Значения, которые в модель не идут. Открытый конфликт — обе стороны.
+    Решённый верификатором — стороны за вычетом выбранного значения: отвергнутая
+    сторона по-прежнему не идёт. Закрытый статусом в паспорте — ничего."""
     out = set()
     for c in conflicts:
-        for side in (c.get("a") or "", c.get("b") or ""):
-            out |= {_norm(m.group(0)) for m in _CODE.finditer(side)}
-            out |= {_norm(m.group(0)) for m in _QTY.finditer(side)}
+        sides = side_tokens(c.get("a")) | side_tokens(c.get("b"))
+        if c.get("decision"):
+            out |= sides - side_tokens(decided_value(c))
+        elif not is_closed_status(c.get("status")):
+            out |= sides
     return out
+
+
+def identity_value(facts: "Facts", label: str) -> str | None:
+    """Значение строки «Поле»/«Характеристика» = label (например «модель»)."""
+    for s in facts.sections:
+        if not s.rows:
+            continue
+        head = [h.strip().lower() for h in s.rows[0]]
+        for r in s.rows[1:]:
+            row = dict(zip(head, r))
+            name = row.get("поле") or row.get("характеристика") or ""
+            if name.strip().lower() == label and row.get("значення"):
+                return row["значення"].strip()
+    return None
+
+
+def conflict_summary(facts: "Facts") -> tuple[list[str], list[str], list[tuple[str, str, str]]]:
+    """Для экрана: поля открытых конфликтов, строки фактов, снятые из-за них, и
+    решённые конфликты (поле, значение, источник). Один расчёт для генератора и
+    раздела Паспорта — экран не держит своей логики."""
+    facts.prompt_text()
+    decided = [(c["field"], decided_value(c), (c.get("decision") or {}).get("decision_source") or "")
+               for c in facts.conflicts if c.get("decision") and c["field"]]
+    return [c["field"] for c in facts.conflicts if is_open(c) and c["field"]], list(facts.dropped), decided
+
+
+def apply_decisions(facts: "Facts", decisions: dict) -> "Facts":
+    """Решения верификатора по id конфликта этой копии. Решение по id, которого в
+    копии нет, не применяется: оно о другом паспорте."""
+    for c in facts.conflicts:
+        d = decisions.get(c.get("id"))
+        if d and d.get("decision") in DECISIONS:
+            c["decision"] = d
+    return facts
 
 
 def _norm(x: str) -> str:
@@ -69,7 +152,7 @@ def has_tokens(text: str, tokens: set[str]) -> list[str]:
 @dataclass
 class Facts:
     sections: list[Section]
-    conflicts: list[dict]        # {id, field, a, b, status}
+    conflicts: list[dict]        # {id, field, a, b, status, source, decision}
     dropped: list[str] = field(default_factory=list)   # строки фактов, снятые из-за конфликта
 
     def prompt_text(self) -> str:
@@ -93,9 +176,14 @@ class Facts:
                     self.dropped.append(f"{r[0]} ({', '.join(hits)})")
                     continue
                 out.append("- " + " | ".join(cells))
-        if self.conflicts:
+        decided = [c for c in self.conflicts if c.get("decision") and c["field"]]
+        if decided:
+            out.append("## РЕШЕНИЯ ПО КОНФЛИКТАМ — использовать эти значения")
+            out += [f"- {c['field']}: {decided_value(c)}" for c in decided]
+        still = [c for c in self.conflicts if is_open(c) and c["field"]]
+        if still:
             out.append("## НЕ ИСПОЛЬЗОВАТЬ — открытые конфликты паспорта (нужно решение)")
-            out += [f"- {c['field']}" for c in self.conflicts if c["field"]]
+            out += [f"- {c['field']}" for c in still]
         return "\n".join(out)
 
 
@@ -106,6 +194,26 @@ def _text(el) -> str:
 def _style(p) -> str:
     st = p.find(f"{W}pPr/{W}pStyle")
     return (st.get(f"{W}val") or "") if st is not None else ""
+
+
+def _conflict_columns(head: list[str]) -> dict:
+    """Колонки таблицы «Конфлікти» по шапке; без узнанной шапки — по местам, как
+    в v2: ID, Поле, Сторона A, Сторона B, Статус. «Джерело рішення» — если есть."""
+    col = {"id": 0, "field": 1, "a": 2, "b": 3, "status": 4}
+    for i, h in enumerate(x.strip().lower() for x in head):
+        if "рішен" in h or "decision" in h:
+            col["source"] = i
+        elif h.startswith("статус") or h.startswith("status"):
+            col["status"] = i
+        elif h.endswith(" a") or h == "a":
+            col["a"] = i
+        elif h.endswith(" b") or h == "b":
+            col["b"] = i
+        elif h in ("поле", "field"):
+            col["field"] = i
+        elif h == "id":
+            col["id"] = i
+    return col
 
 
 def read(data: bytes) -> Facts:
@@ -126,9 +234,11 @@ def read(data: bytes) -> Facts:
     for s in all_sections:
         low = s.title.strip().lower()
         if low.startswith(CONFLICT_SECTION):
+            col = _conflict_columns(s.rows[0] if s.rows else [])
             for r in s.rows[1:]:
-                r = (r + [""] * 5)[:5]
-                conflicts.append({"id": r[0], "field": r[1], "a": r[2], "b": r[3], "status": r[4]})
+                r = r + [""] * (max(col.values()) + 1 - len(r))
+                conflicts.append({k: r[i] for k, i in col.items() if k != "source"}
+                                 | {"source": r[col["source"]] if "source" in col else ""})
         elif low.startswith(FACT_SECTIONS):
             facts.append(s)
     return Facts(facts, conflicts)
