@@ -180,6 +180,18 @@ mixed = pd.DataFrame([dict(asin="A1", sku_group="X", type="drill"), dict(asin="A
                       dict(asin="A3", sku_group="X", type="hammer")])
 check("разные типы у одного SKU — самый частый, стабильно",
       pp.sku_types(pd.DataFrame([dict(sku="X", asins="")]), mixed) == {"X": "hammer"})
+# Настоящая форма: тип не узнан → detect_type даёт None, а столбец, собранный тем же
+# pd.DataFrame(rows, columns=…), что в listing_types_es, хранит NaN (строковый столбец
+# pandas 3). У SKU один листинг с типом, другой без — так упал Реестр на проде 28.10.2026.
+real = pd.DataFrame([{"asin": "B1", "sku_group": "Y", "type": "drill"},
+                     {"asin": "B2", "sku_group": "Y", "type": None},
+                     {"asin": "B3", "sku_group": "Z", "type": None}], columns=["asin", "sku_group", "type"])
+try:
+    got = pp.sku_types(pd.DataFrame([dict(sku="Y", asins="B1 B2"), dict(sku="Z", asins="B3")]), real)
+except TypeError as e:
+    got = e
+check("тип не узнан у части листингов SKU (NaN в столбце) — без падения, тип по узнанным; "
+      "SKU только с неузнанными — без типа, а не «nan»", got == {"Y": "drill"})
 MODE["listing_fail"] = True
 st.cache_data.clear()
 _l, _e = pp.listing_types_es()

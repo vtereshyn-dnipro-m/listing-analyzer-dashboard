@@ -183,9 +183,14 @@ def sku_types(directory: pd.DataFrame, listing: pd.DataFrame) -> dict[str, str]:
     при равенстве — первый по алфавиту (стабильно от запуска к запуску)."""
     if listing is None or listing.empty:
         return {}
-    by_asin = {a: ty for a, ty in zip(listing["asin"], listing["type"]) if a and ty}
+    # Тип не узнан — в столбце NaN, а не None (строковый столбец pandas 3), и NaN
+    # истинный: без pd.isna он проходил в выборку и ронял сортировку рядом со строкой
+    # (правило 4; Реестр на проде 28.10.2026).
+    pairs = [(cell_text(r, "asin"), cell_text(r, "sku_group"), cell_text(r, "type"))
+             for _, r in listing.iterrows()]
+    by_asin = {a: ty for a, _g, ty in pairs if a and ty}
     by_group: dict[str, list] = {}
-    for g, ty in zip(listing["sku_group"], listing["type"]):
+    for _a, g, ty in pairs:
         if g and ty:
             by_group.setdefault(g, []).append(ty)
     out = {}
