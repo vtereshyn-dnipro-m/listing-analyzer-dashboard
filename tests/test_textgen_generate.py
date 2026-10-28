@@ -14,7 +14,11 @@ tests/test_textgen_generate.py — генерация текстов по пас
   · копия паспорта сверяется по SHA и по SKU;
   · удачный вызов — 8 черновиков одним предложением TG-<id>, версии растут,
     ссылка на паспорт и копию, проверки правил тайтла кодом;
-  · неудачный — вызов учтён (failed) с ценой, черновиков нет.
+  · неудачный — вызов учтён (failed) с ценой, черновиков нет;
+  · штамп версии (решение владельца 27.10.2026): у каждого черновика
+    prompt_sha256 — отпечаток ровно того, что ушло в модель, и rules_version —
+    коммит кода правил. Без миграции штампа черновик пишется по-старому, а
+    подменная база, как настоящая, отвергает вставку несуществующих колонок.
 
 Запуск (pytest не нужен):  python tests/test_textgen_generate.py
 """
@@ -146,6 +150,7 @@ class DB:
         self.calls, self.content, self.log = [], [], []
         self.fail_content = False
         self.no_content_table = False
+        self.stamp_cols = True          # миграция 2026-10-27_content_versions_stamp.sql применена
 
     def cursor(self):
         return Cur(self)
@@ -177,6 +182,8 @@ class Cur:
             self.res = [(None,)]
         elif sql.startswith("SELECT to_regclass"):
             self.res = [(not db.no_content_table,)]
+        elif "information_schema.columns" in sql:
+            self.res = [(len(p[0]) if db.stamp_cols else 0,)]
         elif sql.startswith("SELECT count(*)"):
             today = [c for c in db.calls if not c.get("yesterday")]
             self.res = [(sum(1 for c in today if c["sku"] == p[0]),
@@ -199,6 +206,9 @@ class Cur:
             if db.fail_content:
                 raise RuntimeError("content_versions: триггер отказал")
             cols = re.search(r"\((.*?)\) VALUES", sql).group(1).replace(" ", "").split(",")
+            if not db.stamp_cols and set(cols) & set(tg.STAMP_COLUMNS):
+                # как база без миграции: «column … does not exist»
+                raise RuntimeError("column prompt_sha256 of relation content_versions does not exist")
             vals = list(p[:11]) + ["model"] + list(p[11:])
             db.content.append(dict(zip(cols, vals)))
             self.res = []
@@ -222,12 +232,16 @@ COPY = {"source_artifact_id": "DOCX-PASS-99601000-B-001-v2", "passport_id": "PAS
         "archived_locator": "/Volumes/x/v2.docx", "sha256": hashlib.sha256(DOCX).hexdigest()}
 GOOD = {"title": "DNIPRO-M Aspirador Soplador de Hojas, Aire 245km/h, Tritura 15:1, Bolsa 45L",
         "highlight": "Model DVB-200BC Dual: soplador aspirador de hojas con batería, motor brushless",
-        "bullets": [f"VALOR {i}: texto" for i in range(1, 6)], "description": "Descripción."}
+        "bullets": ["CAMBIA DE ASPIRAR A SOPLAR SIN DESMONTAR: texto"] + [f"VALOR {i}: texto" for i in range(2, 6)],
+        "description": "Descripción."}
 USAGE = {"input_tokens": 9000, "output_tokens": 1200}
 
 
+COMMIT = "0123456789abcdef0123456789abcdef01234567"
+
+
 def run(db, *, answer=GOOD, usage=USAGE, store=None, method=("методология", 3), model="claude-opus-5-5",
-        copy=COPY, raise_in_call=False, provider="anthropic", asins=("B0GTRY26HB",)):
+        copy=COPY, raise_in_call=False, provider="anthropic", asins=("B0GTRY26HB",), rules_version=COMMIT):
     seen = {"calls": 0, "during": None}
 
     def ai_call(task, prompt, system=None):
@@ -242,7 +256,7 @@ def run(db, *, answer=GOOD, usage=USAGE, store=None, method=("методолог
                       store=store or Store(DOCX), conn=db, method=method, provider=provider, model=model,
                       max_tokens=8000, setting=lambda k, d="": d, ai_call=ai_call,
                       ai_usage=lambda: dict(usage), ai_reset=lambda: None, ai_error=lambda: "разбор не удался",
-                      asins=None if asins is None else list(asins))
+                      asins=None if asins is None else list(asins), rules_version=rules_version)
     return res, seen
 
 
@@ -268,7 +282,60 @@ check("черновик: текст, автор, модель, версия ме
       and t0["origin"] == "model")
 b5 = next(c for c in db.content if c["field"] == "bullet_5")
 check("буллеты по полям", b5["text"] == "VALOR 5: texto")
-check("проверки правил тайтла записаны кодом (чистый тайтл — пусто)", json.loads(t0["checks"]) == [])
+check("проверки правил записаны кодом (чистый тайтл — пусто)", json.loads(t0["checks"]) == [])
+check("чистый ответ — ни одного нарушения ни в одном поле",
+      all(json.loads(c["checks"]) == [] for c in db.content))
+
+# --- штамп версии (решение владельца 27.10.2026)
+want_sha = tg.prompt_sha256(seen["system"], seen["prompt"])
+check("штамп: у всех 8 черновиков prompt_sha256 — отпечаток того, что ушло в модель (system + запрос)",
+      res.stamped and {c.get("prompt_sha256") for c in db.content} == {want_sha} and len(want_sha) == 64)
+check("штамп: rules_version — коммит кода правил, и результат его называет",
+      {c.get("rules_version") for c in db.content} == {COMMIT} and res.rules_version == COMMIT)
+check("штамп: модель и номер методологии — как и раньше",
+      {(c["model"], c["skill_version"]) for c in db.content} == {("claude-opus-5-5", 3)})
+check("отпечаток меняется с методологией и с запросом, тот же вход — тот же отпечаток",
+      tg.prompt_sha256("методология v2", seen["prompt"]) != want_sha
+      and tg.prompt_sha256(seen["system"], seen["prompt"] + " ") != want_sha
+      and tg.prompt_sha256(seen["system"], seen["prompt"]) == want_sha
+      and tg.prompt_sha256("a", "bc") != tg.prompt_sha256("ab", "c"))
+_d = DB()
+_r, _s = run(_d, method=("методология другая", 4))
+check("другая методология — другой prompt_sha256 и номер методологии в черновике",
+      {c["prompt_sha256"] for c in _d.content} == {tg.prompt_sha256("методология другая", _s["prompt"])} != {want_sha}
+      and {c["skill_version"] for c in _d.content} == {4})
+for bad in (None, "", "abc", COMMIT[:7], COMMIT.upper(), COMMIT + "0", "fp:1a2b3c"):
+    _d = DB()
+    _r, _s = run(_d, rules_version=bad)
+    if not (_r.status == "OK" and len(_d.content) == 8 and {c["rules_version"] for c in _d.content} == {None}
+            and _r.stamped and _r.rules_version is None
+            and {c["prompt_sha256"] for c in _d.content} == {tg.prompt_sha256(_s["system"], _s["prompt"])}):
+        check(f"rules_version {bad!r} не коммит — пусто, черновики записаны", False)
+        break
+else:
+    check("rules_version не полный sha (пусто, короткий, заглавные, отпечаток fp:) — пусто, черновики записаны, "
+          "результат говорит, что версии нет", True)
+_d = DB()
+_d.stamp_cols = False
+try:
+    _r, _s = run(_d)
+    _err = None
+except RuntimeError as e:          # подменная база, как настоящая, не знает колонок штампа
+    _r, _err = None, e
+check("без миграции штампа — черновики записаны по-старому, без колонок штампа, stamped=False",
+      _err is None and _r.status == "OK" and _r.stamped is False and len(_d.content) == 8
+      and not any(k in c for c in _d.content for k in tg.STAMP_COLUMNS))
+
+# --- правила 21.10.2026 доходят до черновиков через генерацию (паспорт и SKU в проверках)
+_d = DB()
+_r, _s = run(_d, answer={**GOOD, "title": "DNIPRO-M Aspirador Soplador de Hojas, Aire 245km/h, Bolsa 0 - 45L",
+                         "bullets": ["VALOR 1: texto", GOOD["bullets"][0]] + GOOD["bullets"][2:]})
+_by = {c["field"]: {v["code"] for v in json.loads(c["checks"])} for c in _d.content}
+check("генерация: «0 - 45L» при «45 л» в паспорте — RANGE_FROM_SINGLE у тайтла",
+      "RANGE_FROM_SINGLE" in _by.get("title", set()))
+check("генерация: у 99601000-B переключение не первым — FIRST_BULLET у первого буллета",
+      "FIRST_BULLET" in _by.get("bullet_1", set()))
+check("файл миграции штампа назван и существует", (ROOT / "migrations" / tg.STAMP_MIGRATION).is_file())
 res2, _ = run(db, answer={**GOOD, "title": "Aspirador DNIPRO-M | Soplador!"})
 t2 = [c for c in db.content if c["field"] == "title" and c["version"] == 2]
 check("второй вызов — версия 2, нарушения тайтла названы",
