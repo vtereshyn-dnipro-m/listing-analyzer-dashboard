@@ -138,9 +138,15 @@ def fake_sql(sql, con=None, params=None, **kw):
             df = df[df["ok"]]
         # LIMIT 1 после ORDER BY: свежий снапшот только при «ORDER BY s.fetched_at DESC»
         df = df.sort_values("at", ascending="ORDER BY s.fetched_at DESC" not in q, kind="stable")
-        # без условия по ASIN справочника в выборку идёт вся матрица — и чужие ASIN группы
+        # без условия по ASIN справочника в выборку идёт вся матрица — и чужие ASIN группы;
+        # условие по sku_group база тоже исполнила бы: строки группы добавляются, как в базе
         if "pm.asin = ANY(%(a)s)" in q:
-            df = df[df["asin"].isin((params or {}).get("a", []))]
+            keep = df["asin"].isin((params or {}).get("a", []))
+            if "pm.sku_group" in q:
+                vals = [v for v in (params or {}).values() if isinstance(v, str)]
+                vals += [x for v in (params or {}).values() if isinstance(v, list) for x in v]
+                keep |= df["grp"].isin(vals)
+            df = df[keep]
         df = df.drop_duplicates("asin")
         return df[["asin", "spec"] + (["main"] if "AS main" in q else [])].reset_index(drop=True)
     return pd.DataFrame()
@@ -205,9 +211,15 @@ print("источник фото")
 p = photo("99601000-B")
 check("99601000-B: фото из удачного снапшота нашего ES-листинга, картинка этого ASIN",
       p["url"] == IMG and p["asin"] == "B0GTRY26HB" and p["why"] is None)
-check("запрос — только ES, только наши, только удачный снапшот, только ASIN справочника",
-      SEEN and all(s in SEEN[-1] for s in ("pm.marketplace = 'es'", "pm.is_competitor IS NOT TRUE",
-                                           "s.ok IS TRUE", "pm.asin = ANY(%(a)s)")))
+# Фейк не исполняет SQL, поэтому условие выборки заперто целиком: любое добавленное
+# «OR …» (по sku_group, по названию) дало бы фото другого товара (проверка #180).
+check("запрос фото: внешнее условие ровно «ES, наш листинг, ASIN справочника», без sku_group",
+      bool(SEEN) and SEEN[-1].split(") ph ON true ", 1)[-1]
+      == "WHERE pm.marketplace = 'es' AND pm.is_competitor IS NOT TRUE AND pm.asin = ANY(%(a)s)"
+      and "sku_group" not in SEEN[-1])
+check("запрос фото: снапшот того же ASIN и рынка, удачный, самый свежий",
+      "WHERE s.asin = pm.asin AND s.marketplace = pm.marketplace AND s.ok IS TRUE "
+      "ORDER BY s.fetched_at DESC LIMIT 1" in SEEN[-1])
 p = photo("08087000")
 check("08087000: нашего листинга ES нет — фото нет, причина no_listing", p["url"] is None and p["why"] == "no_listing")
 check("NaN в images_of_specified_asin — заглушка: main_image не запасная, она бывает картинкой другой "
