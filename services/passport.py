@@ -205,11 +205,12 @@ def sku_types(directory: pd.DataFrame, listing: pd.DataFrame) -> dict[str, str]:
 # ---------------------------------------------------------------- фото товара
 # Фото в карточке Реестра (поручение владельца 28.10.2026). Источник один: последний
 # удачный снапшот НАШЕГО листинга ES, первая картинка именно этого ASIN
-# (`images_of_specified_asin`, запасная — `main_image` той же страницы). SKU связан с
+# (`images_of_specified_asin`). Запасной `main_image` нет: на 28.10 у 36 из 305 наших
+# ES-листингов она не совпадает с картинками самого ASIN (проверка #180). SKU связан с
 # листингом ТОЛЬКО по ASIN справочника Кабинета: `sku_group` матрицы — группа, а не
 # точный SKU (у B0GTRY26HB он «99601000», а продаётся набор 99601000-B), и фото по
-# группе показало бы другой товар. Несколько ASIN с фото — не угадываем: неверное
-# фото хуже, чем никакого.
+# группе показало бы другой товар. ASIN, который справочник даёт и другому SKU, и
+# несколько ASIN с фото — не угадываем: неверное фото хуже, чем никакого.
 PHOTO_RE = re.compile(r"^https://m\.media-amazon\.com/images/I/[A-Za-z0-9%+._-]+\.(?:jpg|jpeg|png|webp)$")
 
 
@@ -220,10 +221,10 @@ class _PhotoUnread(Exception):
 @st.cache_data(ttl=600, show_spinner=False)
 def _photos_es(asins: tuple[str, ...]) -> pd.DataFrame:
     df, err = safe_read(
-        """SELECT pm.asin, ph.spec, ph.main
+        """SELECT pm.asin, ph.spec
              FROM product_matrix pm
              JOIN LATERAL (
-                   SELECT s.raw->'images_of_specified_asin'->>0 AS spec, s.raw->>'main_image' AS main
+                   SELECT s.raw->'images_of_specified_asin'->>0 AS spec
                      FROM listing_snapshots s
                     WHERE s.asin = pm.asin AND s.marketplace = pm.marketplace AND s.ok IS TRUE
                     ORDER BY s.fetched_at DESC LIMIT 1) ph ON true
@@ -242,7 +243,8 @@ def photo_url(cell) -> str | None:
 
 def sku_photo(sku: str) -> dict:
     """Фото SKU для карточки: {url, asin, why, err}. url — только если ASIN с фото ровно
-    один; иначе why: no_listing / several / bad_url / error (причина — в err)."""
+    один и справочник не даёт его другому SKU; иначе why: no_listing / shared / several /
+    bad_url / error (подробность — в err)."""
     out = {"url": None, "asin": None, "why": None, "err": None}
     directory, derr = sku_directory()
     if derr:
@@ -260,11 +262,22 @@ def sku_photo(sku: str) -> dict:
         return {**out, "why": "no_listing"}
     found = {}
     for _, r in df.iterrows():
-        url = photo_url(r.get("spec")) or photo_url(r.get("main"))
+        url = photo_url(r.get("spec"))
         if url:
             found.setdefault(cell_text(r, "asin"), url)
     if not found:
         return {**out, "why": "bad_url"}
+    # ASIN, который справочник даёт и другому SKU (наблюдаемые листинги Кабинета), —
+    # чей это товар, не знаем: такое фото не показываем (проверка #180)
+    owners: dict[str, set] = {}
+    for _, d in directory.iterrows():
+        for a in cell_text(d, "asins").split():
+            owners.setdefault(a, set()).add(cell_text(d, "sku"))
+    shared = {a: sorted(owners.get(a, set()) - {sku}) for a in found if owners.get(a, set()) - {sku}}
+    found = {a: u for a, u in found.items() if a not in shared}
+    if not found:
+        return {**out, "why": "shared",
+                "err": "; ".join(f"{a} — {', '.join(s)}" for a, s in sorted(shared.items()))}
     if len(found) > 1:
         return {**out, "why": "several", "err": ", ".join(sorted(found))}
     asin, url = next(iter(found.items()))
