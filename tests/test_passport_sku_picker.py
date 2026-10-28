@@ -360,8 +360,17 @@ check("клик по строке растит поколение выбора, 
 picker(at).set_value("21680000").run()
 check("после клика по строке выбор в списке снова работает", ctx(at) == "21680000" and picker(at).value == "21680000")
 g1 = gen()
+at.session_state["pp-sku"] = "99601000-B"
+at.run()
+g2 = gen()
+opened = [b for b in at.button if b.key == "pp-open"]
+if opened:
+    opened[0].click().run()
+check("«Открыть Паспорт» того же товара — товар не сменился, поколение выбора прежнее "
+      "(решение владельца 28.10.2026)",
+      bool(opened) and ctx(at) == "99601000-B" and gen() == g2)
 at.button(key="pp-change").click().run()
-check("«Сменить товар» — сброс и новое поколение выбора", ctx(at) is None and gen() == g1 + 1)
+check("«Сменить товар» — сброс и новое поколение выбора", ctx(at) is None and gen() == g2 + 1)
 
 print("копия не прочиталась / листинги не прочитались")
 _store = pc.volume_store

@@ -87,14 +87,18 @@ def me() -> tuple[str, tuple]:
 
 # ---------------------------------------------------------------- навигация
 def set_context(sku: str | None) -> None:
-    """Явный выбор товара в разделе: пишет pp-sku и растит поколение выбора
-    pp-sku-gen. Генератор сравнивает поколение, а не значение: выбор A → B → снова A
-    в Реестре — тоже новое действие человека (проверка #178)."""
+    """Явный выбор товара в разделе: пишет pp-sku и, если товар сменился, растит
+    поколение выбора pp-sku-gen. Генератор сравнивает поколение, а не значение: выбор
+    A → B → снова A в Реестре — новое действие человека (проверка #178). Кнопки карточки
+    на том же товаре («Открыть Паспорт», «Создать») поколение не растят и выбор в
+    генераторе не снимают (решение владельца 28.10.2026)."""
+    prev = st.session_state.get("pp-sku")
     if sku:
         st.session_state["pp-sku"] = sku
     else:
         st.session_state.pop("pp-sku", None)
-    st.session_state["pp-sku-gen"] = st.session_state.get("pp-sku-gen", 0) + 1
+    if (sku or None) != prev:
+        st.session_state["pp-sku-gen"] = st.session_state.get("pp-sku-gen", 0) + 1
 
 
 def _go(tab: str, sku: str | None = None, question: str | None = None, show: str | None = None) -> None:

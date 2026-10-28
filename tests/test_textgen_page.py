@@ -819,6 +819,35 @@ finally:
 at = reenter(at, **_sess)
 check("Реестр: A → в генераторе X → в Реестре B и снова A — генератор на A, а не на X",
       at.selectbox(key="tg-gen-sku").value == "21680000")
+
+
+def registry_does(at, *calls):
+    """Действия в разделе «Паспорт SKU» настоящими колбэками passport_area — на ключах
+    сеанса, которые переживают переход между страницами."""
+    sess = {k: at.session_state[k] for k in ("pp-sku", "pp-sku-gen") if k in at.session_state}
+    real = _parea.st.session_state
+    _parea.st.session_state = sess
+    try:
+        for fn, *args in calls:
+            fn(*args)
+    finally:
+        _parea.st.session_state = real
+    return sess
+
+
+# Решение владельца 28.10.2026: кнопки карточки на том же товаре выбор в генераторе
+# не снимают; сброс — только при смене товара.
+at.selectbox(key="tg-gen-sku").set_value("99601000-B").run()
+at = reenter(at, **registry_does(at, (_parea._go, "registry", "21680000", None, "passport")))
+check("генератор X, в карточке A «Открыть Паспорт» того же A — генератор остаётся на X",
+      at.selectbox(key="tg-gen-sku").value == "99601000-B")
+at = reenter(at, **registry_does(at, (_parea._go, "create", "21680000")))
+check("генератор X, в карточке A «Создать» того же A — генератор остаётся на X",
+      at.selectbox(key="tg-gen-sku").value == "99601000-B")
+at = reenter(at, **registry_does(at, (_parea._go, "registry", "99601000-B", None, "passport"),
+                                 (_parea._go, "registry", "21680000", None, "passport")))
+check("переход из карточки на другой товар и обратно — смена товара, генератор на A",
+      at.selectbox(key="tg-gen-sku").value == "21680000")
 at = reenter(at, **{"tg-gen-choice": "00000000-X"})   # выбранная копия ушла (заменена или OLD)
 check("выбранной копии больше нет — без падения, на SKU контекста",
       not at.exception and at.selectbox(key="tg-gen-sku").value == "21680000")
