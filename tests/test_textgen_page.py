@@ -290,9 +290,14 @@ check("модель зовётся только через tg.generate по кн
 # Пишет страница ровно одно — копию паспорта, через services/passport_copies.py
 # и только после проверки права в момент нажатия (tests/test_passport_copies.py).
 check("страница сама SQL не пишет и в Amazon не ходит", not re.search(r"\bINSERT\b|\bUPDATE\b|spapi", SRC))
-check("единственная запись — register() паспорта под ls.textgen.accept",
-      SRC.count("pc.register(") == 1 and SRC.count("get_conn()") == 1
-      and SRC.index('auth.require("ls.textgen.accept"') < SRC.index("get_conn()") < SRC.index("pc.register("))
+# Запись копии — в общем блоке загрузки (components/passport_upload.py, один для
+# генератора и раздела «Паспорт SKU», решение владельца 28.10.2026).
+UP = (ROOT / "components" / "passport_upload.py").read_text(encoding="utf-8")
+check("единственная запись — register() паспорта под ls.textgen.accept, в общем блоке загрузки",
+      SRC.count("pc.register(") == 0 and 'passport_upload.render("tg-pp", say)' in SRC
+      and UP.count("pc.register(") == 1 and UP.count("get_conn()") == 1
+      and UP.index('auth.require("ls.textgen.accept"') < UP.index("get_conn()") < UP.index("pc.register(")
+      and not re.search(r"\bINSERT\b|\bUPDATE\b|spapi", UP))
 check("страница не держит своей логики правил",
       "tr.check(" in SRC and not re.search(r"\bre\.(search|match|finditer|sub)\b", SRC))
 check("компилируется (не только разбирается)", compile(SRC, str(PAGE), "exec") is not None)

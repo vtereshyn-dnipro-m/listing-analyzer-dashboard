@@ -54,6 +54,8 @@ python tests/test_content_versions_sql.py
 python tests/test_passport_copies.py
 python tests/test_textgen_generate.py
 python tests/test_textgen_rules.py
+python tests/test_passport_conflicts.py
+python tests/test_passport_one_source.py
 python tests/test_content_stamp_sql.py
 python tests/test_passport_copy_frozen_sql.py
 python tests/test_feed.py
@@ -599,6 +601,20 @@ JSON-схем: каждая даёт ожидаемый схемный исхо�
 обрезка по границе слова, отказ резать при потере must_keep.
 
 ---
+
+`test_passport_conflicts.py` — конфликты паспорта по статусу и решения верификатора
+(решения владельца 28.10.2026): закрыт только явный статус, закрытый значений не
+вырезает, решение отдаёт модели выбранную сторону и держит отвергнутую, решение по
+чужой копии или конфликту не действует, генерация читает решения до вызова модели;
+сервис решений и миграция `passport_conflict_decisions` (только дописывание, сверка
+копии и SHA, `apply_migration` принимает). Поведение миграции проверено на PGlite.
+
+`test_passport_one_source.py` — один паспорт на SKU для раздела и генератора,
+чеклист 28.10.2026 пункты 1–7, через AppTest на подменённых базах и томе: копия
+99601000-B — паспорт в Реестре и поиске, «Создать» не предлагается, загрузка docx —
+общий блок, «Собрано по SKU» без ручного ввода, комплектация и конфликты в
+карточке, решение верификатора с источником пишется, без права и без миграции —
+кнопка выключена.
 
 `test_textgen_rules.py` — пять правил 21.10.2026 в проверках черновика генератора:
 капс = ценность (`BULLET_HEAD`), переключение первым у 99601000-B (`FIRST_BULLET`),

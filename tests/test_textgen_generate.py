@@ -151,6 +151,7 @@ class DB:
         self.fail_content = False
         self.no_content_table = False
         self.stamp_cols = True          # миграция 2026-10-27_content_versions_stamp.sql применена
+        self.decisions = []             # решения по конфликтам; None — миграции 2026-10-28 нет
 
     def cursor(self):
         return Cur(self)
@@ -180,6 +181,12 @@ class Cur:
         db.log.append(sql.split()[0] + " " + " ".join(sql.split()[1:3]))
         if "pg_advisory_xact_lock" in sql:
             self.res = [(None,)]
+        elif sql.startswith("SELECT to_regclass('listing_data.passport_conflict_decisions')"):
+            self.res = [(db.decisions is not None,)]
+        elif "FROM passport_conflict_decisions" in sql:
+            self.res = [tuple(d[k] for k in ("id", "conflict_id", "decision", "value", "decision_source",
+                                             "decided_by", "decided_at"))
+                        for d in (db.decisions or []) if (d["source_artifact_id"], d["artifact_sha256"]) == (p["a"], p["s"])]
         elif sql.startswith("SELECT to_regclass"):
             self.res = [(not db.no_content_table,)]
         elif "information_schema.columns" in sql:
@@ -217,6 +224,9 @@ class Cur:
 
     def fetchone(self):
         return self.res[0] if self.res else None
+
+    def fetchall(self):
+        return list(self.res)
 
 
 class Store:

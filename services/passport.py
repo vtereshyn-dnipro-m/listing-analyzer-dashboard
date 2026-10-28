@@ -137,6 +137,70 @@ def sku_directory() -> tuple[pd.DataFrame, str | None]:
         conn.close()
 
 
+# ---------------------------------------------------------------- копии docx
+# Один паспорт на SKU для всего приложения (решение владельца 28.10.2026): раздел
+# «Паспорт SKU» и генератор видят одно и то же. Сейчас паспорта приходят копиями
+# docx (`services/passport_copies.py`, том UC), а `passport_objects` наполнит
+# движок графа, когда он появится. Копия становится строкой Реестра того же вида,
+# что строка `passport_objects`; если у SKU есть и то и другое — главнее
+# `passport_objects`. Второй паспорт на SKU отсюда не создаётся никогда.
+COPY_EVENT = "DOCX_COPY_REGISTERED"
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False, max_entries=200)
+def copy_summary(locator: str, sha: str) -> dict:
+    """Шапка и модель копии по её месту в томе. Копия неизменна (триггер
+    passport_copy_frozen), поэтому кэш по SHA держится сутки. Сбой — в `error`,
+    а не пустота: «паспорт не прочитан» и «паспорта нет» — разные вещи."""
+    import hashlib
+
+    from services import passport_copies as pc
+    from services import passport_facts as pf
+    try:
+        store = pc.volume_store()
+        if store is None:
+            return {"error": "нет доступа к тому"}
+        data = store.get(locator)
+        if hashlib.sha256(data).hexdigest() != sha:
+            return {"error": "SHA копии в томе не совпадает с записью"}
+        h, facts = pc.read_header(data), pf.read(data)
+        return {"state": h.get("state") or None, "passport_version": h.get("passport_version"),
+                "passport_id": h.get("passport_id"), "model": pf.identity_value(facts, "модель"),
+                "name": pf.identity_value(facts, "назва"), "error": None}
+    except Exception as e:  # noqa: BLE001 — причина уходит на экран
+        return {"error": f"{type(e).__name__}: {str(e)[:160]}"}
+
+
+def copy_objects(copies: pd.DataFrame, read=None) -> pd.DataFrame:
+    """Действующие копии → строки вида passport_objects. SHA копии подтверждён
+    при регистрации (повторное чтение тома), поэтому readback = sha."""
+    read = read or copy_summary
+    rows = []
+    for _, c in (copies if copies is not None else pd.DataFrame()).iterrows():
+        s = read(txt(c.get("archived_locator")), txt(c.get("sha256")))
+        rows.append(dict(
+            passport_id=s.get("passport_id") or txt(c.get("passport_id")), lineage_id=None,
+            sku_id=txt(c.get("sku_id")), product_version=None, product_name=s.get("name"), model=s.get("model"),
+            state=s.get("state"), passport_version=s.get("passport_version"), sha256=txt(c.get("sha256")),
+            storage_path=txt(c.get("archived_locator")), materials_url=None, limitations="[]",
+            last_event_type=COPY_EVENT, last_event_at=c.get("recorded_at"),
+            readback_sha256=txt(c.get("sha256")) if not s.get("error") else None, readback_at=c.get("recorded_at"),
+            source="copy", source_artifact_id=txt(c.get("source_artifact_id")), copy_error=s.get("error")))
+    return pd.DataFrame(rows)
+
+
+def merge_objects(objects: pd.DataFrame, copy_objs: pd.DataFrame) -> pd.DataFrame:
+    """passport_objects и копии одним набором: на SKU — один паспорт."""
+    objs = objects.copy() if objects is not None and not objects.empty else pd.DataFrame()
+    if not objs.empty:
+        objs["source"] = "engine"
+    if copy_objs is None or copy_objs.empty:
+        return objs
+    have = set(objs["sku_id"].astype(str)) if not objs.empty else set()
+    extra = copy_objs[~copy_objs["sku_id"].astype(str).isin(have)]
+    return pd.concat([objs, extra], ignore_index=True) if not objs.empty else extra.reset_index(drop=True)
+
+
 # ---------------------------------------------------------------- реестр
 @st.cache_data(ttl=60, show_spinner=False)
 def load_registry() -> dict:
@@ -145,8 +209,9 @@ def load_registry() -> dict:
     `error` — прочитать не удалось (ТЗ 9.6.4 «Ошибка загрузки»); `missing` —
     миграции ещё нет. Это разные вещи и говорятся по-разному: первое —
     сбой, второе — шаг, который надо сделать (код и миграция едут порознь)."""
+    from services import passport_copies as pc
     out = {"objects": pd.DataFrame(), "questions": pd.DataFrame(), "blocks": pd.DataFrame(),
-           "runs": pd.DataFrame(), "error": None, "missing": False,
+           "runs": pd.DataFrame(), "copies": pd.DataFrame(), "error": None, "missing": False,
            "read_at": datetime.now(timezone.utc)}
     exists = table_exists("listing_data.passport_objects")
     if exists is False:
@@ -166,8 +231,17 @@ def load_registry() -> dict:
                        FROM passport_blocks WHERE resolved_at IS NULL""",
         "runs": """SELECT run_id, sku_id, requested_action, lifecycle_state, current_node_id, created_at
                      FROM ai_runs WHERE route = 'SKU_PASSPORT' AND terminal_status = 'NOT_TERMINAL'""",
+        # Копии паспорта — та же область, что у регистрации (passport_copies.register):
+        # тип docx и место в томе паспортов. Константы, не ввод человека.
+        "copies": f"""SELECT source_artifact_id, sku_id, passport_id, archived_locator, sha256, recorded_at
+                        FROM passport_source_artifacts
+                       WHERE lifecycle = 'ACTIVE' AND mime_type = '{pc.MIME}'
+                         AND archived_locator LIKE '{pc.ROOT}/%%'""",
     }
-    return _read_all(out, queries)
+    out = _read_all(out, queries)
+    if not out.get("error"):
+        out["objects"] = merge_objects(out["objects"], copy_objects(out.get("copies")))
+    return out
 
 
 def _read_all(out: dict, queries: dict) -> dict:
@@ -395,7 +469,7 @@ def registry_rows(view: pd.DataFrame, data: dict, dupes: dict, email: str, roles
         rows.append({
             "sku": sku,
             "name": txt(r.get("name")) or (txt(obj.get("product_name")) if obj is not None else ""),
-            "model": txt(r.get("model")),
+            "model": txt(r.get("model")) or (txt(obj.get("model")) if obj is not None else ""),
             "product_version": txt(obj.get("product_version")) if obj is not None else "",
             "has_passport": obj is not None,
             "state": state,
@@ -415,6 +489,11 @@ def registry_rows(view: pd.DataFrame, data: dict, dupes: dict, email: str, roles
             "materials_url": txt(obj.get("materials_url")) if obj is not None else "",
             "asins": txt(r.get("asins")),
             "ean": txt(r.get("ean")),
+            "source": txt(obj.get("source")) if obj is not None else "",
+            "source_artifact_id": txt(obj.get("source_artifact_id")) if obj is not None else "",
+            "storage_path": txt(obj.get("storage_path")) if obj is not None else "",
+            "sha256": txt(obj.get("sha256")) if obj is not None else "",
+            "copy_error": txt(obj.get("copy_error")) if obj is not None else "",
         })
     return pd.DataFrame(rows)
 

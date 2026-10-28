@@ -382,13 +382,17 @@ check("повтор того же файла после сбоя базы — RE
       r.status == "REGISTERED" and len(db3.rows) == 1 and len(ws3.files.uploads) == 1)
 
 # ---------------------------------------------------------- статика страницы
-SRC = (ROOT / "pages" / "textgen.py").read_text(encoding="utf-8")
-check("страница: кнопка выключена без права и право проверяется в момент нажатия",
+# Загрузка — один блок для генератора и раздела «Паспорт SKU» (решение владельца
+# 28.10.2026): components/passport_upload.py, его зовут обе страницы.
+SRC = (ROOT / "components" / "passport_upload.py").read_text(encoding="utf-8")
+check("обе страницы зовут один блок загрузки",
+      'passport_upload.render("tg-pp", say)' in (ROOT / "pages" / "textgen.py").read_text(encoding="utf-8")
+      and 'passport_upload.render("pp-up"' in (ROOT / "components" / "passport_area.py").read_text(encoding="utf-8"))
+check("блок: кнопка выключена без права и право проверяется в момент нажатия",
       'disabled=not may' in SRC and 'may = auth.can("ls.textgen.accept")' in SRC
       and SRC.index('auth.require("ls.textgen.accept"') < SRC.index("pc.register("))
-check("страница: SKU и версия не вводятся руками — только из шапки",
-      "text_input" not in SRC.split("паспорт SKU (docx)", 1)[1])
-check("страница: соединение закрывается", "conn.close()" in SRC.split("pc.register(", 1)[1])
+check("блок: SKU и версия не вводятся руками — только из шапки", "text_input" not in SRC)
+check("блок: соединение закрывается", "conn.close()" in SRC.split("pc.register(", 1)[1])
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS else f"{len(FAILS)} провалов: {FAILS}")

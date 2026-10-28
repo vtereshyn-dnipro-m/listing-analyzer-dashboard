@@ -16,6 +16,13 @@ FEATURE_DISABLED и говорит об этом вслух (ТЗ §13): кно�
 товара только явная (ТЗ §8).
 
 Правила показа — в `services/passport.py`, здесь только раскладка.
+
+Один паспорт на SKU для раздела и генератора (решение владельца 28.10.2026):
+Реестр видит и `passport_objects`, и действующие копии паспорта docx в томе UC
+(`services/passport.load_registry`). У SKU с копией «Создать Паспорт» не
+предлагается. Копию загружает тот же блок, что в генераторе
+(`components/passport_upload.py`); её комплектацию, конфликты и решения
+верификатора показывает `components/passport_views.py`.
 """
 from __future__ import annotations
 
@@ -26,6 +33,8 @@ import pandas as pd
 import streamlit as st
 
 import auth
+from components import passport_upload
+from components import passport_views as pv
 from i18n import t
 from services import passport as pp
 from services import passport_intake as pi
@@ -286,6 +295,9 @@ def _render_detail(box, show: str, r: pd.Series, data: dict) -> None:
         if obj is not None:
             box.markdown(t("pp.passport_meta", pid=obj["passport_id"], ver=obj["passport_version"],
                            sha=txt(obj["sha256"])[:12]))
+        if r.get("copy_error"):
+            box.error(t("pp.view.read_error", err=r["copy_error"]))
+        pv.render_passport(box, dict(r))
         box.caption(t("pp.read_only"))
     elif show == "compare":
         box.caption(t("pp.compare_hint"))
@@ -313,10 +325,18 @@ def render_create(r: dict) -> None:
     if r.get("duplicate_of"):
         st.warning(t("pp.duplicate", skus=", ".join(r["duplicate_of"])))
         return
-    if r.get("has_passport"):
+    if r.get("source") == "copy":
+        # Паспорт этого SKU уже есть — копия docx, та же, что видит генератор.
+        # Второго паспорта не создаём: новая версия — заменой копии ниже.
+        st.info(t("pp.create_copy", aid=r.get("source_artifact_id"), ver=r.get("passport_version") or "—",
+                  state=state_label(r.get("state"))))
+    elif r.get("has_passport"):
         st.info(t("pp.create_exists", ver=r.get("passport_version") or "—"))
     else:
         st.info(t("pp.create_absent"))
+    pv.render_sku_summary(r)
+    st.markdown(f"**{t('pp.up.title')}**")
+    passport_upload.render("pp-up", sku_hint=r["sku"])
     rec = render_materials(r["sku"])
     render_readiness(r, rec)
     row = st.container(horizontal=True, gap="small")
@@ -407,6 +427,9 @@ def _feature_disabled(box, key: str, label: str, flag: str, primary: bool) -> No
 
 # ---------------------------------------------------------------- Верификатор
 def render_verifier() -> None:
+    # Конфликты копии паспорта docx — до вопросов движка: у копии вопросов нет,
+    # а решать конфликты нужно уже сейчас (решение владельца 28.10.2026).
+    pv.render_conflict_decisions(context_row())
     data = pp.load_questions()
     if data.get("missing"):
         st.warning(t("pp.migration_missing", path=pp.MIGRATION))

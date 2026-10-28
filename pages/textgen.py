@@ -30,6 +30,7 @@ import streamlit as st
 import auth
 import deploy_sync
 
+from components import passport_upload
 from components.ui import eyebrow, inject_fonts
 from i18n import t
 from services import ai
@@ -284,108 +285,7 @@ if keys_df is not None and not keys_df.empty:
 # Копия паспорта — в томе UC, неизменная; SKU, id и версия — из шапки файла
 # (services/passport_copies.py). Права — в момент нажатия, как везде.
 section(t("tg.pp.title"))
-say.caption(t("tg.pp.hint", volume=pc.VOLUME))
-up = st.file_uploader(t("tg.pp.upload"), type=["docx"], key="tg-pp-file")
-pp_header = None
-if up is not None:
-    pp_data = up.getvalue()
-    try:
-        pp_header = pc.read_header(pp_data)
-    except pc.CopyError as e:
-        say.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
-if pp_header:
-    state = pp_header.get("state") or "—"
-    say.markdown(t("tg.pp.header", sku=pp_header["sku_id"], pid=pp_header["passport_id"],
-                  ver=pp_header["passport_version"], state=state))
-    if state != "READY":
-        say.warning(t("tg.pp.not_ready", state=state))
-    say.caption(t("tg.pp.path", path=f"{pc.ROOT}/{pc.copy_path(pp_header)}"))
-    may = auth.can("ls.textgen.accept")
-    if not may:
-        say.caption(t("tg.pp.denied_hint"))
-    pp_sha = hashlib.sha256(pp_data).hexdigest()
-
-    def _save(replace: tuple = ()) -> None:
-        """Запись копии; право — в момент нажатия. Другой действующий паспорт SKU —
-        вопрос «заменить?» (решение владельца 21.10.2026), ответ — второй кнопкой."""
-        st.session_state.pop("tg-pp-ask", None)
-        if not auth.require("ls.textgen.accept", object_type="passport", object_id=pp_header["passport_id"]):
-            return
-        try:
-            store = pc.volume_store()
-        except pc.CopyError as e:
-            say.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
-            return
-        if store is None:
-            say.error(t("tg.pp.no_store"))
-            return
-        from services.db import get_conn
-        try:
-            conn = get_conn()
-        except Exception as e:  # noqa: BLE001
-            say.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
-            return
-        try:
-            res = pc.register(pp_data, up.name, actor=auth.actor(), store=store, conn=conn, replace=replace)
-        except pc.CopyError as e:
-            if e.code == "OTHER_PASSPORT_ACTIVE":
-                # Вопрос — заново и с новым ключом кнопки: нажатие по прежнему
-                # вопросу не должно ответить на другой (проверка #164).
-                st.session_state["tg-pp-ask"] = (pp_sha, e.active)
-                st.rerun()           # соединение закроет finally
-            else:
-                say.error(t(f"tg.pp.err.{e.code}", detail=e.detail))
-        except Exception as e:  # noqa: BLE001 — база: файл уже в томе, повтор его узнает
-            say.error(t("tg.pp.err.DB_FAILED", detail=f"{type(e).__name__}: {str(e)[:160]}"))
-        else:
-            if res.status == "DUPLICATE":
-                say.info(t("tg.pp.duplicate", aid=res.artifact_id, loc=res.locator))
-            else:
-                say.success(t("tg.pp.saved", aid=res.artifact_id, loc=res.locator, sha=pp_sha[:12]))
-                if res.superseded:
-                    say.info(t("tg.pp.superseded", ids=", ".join(res.superseded)))
-        finally:
-            conn.close()
-
-    ask_box = st.empty()
-    if st.button(t("tg.pp.save"), type="primary", disabled=not may, key="tg-pp-save"):
-        _save()
-    ask = st.session_state.get("tg-pp-ask")
-    if ask and ask[0] == pp_sha:
-        # Вопрос привязан к ЭТОМУ файлу и к ЭТОМУ набору копий: ключ кнопки несёт
-        # их отпечаток, поэтому новый вопрос — новая кнопка.
-        ask_key = hashlib.sha256("|".join(ask[1]).encode("utf-8")).hexdigest()[:12]
-        with ask_box.container():
-            say.warning(t("tg.pp.ask_replace", sku=pp_header["sku_id"], ids=", ".join(ask[1]),
-                         pid=pp_header["passport_id"]))
-            go = st.button(t("tg.pp.replace"), disabled=not may, key=f"tg-pp-replace-{ask_key}")
-        if go:
-            ask_box.empty()          # ответ получен — вопрос над итогом не висит
-            _save(replace=tuple(ask[1]))
-    lst, lerr = pc.copies(pp_header["sku_id"])
-    say.markdown(f"**{t('tg.pp.list', sku=pp_header['sku_id'])}**")
-    if lerr:
-        say.error(t("tg.pp.list_error", err=lerr))
-    elif lst.empty:
-        say.caption(t("tg.pp.none", sku=pp_header["sku_id"]))
-    else:
-        view = pd.DataFrame({
-            "id": lst["source_artifact_id"],
-            "ver": lst["archived_locator"].map(lambda x: pc.version_of(x) if isinstance(x, str) else None),
-            "sha": lst["sha256"].map(lambda x: x[:12] if isinstance(x, str) else ""),
-            "pid": lst["passport_id"],
-            "life": lst["lifecycle"].map(lambda x: t(f"tg.pp.life.{x}") if x in ("ACTIVE", "OLD") else x),
-            "by": lst["registered_by"],
-            "at": lst["recorded_at"],
-        })
-        st.dataframe(view, hide_index=True, width="stretch",
-                     column_config={"id": st.column_config.TextColumn(t("tg.pp.col.id")),
-                                    "ver": st.column_config.NumberColumn(t("tg.pp.col.version")),
-                                    "pid": st.column_config.TextColumn(t("tg.pp.col.pid")),
-                                    "sha": st.column_config.TextColumn(t("tg.pp.col.sha")),
-                                    "life": st.column_config.TextColumn(t("tg.pp.col.lifecycle")),
-                                    "by": st.column_config.TextColumn(t("tg.pp.col.by")),
-                                    "at": st.column_config.DatetimeColumn(t("tg.pp.col.at"))})
+pp_header = passport_upload.render("tg-pp", say)
 
 # ------------------------------------------------------- генерация по паспорту
 # Модель — только по нажатию человека с правом ls.textgen.accept; лимиты и учёт
@@ -406,7 +306,7 @@ def _textgen_method() -> tuple[str, int, str | None]:
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
-def _copy_conflicts(locator: str, sha: str) -> tuple[list[str], list[str]]:
+def _copy_facts(locator: str, sha: str) -> pf.Facts:
     """Поля «Конфлікти» сохранённой копии и строки фактов, снятые из-за них, — для
     подписи «нужно решение». Ключ — SHA: копия неизменна, читать том на каждой
     перерисовке незачем. Сбой — исключение (не кешируется), страница его называет."""
@@ -416,9 +316,23 @@ def _copy_conflicts(locator: str, sha: str) -> tuple[list[str], list[str]]:
     data = store.get(locator)
     if hashlib.sha256(data).hexdigest() != sha:
         raise _ReadFailed("SHA")
-    facts = pf.read(data)
+    return pf.read(data)
+
+
+def _copy_conflicts(locator: str, sha: str, artifact_id: str) -> tuple[list[str], list[str], list[str], str | None]:
+    """Открытые поля, снятые строки, решённые конфликты и сбой чтения решений.
+    Копия кэшируется по SHA, решения — нет: их пишут в любой момент, и закрытый
+    конфликт должен перестать числиться открытым сразу (решение владельца 28.10.2026)."""
+    import copy as _copy
+
+    from services import passport_decisions as pdec
+    facts = _copy.deepcopy(_copy_facts(locator, sha))
+    decisions, derr, _missing = pdec.load(artifact_id, sha)
+    pf.apply_decisions(facts, decisions)
     facts.prompt_text()
-    return [c["field"] for c in facts.conflicts if c["field"]], list(facts.dropped)
+    decided = [f"{c['field']} → {pf.decided_value(c)} ({(c.get('decision') or {}).get('decision_source', '')})"
+               for c in facts.conflicts if c.get("decision") and c["field"]]
+    return [c["field"] for c in facts.conflicts if pf.is_open(c) and c["field"]], list(facts.dropped), decided, derr
 
 
 def _check_line(v: dict) -> str:
@@ -481,10 +395,15 @@ else:
                        + (f" ({g_why['detail']})" if g_why.get("detail") else "")))
     say.caption(t("tg.gen.passport", pid=cell_text(g_copy, "passport_id"), aid=cell_text(g_copy, "source_artifact_id")))
     try:
-        g_conf, g_dropped = _copy_conflicts(cell_text(g_copy, "archived_locator"), cell_text(g_copy, "sha256"))
+        g_conf, g_dropped, g_decided, g_derr = _copy_conflicts(
+            cell_text(g_copy, "archived_locator"), cell_text(g_copy, "sha256"), cell_text(g_copy, "source_artifact_id"))
     except Exception as e:  # noqa: BLE001 — сбой называется: молчание выглядело бы «конфликтов нет»
-        g_conf, g_dropped = [], []
+        g_conf, g_dropped, g_decided, g_derr = [], [], [], None
         say.warning(t("tg.gen.conflicts_error", err=f"{type(e).__name__}: {str(e)[:160]}"))
+    if g_derr:
+        say.warning(t("tg.gen.decisions_error", err=g_derr))
+    if g_decided:
+        say.caption(t("tg.gen.decided", items="; ".join(g_decided)))
     if g_conf:
         say.warning(t("tg.gen.conflicts", fields=", ".join(g_conf)))
     if g_dropped:

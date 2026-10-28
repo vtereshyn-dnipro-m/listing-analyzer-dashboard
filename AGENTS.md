@@ -428,7 +428,8 @@ methodology, settings). Подробно о каждой — [docs/pages.md](doc
 | `ai_runs` | запуски графа AI Design (общие для Паспорта и будущего «Контента», область — `route`): run_state по схеме канона, текущий узел, terminal | `services/graph_store.py` | `services/passport.py`, `services/graph_store.py` |
 | `ai_run_events` | создание запуска с начальным ledger и переходы графа: квитанция, решение маршрутизатора, квитанция бюджета с новой ревизией ledger; только дописывание | `services/graph_store.py` | `services/graph_store.py` |
 | `ai_receipts` | квитанции действий Listing Suite и журнал идемпотентности, только дописывание | действия (этап 3+) | `services/passport.py` (lookup) |
-| `passport_source_artifacts` | зарегистрированные исходные материалы: копия, SHA, результат доступа | приём (этап 3), `passport_copies` (паспорт docx генератора) | `passport_copies` |
+| `passport_source_artifacts` | зарегистрированные исходные материалы: копия, SHA, результат доступа; действующая копия паспорта docx — паспорт SKU для всего приложения | приём (этап 3), `passport_copies` (паспорт docx) | `passport_copies`, `services/passport.py` (Реестр), генератор |
+| `passport_conflict_decisions` | решения верификатора по конфликтам копии паспорта: сторона A/B или своё значение, проверяемый источник, автор, время, копия и её SHA; действует последнее по конфликту, только дописывание — триггер | `services/passport_decisions.py` (право `ls.textgen.accept`) | `services/passport_decisions.py`, генератор, раздел «Паспорт SKU» |
 | `passport_questions` | вопросы Верификатора `Q-<RUN>-<NNN>`: тип, статус 06E, влияние, ответственный | движок | `services/passport.py` |
 | `passport_answers` | версии ответов на вопросы, неизменяемые | `services/passport_answers.py` (за флагом) | `services/passport.py` |
 | `passport_answer_verdicts` | вердикты Верификатора по ответу, только дописывание | движок | `services/passport.py` |
