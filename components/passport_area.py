@@ -226,13 +226,14 @@ def allowed_skus(u: dict, ftype: str) -> list:
 
 
 def render_picker(directory: pd.DataFrame, dir_err, objects: pd.DataFrame, u: dict | None = None,
-                  ftype: str = TYPE_ANY) -> None:
+                  ftype: str = TYPE_ANY, only: list | None = None) -> None:
     """Выпадающий список товаров (поручение владельца 28.10.2026): сам из справочника
     Кабинета, руками товары не вводятся; в строке — SKU, название, тип и статус
     паспорта. Справочник не прочитался — ошибка над списком, а в списке остаются
     товары с паспортом: молча пустым он не бывает. Ключ виджета несёт текущий SKU
     контекста — выбор в другом месте пересоздаёт список на нём (правило 7б). Фильтр
-    по типу сужает список; товар контекста вне фильтра назван подписью."""
+    по типу сужает список; товар контекста вне фильтра назван подписью. only — SKU
+    под поиском страницы (генератор, 29.10.2026): список сужается до них."""
     if dir_err:
         st.error(t("pp.pick.dir_error", err=pv.esc(str(dir_err)[:200])))
     u = u or universe(directory, objects)
@@ -240,14 +241,21 @@ def render_picker(directory: pd.DataFrame, dir_err, objects: pd.DataFrame, u: di
     if u["lerr"]:
         st.caption(t("pp.pick.type_error", err=pv.esc(str(u["lerr"])[:160])))
     skus = allowed_skus(u, ftype)
+    if only is not None:
+        keep = set(only)
+        skus = [s for s in skus if s in keep]
     ctx = st.session_state.get("pp-sku")
     options = [""] + skus
     key = f"pp-pick-{ctx or ''}" if ftype == TYPE_ANY else f"pp-pick-{ftype}-{ctx or ''}"
+    if only is not None:
+        # другой набор вариантов — другой виджет (правило 7б)
+        key = f"pp-pick-q{zlib.crc32('|'.join(skus).encode()):08x}-{ctx or ''}"
     st.selectbox(t("pp.pick.label"), options, index=options.index(ctx) if ctx in options else 0, key=key,
                  format_func=lambda s: _option_label(s, names, types, passports),
                  on_change=_pick_from_list, args=(key,), help=t("pp.pick.help"))
     if ctx and ctx not in options:
-        st.caption(t("pp.type.ctx_outside", sku=pv.esc(ctx), ty=type_label(ftype)))
+        st.caption(t("pp.type.ctx_outside", sku=pv.esc(ctx), ty=type_label(ftype)) if ftype != TYPE_ANY
+                   else t("pp.pick.ctx_outside_q", sku=pv.esc(ctx)))
 
 
 # ---------------------------------------------------------------- массовый выбор

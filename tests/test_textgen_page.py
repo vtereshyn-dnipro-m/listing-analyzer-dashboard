@@ -1,24 +1,27 @@
 # -*- coding: utf-8 -*-
 """
-tests/test_textgen_page.py — «Генератор текстов (пилот)», шаг 4: каркас без модели.
+tests/test_textgen_page.py — «Генератор текстов (пилот)»: логическая страница
+(ТЗ владельца 29.10.2026, блоки 1, 3 и 5).
 
 Проверяется то, что ломается тихо:
 
-  · страница говорит ТО ЖЕ, что правила. Нарушения на экране — ровно те, что
-    вернул `title_rules.check()` на тот же текст; своей логики проверки у
-    страницы нет, иначе экран и будущая генерация разойдутся;
-  · вольтаж в Highlights у инструмента — не нарушение (решение 21.10.2026), а в
-    тайтле — нарушение; страница не путает поля;
-  · расхождение карточки (DHR-202BC: 4 Ah в атрибуте, 6Ah в наборе) названо
-    вслух, а не выбрано молча;
-  · сбой чтения — ошибка с причиной, а не пустая карточка «характеристик нет»;
-  · ключи по типу: сбой SQP — ошибка, а не «данных поиска нет»;
-  · модель не вызывается вовсе; в базу пишет только загрузка паспорта, под правом;
+  · товар — ОДИН выбор на всю страницу (список Реестра, как в «Паспорт SKU»):
+    верхнего выбора ASIN и второго выбора SKU у генерации нет; выбор общий с
+    «Паспорт SKU» и Верификатором (pp-sku) в обе стороны; поиск по SKU, названию,
+    модели, ASIN и EAN;
+  · площадка и язык — ES подписью, не выбираются;
+  · ASIN ES — только если он ровно один, иначе пусто с причиной («нет ASIN ES»,
+    «ASIN неоднозначен, не выбран», связь не прочитана);
+  · характеристик листинга на странице нет;
+  · ручная проверка и ключи — свёрнуты внизу, с подписями «в генерацию не идёт» и
+    «факты паспорта здесь не проверяются»; нарушения на экране — ровно те, что
+    вернул `title_rules.check()` с типом из `passport.sku_type` и моделью из
+    паспорта; без паспорта префикс «Model …: » назван непроверенным;
+  · без паспорта блок генерации на месте, кнопка выключена с причиной; модель и
+    методология названы до нажатия;
+  · сбой чтения — ошибка с причиной, а не пустота; модель не вызывается вовсе;
   · колонки таблиц — технические имена (правило 3), подписи из `t()`;
-  · SQL роли для базы Кабинета: роль в обоих CHECK, генератор — только админу
-    и роли пилота, остальное роли пилота закрыто явными строками, почта (в
-    отдельном файле назначения) не
-    подставлена — файл отказывается выполняться.
+  · SQL роли для базы Кабинета — как раньше.
 
 Сеть и база не трогаются: чтения подменены данными `tests/fixture_pilot.py`.
 
@@ -64,6 +67,9 @@ STATE = {"load_err": None, "keys_err": None, "keys": None, "ai_calls": []}
 def fake_load(asin, mp):
     if STATE["load_err"]:
         return None, STATE["load_err"]
+    if asin not in PILOT:
+        return {"title": "", "attributes": {}, "amazon_type": None, "product_information": {},
+                "item_highlight": ""}, None
     d = PILOT[asin]
     return {"title": d["title"], "attributes": d["attributes"], "amazon_type": d["amazon_type"],
             "product_information": d.get("product_information") or {},
@@ -85,6 +91,7 @@ KEYS = pd.DataFrame([
 
 
 def fake_keys(asins, mp, title, weeks=8, top_n=30):
+    STATE["keys_title"] = title
     df = KEYS.copy()
     df["tier"] = df.apply(lambda r: seo.guess_tier(r, title), axis=1)
     df["weight"] = df.apply(seo.phrase_weight, axis=1)
@@ -103,31 +110,117 @@ for _name in ("generate_json", "_call_gemini", "_call_anthropic"):
 # Сценарии генерации подменяют это ниже.
 from services import textgen as tg  # noqa: E402
 
-GEN = {"copies": (pd.DataFrame(), None)}
+GEN = {"copies": (pd.DataFrame(), None), "usage": tg.Usage(), "calls": [], "latest": (pd.DataFrame(), None)}
 tg.active_copies = lambda: GEN["copies"]
+# учёт лимитов и последнее предложение — из журнала; подменены с самого начала: блок
+# генерации теперь виден у любого выбранного товара (решение владельца 29.10.2026)
+tg.usage_now = lambda sku: (GEN["usage"], None)
+tg.latest = lambda sku, mp: GEN["latest"]
 # Справочник SKU Кабинета: по умолчанию пуст (связь SKU ↔ ASIN — сценарии ниже).
 from services import passport as _passport_svc  # noqa: E402
 
 LINK = {"dir": pd.DataFrame(columns=["sku", "asins"])}
 _passport_svc.sku_directory = lambda: (LINK["dir"], LINK.get("err"))
 
+# Справочник SKU Кабинета, матрица ES, тип товара и паспорта — для блока 1 и блока 5.
+DIR = pd.DataFrame([
+    {"sku": "SKU-GRIND", "name": "Amoladora DGA-201M", "ean": "4820000000011", "asins": "B0H75P364R"},
+    {"sku": "SKU-CORDED", "name": "Amoladora con cable", "ean": "", "asins": "B0FZFCQN3H"},
+    {"sku": "SKU-TWO", "name": "Dos ASIN", "ean": "", "asins": "B0H75P364R B0FZFCQN3H"},
+    {"sku": "SKU-NONE", "name": "Sin ASIN", "ean": "", "asins": ""},
+    {"sku": "99601000-B", "name": "Пилосос DVB-200BC Dual", "ean": "", "asins": "B0GTRY26HB"},
+    {"sku": "21680000", "name": "Насос PW-14B", "ean": "", "asins": ""},
+])
+LINK["dir"] = DIR
+MX = {"es": pd.DataFrame([{"asin": "B0H75P364R", "sku_group": "x"}, {"asin": "B0FZFCQN3H", "sku_group": "y"},
+                          {"asin": "B0GTRY26HB", "sku_group": "99601000"}]), "err": None}
+METHOD = {"text": "методология textgen", "ver": 1}
+
+from services import db as _db  # noqa: E402
+
+
+def _fake_read(sql, params=None):
+    if "synthesis_skill" in sql:
+        if not METHOD["text"]:
+            return pd.DataFrame(), None
+        return pd.DataFrame([{"skill_text": METHOD["text"], "version": METHOD["ver"]}]), None
+    if "product_matrix" in sql:
+        return (pd.DataFrame(), MX["err"]) if MX["err"] else (MX["es"], None)
+    return pd.DataFrame(), None
+
+
+_db.safe_read = _fake_read
+TYPES = {"SKU-GRIND": "grinder", "SKU-CORDED": "grinder", "SKU-TWO": "grinder", "21680000": "battery",
+         "99601000-B": "blower"}
+TYPE_ERR = {"err": None}
+_passport_svc.sku_type = lambda sku: (None, TYPE_ERR["err"]) if TYPE_ERR["err"] else (TYPES.get(sku), None)
+
+import hashlib  # noqa: E402
+import io  # noqa: E402
+import zipfile  # noqa: E402
+
+from services import passport_copies as pc  # noqa: E402
+
+
+def _pcell(text):
+    return f"<w:tc><w:p><w:r><w:t>{text}</w:t></w:r></w:p></w:tc>"
+
+
+def passport_docx(sku: str, model: str) -> bytes:
+    """Копия паспорта: шапка и раздел идентичности с моделью — модель для префикса."""
+    def tbl(rows):
+        return "<w:tbl>" + "".join("<w:tr>" + "".join(_pcell(c) for c in r) + "</w:tr>" for r in rows) + "</w:tbl>"
+    head = '<w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Ідентичність товару</w:t></w:r></w:p>'
+    body = (tbl([("Параметр", "Значення"), ("passport_id", f"PASS-{sku}-001"), ("passport_version", "1"),
+                 ("state", "NOT_READY"), ("sku_id", sku)])
+            + head + tbl([("Поле", "Значення", "Статус", "Джерело"), ("Модель", model, "PROPOSED", "SRC-1")]))
+    b = io.BytesIO()
+    with zipfile.ZipFile(b, "w") as z:
+        z.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/'
+                   f'wordprocessingml/2006/main"><w:body>{body}</w:body></w:document>')
+    return b.getvalue()
+
+
+GRIND_DOCX = passport_docx("SKU-GRIND", "DGA-201M")
+DOCS = {"/Volumes/x/grind.docx": GRIND_DOCX}
+pc.volume_store = lambda: type("S", (), {"get": lambda self, loc: DOCS[loc]})()
+GEN["copies"] = (pd.DataFrame([{"source_artifact_id": "DOCX-PASS-SKU-GRIND-001-v1", "sku_id": "SKU-GRIND",
+                                "passport_id": "PASS-SKU-GRIND-001", "sha256": hashlib.sha256(GRIND_DOCX).hexdigest(),
+                                "archived_locator": "/Volumes/x/grind.docx", "recorded_at": "2026-10-29"}]), None)
+
 from streamlit.testing.v1 import AppTest  # noqa: E402
 
+from components.ui import eyebrow  # noqa: E402
 
-def run(asin=None, title=None, hl=None, lang="ru"):
+
+def run(sku="99601000-B", title=None, hl=None, lang="ru", **state):
+    """Прогон страницы с выбранным товаром (pp-sku — общий выбор с «Паспорт SKU»)."""
     at = AppTest.from_file(str(PAGE), default_timeout=60)
     at.session_state["lang"] = lang
-    if asin:
-        at.session_state["tg-asin"] = asin
+    if sku:
+        at.session_state["pp-sku"] = sku
+    for k, v in state.items():
+        at.session_state[k] = v
     at.run()
-    a = asin or "B0H75P364R"
     if title is not None:
-        at.text_input(key=f"tg-title-{a}").input(title)
+        at.text_input(key=f"tg-title-{sku}").input(title)
     if hl is not None:
-        at.text_area(key=f"tg-hl-{a}").input(hl)
+        at.text_area(key=f"tg-hl-{sku}").input(hl)
     if title is not None or hl is not None:
         at.run()
     return at
+
+
+def _warn(at):
+    return "\n".join(str(w.value) for w in at.warning)
+
+
+def block5(at):
+    return next((e for e in at.expander if e.label == lab("tg.b5.title")), None)
+
+
+def picker(at):
+    return [s for s in at.selectbox if str(s.key).startswith("pp-pick-")]
 
 
 def texts_of(at) -> str:
@@ -147,28 +240,81 @@ def lab(key, lang="ru", **kw) -> str:
     return s.format(**kw) if kw else s
 
 
-# ================================================================ первый показ
-at = run()
+# ================================================================ блок 1: один выбор
+at = run(sku="SKU-GRIND")
 check("страница открывается без исключения", not at.exception)
 full = texts_of(at)
-check("тип товара назван словами", lab("tg.type.grinder") in full)
-check("модель из атрибута", "DGA-201M" in full)
-check("нынешний тайтл с длиной", str(len(PILOT["B0H75P364R"]["title"])) in full)
-check("ни одного сырого ключа на экране",
-      not re.search(r"\btg\.[a-z_]+(\.[A-Za-z_]+)?\b", full))
-
-specs_df = at.dataframe[0].value
-check("колонки характеристик — технические имена (правило 3)",
-      list(specs_df.columns) == ["field", "value", "src"])
-check("у каждого значения назван источник",
-      specs_df["src"].map(bool).all() and lab("tg.src.attribute") in set(specs_df["src"]))
-check("значения в формате тайтла (Ø без пробела)", "Ø125mm" in set(specs_df["value"]))
-check("части для тайтла по таблице типа выведены",
-      ", ".join(ps.title_parts(ps.extract("B0H75P364R", "es", **fake_load("B0H75P364R", "es")[0]))) in full)
+check("ни одного сырого ключа на экране", not re.search(r"\btg\.[a-z_]+(\.[A-Za-z_]+)?\b", full))
+keys = {str(w.key) for coll in (at.selectbox, at.text_input, at.text_area, at.multiselect) for w in coll}
+check("верхнего выбора ASIN и второго выбора SKU и площадки у генерации нет",
+      not keys & {"tg-asin", "tg-gen-sku", "tg-gen-mp"})
+check("выбор товара — один на страницу, он и есть общий выбор pp-sku",
+      len(picker(at)) == 1 and picker(at)[0].value == "SKU-GRIND")
+check("площадка и язык — ES подписью", lab("tg.b1.mp_lang") in full)
+check("тип товара — из данных товара (passport.sku_type), назван под выбором",
+      lab("tg.gen.type", type=lab("tg.type.grinder")) in full)
+check("ASIN ES ровно один — назван", lab("tg.b1.asin", asin="B0H75P364R") in full)
+check("характеристик листинга нет: ни таблицы «поле · значение · источник», ни метрик, ни раздела",
+      not any(list(getattr(d.value, "columns", [])) == ["field", "value", "src"] for d in at.dataframe)
+      and not at.metric and lab("tg.for_title") not in full
+      and not any(str(m.value) in (eyebrow(lab("tg.product")), eyebrow(lab("tg.specs"))) for m in at.markdown))
+b5 = block5(at)
+check("ручная проверка и ключи — свёрнуты внизу, с подписями «в генерацию не идёт» и «факты паспорта не проверяются»",
+      b5 is not None and b5.proto.expanded is False and lab("tg.b5.hint") in full and lab("tg.b5.keys_hint") in full
+      and any(str(w.key) == "tg-title-SKU-GRIND" for w in b5.text_input))
+check("модель и методология названы до нажатия «Сгенерировать»",
+      any(str(c.value).startswith(lab("tg.gen.model_method", model="§", ver=0).split("§")[0]) for c in at.caption))
 check("ключи по типу: число наших товаров названо", lab("tg.keys_from", n=3) in full)
-check("до ввода текста нарушений не показано", not at.error and not at.success)
+check("до ввода текста нарушений не показано", not at.success
+      and not any(lab("tg.violations", n=1).split("1")[0] in str(e.value) for e in at.error))
 
-# ================================================================ живая проверка
+print("ASIN ES — только если он ровно один")
+at = run(sku="SKU-TWO")
+check("два ASIN — пусто, «ASIN неоднозначен, не выбран» с обоими",
+      lab("tg.b1.asin_none", why=lab("tg.b1.why.ASIN_AMBIGUOUS") + " (B0FZFCQN3H, B0H75P364R)") in texts_of(at))
+at = run(sku="SKU-NONE")
+check("ни одного — пусто, «нет ASIN ES»", lab("tg.b1.asin_none", why=lab("tg.b1.why.ASIN_UNKNOWN")) in texts_of(at))
+MX["err"] = "OperationalError: matrix down"
+_st_mod = __import__("streamlit")
+_st_mod.cache_data.clear()
+at = run(sku="SKU-GRIND")
+check("связь не прочитана — пусто с причиной, сбой назван, а не «нет ASIN ES»",
+      lab("tg.b1.asin_none", why=lab("tg.b1.why.ASIN_UNREAD")) in texts_of(at) and "matrix down" in texts_of(at)
+      and lab("tg.b1.why.ASIN_UNKNOWN") not in texts_of(at))
+MX["err"] = None
+_st_mod.cache_data.clear()
+
+print("поиск по SKU, названию, модели, ASIN и EAN")
+at = run(sku="SKU-GRIND", **{"tg-q": "B0FZFCQN3H"})
+opts = [o.split(" · ")[0] for o in picker(at)[0].options if o != lab("pp.pick.none")]
+check("поиск по ASIN — в списке только товары с этим ASIN", sorted(opts) == ["SKU-CORDED", "SKU-TWO"])
+check("найдено и в списке — названо", lab("tg.b1.found", n=2, shown=2) in texts_of(at))
+check("выбранный товар вне поиска — выбор не меняется и сказано об этом",
+      at.session_state["pp-sku"] == "SKU-GRIND" and lab("pp.pick.ctx_outside_q", sku="SKU-GRIND") in texts_of(at))
+at = run(sku="SKU-NONE", **{"tg-q": "4820000000011"})
+check("поиск по EAN", [o.split(" · ")[0] for o in picker(at)[0].options if o != lab("pp.pick.none")] == ["SKU-GRIND"])
+
+print("общий выбор в обе стороны")
+at = run(sku="SKU-GRIND")
+g0 = at.session_state["pp-sku-gen"] if "pp-sku-gen" in at.session_state else 0
+picker(at)[0].set_value("SKU-CORDED").run()
+check("выбор в генераторе пишет общий выбор pp-sku (его видят «Паспорт SKU» и Верификатор)",
+      at.session_state["pp-sku"] == "SKU-CORDED" and at.session_state["pp-sku-gen"] == g0 + 1)
+check("и страница сразу на новом товаре: свой ASIN ES, свой ключ ручной проверки",
+      lab("tg.b1.asin", asin="B0FZFCQN3H") in texts_of(at)
+      and any(str(w.key) == "tg-title-SKU-CORDED" for w in block5(at).text_input))
+check("своего выбора у генератора нет — tg-gen-choice не появляется", "tg-gen-choice" not in at.session_state)
+
+print("без паспорта")
+check("товар без паспорта: блок генерации на месте, кнопка выключена с причиной «Паспорт отсутствует»",
+      at.button(key="tg-gen-go").disabled and lab("tg.gen.title") in texts_of(at)
+      and lab("tg.gen.err.NO_PASSPORT", detail="") in _warn(at)
+      and lab("tg.gen.err.NO_PASSPORT", detail="").startswith("Паспорт отсутствует"))
+at = run(sku="", lang="ru")
+check("товар не выбран — подсказка выбрать, ниже ничего не считается",
+      not at.exception and lab("tg.b1.pick_first") in texts_of(at) and block5(at) is None)
+
+# ================================================================ блок 5: ручная проверка
 cases = [
     ("инструмент: вольтаж и «!» в тайтле, бренд не первым",
      "Amoladora Dnipro-M DGA-201M 20V, 10000rpm!", ""),
@@ -178,7 +324,7 @@ cases = [
      "Velocidad 10000rpm"),
 ]
 for name, title, hl in cases:
-    at = run(title=title, hl=hl)
+    at = run(sku="SKU-GRIND", title=title, hl=hl)
     want = tr.check(title, hl, kind=tr.TOOL, model="DGA-201M" if hl else None)
     shown = bullets(at)
     check(f"{name}: на экране столько же нарушений, сколько у правил ({len(want)})",
@@ -191,22 +337,32 @@ ok_title = "DNIPRO-M DGA-201M Amoladora Angular, Ø125mm, 10000rpm"
 ok_hl = "Model DGA-201M: compatible con baterías 20V, Ø125mm"
 check("контрольный текст правилам не нарушает",
       tr.check(ok_title, ok_hl, kind=tr.TOOL, model="DGA-201M") == [])
-at = run(title=ok_title, hl=ok_hl)
-check("чистый текст — «нарушений нет», не ошибка",
-      not at.error and any(lab("tg.all_ok") == str(s.value) for s in at.success))
+at = run(sku="SKU-GRIND", title=ok_title, hl=ok_hl)
+check("чистый текст — «нарушений нет»; модель для префикса — из паспорта (DGA-201M)",
+      any(lab("tg.all_ok") == str(x.value) for x in at.success)
+      and not any(lab("tg.no_model_prefix") == str(w.value) for w in at.warning))
 check("вольтаж в Highlights у инструмента — не нарушение", not bullets(at))
-
-at = run(title="DNIPRO-M DGA-201M Amoladora Angular 20V, Ø125mm")
+at = run(sku="SKU-GRIND", hl="Model DGB-999X: compatible")
+check("префикс с чужой моделью — нарушение: модель берётся из паспорта, а не из текста",
+      tr.check("", "Model DGB-999X: compatible", kind=tr.TOOL, model="DGA-201M") != [] and bullets(at))
+at = run(sku="SKU-GRIND", title="DNIPRO-M DGA-201M Amoladora Angular 20V, Ø125mm")
 check("тот же вольтаж в тайтле — нарушение TOOL_VOLTAGE с полем «тайтл»",
       any(lab("tg.code.TOOL_VOLTAGE") in b and lab("tg.where.title") in b for b in bullets(at)))
-
-at = run(title="x" * 80)
+at = run(sku="21680000", title="DNIPRO-M Batería BP-240 20V 4Ah")
+check("тип из выбранного SKU: аккумулятор — вольтаж в тайтле не нарушение (passport.sku_type)",
+      not any(lab("tg.code.TOOL_VOLTAGE") in b for b in bullets(at)))
+at = run(sku="SKU-GRIND", title="x" * 80)
 check("счётчик длины: 80 / 75 акцентом",
       any("80 / 75" in str(m.value) and "#E8590C" in str(m.value) for m in at.markdown))
+at = run(sku="SKU-CORDED", title="DNIPRO-M Amoladora Angular, Ø125mm", hl="Velocidad 10000rpm")
+check("паспорта нет — модели нет: префикс Highlights назван непроверенным",
+      any(lab("tg.no_model_prefix") == str(w.value) for w in at.warning))
+at = run(sku="SKU-CORDED", title="DNIPRO-M Amoladora Angular, Ø125mm")
+check("и без Highlights оговорки нет", not any(lab("tg.no_model_prefix") == str(w.value) for w in at.warning))
 
-# ключи: отметка «есть в тексте» по введённому
-at = run(title="DNIPRO-M DGA-201M Amoladora Angular, Ø125mm")
-kdf = next(d.value for d in at.dataframe if "query" in d.value.columns)
+# ключи: отметка «есть в тексте» по введённому; нынешний тайтл — из снапшота ASIN ES
+at = run(sku="SKU-GRIND", title="DNIPRO-M DGA-201M Amoladora Angular, Ø125mm")
+kdf = next(d.value for d in at.dataframe if "query" in getattr(d.value, "columns", []))
 check("колонки ключей — технические имена",
       list(kdf.columns) == ["query", "volume", "tier", "asins", "typed"])
 check("введённый ключ отмечен, невведённый — нет",
@@ -214,69 +370,47 @@ check("введённый ключ отмечен, невведённый — н
       and not bool(kdf.set_index("query").loc["radial bosch", "typed"]))
 check("чужой бренд — «не брать»",
       kdf.set_index("query").loc["radial bosch", "tier"] == lab("tg.tier.forbid"))
-
-# модели нет — «нарушений нет» не выдаёт непроверенный префикс за проверенный
-_real_load = ps.load
-
-
-def no_model_load(asin, mp):
-    d, e = fake_load(asin, mp)
-    d = dict(d, title="Amoladora Angular Dnipro-M 20V", attributes={
-        k: v for k, v in d["attributes"].items() if k != "model_name"})
-    return d, e
-
-
-ps.load = no_model_load
-st_mod = __import__("streamlit")
-st_mod.cache_data.clear()
-at = run(title="DNIPRO-M Amoladora Angular, Ø125mm", hl="Velocidad 10000rpm")
-check("модели нет: префикс Highlights назван непроверенным",
-      any(lab("tg.no_model_prefix") == str(w.value) for w in at.warning))
-at = run(title="DNIPRO-M Amoladora Angular, Ø125mm")
-check("и без Highlights оговорки нет", not any(lab("tg.no_model_prefix") == str(w.value) for w in at.warning))
-ps.load = _real_load
-st_mod.cache_data.clear()
-at = run(title=ok_title, hl=ok_hl)
-check("модель есть — оговорки нет", not any(lab("tg.no_model_prefix") == str(w.value) for w in at.warning))
-
-# ================================================================ расхождение карточки
-at = run(asin="B0H75XRDBK")
-check("перфоратор: тип назван", lab("tg.type.hammer") in texts_of(at))
-warn = "\n".join(str(w.value) for w in at.warning)
-check("4 Ah в атрибуте против 6Ah в наборе названо вслух",
-      lab("tg.field.capacity_ah") in warn and "4" in warn and "6" in warn)
-
-at = run(asin="B0FZFCQN3H")
-check("сетевая болгарка — питание «Сетевой»", lab("tg.corded") in texts_of(at))
+_st_mod.cache_data.clear()          # ключи кэшируются по тайтлу: свежий прогон зовёт подмену
+run(sku="SKU-GRIND")
+check("ключи размечены по нынешнему тайтлу снапшота ASIN ES", STATE.get("keys_title") == PILOT["B0H75P364R"]["title"])
+_st_mod.cache_data.clear()
+at = run(sku="SKU-TWO")
+check("ASIN ES не один — тайтла снапшота нет, ключи без него (не по чужому ASIN)", STATE.get("keys_title") == "")
 
 # ================================================================ сбои
 import streamlit as st  # noqa: E402
 
 st.cache_data.clear()                 # удачные чтения прошлых прогонов законно в кеше
 STATE["load_err"] = "OperationalError: база недоступна"
-at = run()
-check("сбой чтения — ошибка с причиной, страница не падает",
-      not at.exception and any("база недоступна" in str(e.value) for e in at.error))
-check("и характеристик «нет» не утверждается", lab("tg.no_specs") not in texts_of(at))
+at = run(sku="SKU-GRIND")
+check("сбой снапшота — ошибка с причиной, страница не падает и ручная проверка на месте",
+      not at.exception and any("база недоступна" in str(e.value) for e in at.error) and block5(at) is not None)
 STATE["load_err"] = None
-at = run()
-check("сбой не закеширован: база ответила — карточка на месте",
-      not at.error and lab("tg.type.grinder") in texts_of(at))
+at = run(sku="SKU-GRIND")
+check("сбой не закеширован: база ответила — ошибки нет", not any("база недоступна" in str(e.value) for e in at.error))
 
 st.cache_data.clear()
 STATE["keys_err"] = "OperationalError: SQP недоступен"
-at = run()
+at = run(sku="SKU-GRIND")
 full = texts_of(at)
 check("сбой ключей — ошибка, а не «данных поиска нет»",
       "SQP недоступен" in full and lab("tg.keys_empty", n=0) not in full)
 STATE["keys_err"] = None
-at = run()
+at = run(sku="SKU-GRIND")
 check("сбой ключей не закеширован", lab("tg.keys_from", n=3) in texts_of(at))
+TYPE_ERR["err"] = "листинги недоступны"
+at = run(sku="SKU-GRIND")
+check("тип не прочитался — причина названа, правила инструмента, ключей по типу нет",
+      lab("tg.gen.type_error", err="листинги недоступны") in texts_of(at)
+      and lab("tg.gen.type_unknown") in texts_of(at) and lab("tg.keys_no_type") in texts_of(at))
+TYPE_ERR["err"] = None
 
 for lang in ("uk", "en"):
-    at = run(lang=lang, title="Amoladora 20V!")
+    # один прогон: подписи списка «Товар» строятся t() на языке страницы, а AppTest при
+    # вводе пересчитывает их в процессе теста — на другом языке они не сошлись бы
+    at = run(sku="SKU-GRIND", lang=lang)
     check(f"{lang}: страница открывается, подписи на своём языке",
-          not at.exception and lab("tg.type.grinder", lang) in texts_of(at))
+          not at.exception and lab("tg.b5.title", lang) in [e.label for e in at.expander])
 
 check("модель не вызвана ни разу", STATE["ai_calls"] == [])
 
@@ -311,7 +445,8 @@ dynamic = ({f"tg.field.{f}" for f in ps.FIELDS}
                                                 (ROOT / "services" / "title_rules.py").read_text(encoding="utf-8"))}
            | {f"tg.src.{s}" for s in ("attribute", "snapshot", "highlights", "title", "kit")}
            | {f"tg.tier.{x}" for x in seo.TIERS}
-           | {"tg.where.title", "tg.where.highlights", "auth.role.textgen_pilot"})
+           | {"tg.where.title", "tg.where.highlights", "auth.role.textgen_pilot"}
+           | {f"tg.b1.why.{c}" for c in tg.ASIN_CODES} | {"tg.gen.err.NO_PASSPORT"})
 need = keys_in_src | dynamic
 for lang in ("ru", "uk", "en"):
     miss = sorted(k for k in need if k not in langs[lang])
@@ -478,18 +613,6 @@ auth.can, auth.require = _can, _req
 # лимиты — кнопка выключается с объяснением; модель зовётся только через
 # tg.generate по нажатию. База, том и модель подменены.
 _db.table_exists = lambda name: True
-METHOD = {"text": "методология textgen", "ver": 1}
-
-
-def _safe_read(sql, params=None):
-    if "synthesis_skill" in sql:
-        if not METHOD["text"]:
-            return pd.DataFrame(), None
-        return pd.DataFrame([{"skill_text": METHOD["text"], "version": METHOD["ver"]}]), None
-    return pd.DataFrame(), None
-
-
-_db.safe_read = _safe_read
 GEN["copies"] = (pd.DataFrame([{"source_artifact_id": "DOCX-PASS-99601000-B-001-v2", "sku_id": "99601000-B",
                                 "passport_id": "PASS-99601000-B-001", "sha256": "0" * 64,
                                 "archived_locator": "/Volumes/dnipro_m/listing_data/passports/x.docx",
@@ -523,9 +646,6 @@ ai.task_config = lambda task: ("anthropic", "claude-sonnet-5")
 def esc(x: str) -> str:
     return x.replace("$", "\\$")
 
-
-def _warn(at):
-    return "\n".join(str(w.value) for w in at.warning)
 
 
 at = run()
@@ -608,121 +728,43 @@ check("без права ls.textgen.accept «Сгенерировать» вык
 auth.can = _can
 
 # Связь SKU ↔ ASIN: справочник Кабинета по точному коду, матрица ES вторым источником.
-MATRIX_ES = pd.DataFrame([{"asin": "B0H75P364R", "sku_group": "S5_78739000"},
-                          {"asin": "B0GTRY26HB", "sku_group": "99601000"}])
-
-
-LINK["mx_err"] = None
-LINK["de_err"] = None
-MATRIX_DE = pd.DataFrame([{"asin": "B0DEDEDEDE", "sku_group": "99601000-B"}])
-
-
-def _safe_read2(sql, params=None):
-    if "product_matrix" in sql:
-        # площадка — из САМОГО запроса: подставлена параметром или вписана литералом
-        lit = re.search(r"marketplace = '([a-z.]+)'", sql)
-        mp = (params or {}).get("mp") if "%(mp)s" in sql else (lit.group(1) if lit else None)
-        if mp == "de":
-            return (pd.DataFrame(), LINK["de_err"]) if LINK["de_err"] else (MATRIX_DE, None)
-        if LINK["mx_err"]:
-            return pd.DataFrame(), LINK["mx_err"]
-        return MATRIX_ES, None
-    return _safe_read(sql, params)
-
-
-_db.safe_read = _safe_read2
 _st.cache_data.clear()
-LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0GTRY26HB"}])
-at = run()
-check("сверху у ASIN назван его SKU (матрица)", lab("tg.link.sku", skus="S5_78739000") in texts_of(at))
-check("внизу у SKU генерации — его ASIN ES (справочник по точному коду)",
-      lab("tg.link.asins", asins="B0GTRY26HB") in texts_of(at))
 GEN["calls"].clear()
+at = run()
+check("у выбранного SKU — его ASIN ES (справочник по точному коду)",
+      lab("tg.b1.asin", asin="B0GTRY26HB") in texts_of(at))
 at.button(key="tg-gen-go").click().run()
-check("генерация получает ASIN товара на выбранной площадке",
-      GEN["calls"] and GEN["calls"][-1]["asins"] == ["B0GTRY26HB"])
-# Площадка DE: свой ASIN из матрицы DE, а не ES (у товара они разные).
-LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0GTRY26HB B0DEDEDEDE"}])
-_st.cache_data.clear()
-at = run()
-at.selectbox(key="tg-gen-mp").set_value("de").run()
-check("DE: до нажатия видно, какой ASIN уйдёт в черновики",
-      lab("tg.link.draft_asin", mp="DE", asin="B0DEDEDEDE") in texts_of(at))
-check("подпись до нажатия решает тот же pick_asin, что и запись",
-      "g_pick, g_why = tg.pick_asin(g_link_asins)" in SRC)
-GEN["calls"].clear()
-at.button(key="tg-gen-go").click().run()
-check("DE: генерация получает ASIN площадки DE, а не ES",
-      GEN["calls"] and GEN["calls"][-1]["asins"] == ["B0DEDEDEDE"] and GEN["calls"][-1]["marketplace"] == "de")
-LINK["de_err"] = "OperationalError: de down"
-_st.cache_data.clear()
-at = run()
-at.selectbox(key="tg-gen-mp").set_value("de").run()
-GEN["calls"].clear()
-at.button(key="tg-gen-go").click().run()
-check("DE: матрица не прочитана — сбой назван, в генерацию «не прочитано» (None), не «ASIN нет»",
-      "de down" in texts_of(at) and GEN["calls"] and GEN["calls"][-1]["asins"] is None)
-LINK["de_err"] = None
-LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0GTRY26HB"}])
-_st.cache_data.clear()
-at = run()
-check("ASIN сверху не этот товар — предупреждение о разных товарах",
-      lab("tg.link.mismatch", asin="B0H75P364R", sku="99601000-B", asins="B0GTRY26HB", top="S5_78739000") in _warn(at))
-LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0H75P364R"}])
-_st.cache_data.clear()
-at = run()
-check("совпали — предупреждения о разных товарах нет",
-      lab("tg.link.asins", asins="B0H75P364R") in texts_of(at)
-      and lab("tg.link.mismatch", asin="B0H75P364R", sku="99601000-B", asins="B0H75P364R", top="S5_78739000, 99601000-B")
-      not in _warn(at) and "tg.link.mismatch" not in _warn(at)
-      and not any(i18n.LANGS["ru"]["tg.link.mismatch"].split("{")[0] in str(w.value) for w in at.warning))
-LINK["dir"] = pd.DataFrame(columns=["sku", "asins"])
-_st.cache_data.clear()
-at = run()
-check("у SKU нет ASIN ES — сказано, а не молчание",
-      lab("tg.link.asins_none", sku="99601000-B") in texts_of(at)
-      and lab("tg.link.no_asin", sku="99601000-B", asin="B0H75P364R") in _warn(at))
+check("генерация получает ASIN товара ES",
+      GEN["calls"] and GEN["calls"][-1]["asins"] == ["B0GTRY26HB"] and GEN["calls"][-1]["marketplace"] == "es")
 check("вариант 99601000-B не сопоставляется с базовым 99601000 матрицы по догадке",
-      tg.asins_for_sku("99601000-B", None, MATRIX_ES) == [])
+      tg.asins_for_sku("99601000-B", None, MX["es"]) == [])
 
 # Сбой источника — «не прочитано», а не «не найдено» (проверка #168).
-LINK["dir"], LINK["err"] = pd.DataFrame(columns=["sku", "asins"]), "OperationalError: kabinet down"
+LINK["err"] = "OperationalError: kabinet down"
 _st.cache_data.clear()
 at = run()
-check("справочник не прочитан — сказано у генерации, а не «ASIN ES не найден» с предупреждением",
-      "kabinet down" in texts_of(at) and lab("tg.link.unread", sku="99601000-B") in texts_of(at)
-      and lab("tg.link.asins_none", sku="99601000-B") not in texts_of(at)
-      and lab("tg.link.no_asin", sku="99601000-B", asin="B0H75P364R") not in _warn(at))
-check("справочник не прочитан — матрица всё равно даёт SKU сверху", lab("tg.link.sku", skus="S5_78739000") in texts_of(at))
+check("справочник не прочитан — сказано, ASIN «связь не прочитана», а не «нет ASIN ES»",
+      "kabinet down" in texts_of(at) and lab("tg.b1.asin_none", why=lab("tg.b1.why.ASIN_UNREAD")) in texts_of(at)
+      and lab("tg.b1.why.ASIN_UNKNOWN") not in texts_of(at))
 GEN["calls"].clear()
 at.button(key="tg-gen-go").click().run()
 check("связь не прочитана — генерации уходит «не прочитано» (None), а не неполный список",
       GEN["calls"] and GEN["calls"][-1]["asins"] is None)
-check("подпись о сбое — и сверху, и у генерации (две)",
-      sum(1 for c in at.caption if "kabinet down" in str(c.value)) == 2)
-LINK["err"], LINK["mx_err"] = None, "OperationalError: matrix down"
-LINK["dir"] = pd.DataFrame([{"sku": "99601000-B", "asins": "B0GTRY26HB B0DEDEDEDE"}])
-_st.cache_data.clear()
-at = run()
-check("матрица не прочитана — ASIN справочника не выдаются за ES и «не найдено» не пишется",
-      "matrix down" in texts_of(at) and "B0DEDEDEDE" not in texts_of(at)
-      and lab("tg.link.sku_none") not in texts_of(at) and lab("tg.link.unread", sku="99601000-B") in texts_of(at))
-LINK["mx_err"] = None
+LINK["err"] = None
 check("ASIN справочника с другого рынка не выдаётся за ES",
-      tg.asins_for_sku("99601000-B", LINK["dir"], MATRIX_ES) == ["B0GTRY26HB"])
-check("без матрицы ES не проверить — ответ пустой", tg.asins_for_sku("99601000-B", LINK["dir"], None) == [])
+      tg.asins_for_sku("99601000-B", pd.DataFrame([{"sku": "99601000-B", "asins": "B0GTRY26HB B0DEDEDEDE"}]),
+                       MX["es"]) == ["B0GTRY26HB"])
+check("без матрицы ES не проверить — ответ пустой", tg.asins_for_sku("99601000-B", DIR, None) == [])
 NAN_DIR = pd.DataFrame([{"sku": "99601000-B", "asins": float("nan")}, {"sku": float("nan"), "asins": "B0GTRY26HB"}])
 check("NaN в ячейке справочника — не «nan» (правило 4)",
-      "nan" not in tg.asins_for_sku("99601000-B", NAN_DIR, MATRIX_ES)
-      and "nan" not in tg.skus_for_asin("B0GTRY26HB", NAN_DIR, MATRIX_ES))
+      "nan" not in tg.asins_for_sku("99601000-B", NAN_DIR, MX["es"])
+      and "nan" not in tg.skus_for_asin("B0GTRY26HB", NAN_DIR, MX["es"]))
 check("конкуренты в связь не идут (запрос матрицы)", "is_competitor IS NOT TRUE" in SRC)
 # «$» внутри `кода` не экранируется: там обратная косая осталась бы на экране.
 _st.cache_data.clear()
-at = run(title="DNIPRO-M Amoladora $ 125mm")
+at = run(sku="SKU-GRIND", title="DNIPRO-M Amoladora $ 125mm")
 check("запрещённый «$» в тайтле назван как `$`, без обратной косой",
       any("`$`" in str(m.value) for m in at.markdown) and not any("`\\$`" in str(m.value) for m in at.markdown))
-LINK["dir"] = pd.DataFrame(columns=["sku", "asins"])
-_db.safe_read = _safe_read
 
 GEN["latest"] = (pd.DataFrame([
     {"field": f, "text": f"текст {f}", "text_len": 10, "version": 1, "proposal_id": "TG-7", "status": "draft",
@@ -752,36 +794,29 @@ check("старые черновики без пометки — «причин�
 GEN["latest"] = (_lat.assign(asin="B0GTRY26HB", checks="[]"), None)
 at = run()
 check("сохранённый ASIN черновиков показан", lab("tg.link.saved_asin", asin="B0GTRY26HB") in texts_of(at))
-# --- генератор на том же SKU, что выбран в разделе «Паспорт SKU», и тип товара в
-# генерацию (поручение владельца 28.10.2026: выпадающий список товаров)
+# --- один выбор на всю страницу, общий с «Паспорт SKU» в обе стороны (решение
+# владельца 29.10.2026): генератор всегда на pp-sku и своего SKU не держит.
 import services.passport as _pp_svc  # noqa: E402
+import components.passport_area as _parea  # noqa: E402
 
 GEN["copies"] = (pd.DataFrame([dict(GEN["copies"][0].iloc[0]),
                                {"source_artifact_id": "DOCX-PASS-21680000-001-v1", "sku_id": "21680000",
                                 "passport_id": "PASS-21680000-001", "sha256": "1" * 64,
                                 "archived_locator": "/Volumes/dnipro_m/listing_data/passports/y.docx",
                                 "recorded_at": "2026-10-28"}]), None)
-_sku_type = _pp_svc.sku_type
-_pp_svc.sku_type = lambda sku: ({"21680000": "battery"}.get(sku), None)
-at = AppTest.from_file(str(PAGE), default_timeout=60)
-at.session_state["lang"] = "ru"
-at.session_state["pp-sku"] = "21680000"
-at.run()
-check("генератор встаёт на SKU, выбранный в разделе «Паспорт SKU»", at.selectbox(key="tg-gen-sku").value == "21680000")
-check("тип товара из листинга назван у генерации", lab("tg.gen.type", type=lab("tg.type.battery")) in texts_of(at))
+at = run(sku="21680000")
+check("генератор на SKU, выбранном в «Паспорт SKU» (pp-sku)", picker(at)[0].value == "21680000")
 GEN["calls"].clear()
 at.button(key="tg-gen-go").click().run()
-check("тип товара уходит в генерацию — по нему правила (аккумулятор: вольтаж в тайтле можно)",
-      GEN["calls"] and GEN["calls"][-1].get("tool_type") == "battery")
-at.selectbox(key="tg-gen-sku").set_value("99601000-B").run()
-check("в генераторе можно выбрать другой SKU, контекст его не перебивает",
-      at.selectbox(key="tg-gen-sku").value == "99601000-B" and lab("tg.gen.type_unknown") in texts_of(at))
-at.session_state["pp-sku"] = "21680000"
-at.run()
-check("контекст не менялся — выбор в генераторе держится", at.selectbox(key="tg-gen-sku").value == "99601000-B")
-# Уход со страницы: Streamlit удаляет ключ виджета, а прочие ключи сеанса живут. Новый
-# прогон страницы получает ровно их — так выглядит повторный заход (проверка #178).
-KEEP = ("lang", "pp-sku", "pp-sku-gen", "tg-gen-ctx", "tg-gen-choice")
+check("генерация — по выбранному SKU, тип товара уходит в генерацию (аккумулятор)",
+      GEN["calls"] and GEN["calls"][-1]["sku"] == "21680000" and GEN["calls"][-1].get("tool_type") == "battery")
+picker(at)[0].set_value("99601000-B").run()
+check("выбор в генераторе меняет общий выбор — «Паспорт SKU» и Верификатор на нём же",
+      at.session_state["pp-sku"] == "99601000-B")
+GEN["calls"].clear()
+at.button(key="tg-gen-go").click().run()
+check("и генерация сразу по нему", GEN["calls"] and GEN["calls"][-1]["sku"] == "99601000-B")
+KEEP = ("lang", "pp-sku", "pp-sku-gen")
 
 
 def reenter(prev, **change):
@@ -794,69 +829,11 @@ def reenter(prev, **change):
     return nxt.run()
 
 
+at = reenter(at, **{"pp-sku": "21680000"})          # товар сменили в «Паспорт SKU»
+check("сменили в «Паспорт SKU» — генератор на нём, без своего выбора", picker(at)[0].value == "21680000")
 at = reenter(at)
-check("вернулись на страницу — выбор человека в генераторе дожил", at.selectbox(key="tg-gen-sku").value == "99601000-B")
-at = reenter(at, **{"pp-sku": "99601000-B"})
-at = reenter(at, **{"pp-sku": "21680000"})         # контекст сменился в разделе «Паспорт SKU»
-check("контекст сменился, страницу открыли заново — генератор на SKU контекста",
-      at.selectbox(key="tg-gen-sku").value == "21680000")
-at = reenter(at)
-check("повторный заход без смены контекста — снова SKU контекста, а не первая копия",
-      at.selectbox(key="tg-gen-sku").value == "21680000")
-# Реестр: A, в генераторе X, в Реестре B и снова A — генератор не открывали между ними.
-# Последнее действие человека — выбор A в Реестре, генератор встаёт на A (проверка #178).
-import components.passport_area as _parea  # noqa: E402
-at.selectbox(key="tg-gen-sku").set_value("99601000-B").run()
-_sess = {"pp-sku": at.session_state["pp-sku"], "pp-sku-gen": at.session_state["pp-sku-gen"]
-         if "pp-sku-gen" in at.session_state else 0}
-_st_state = _parea.st.session_state
-_parea.st.session_state = _sess
-try:
-    _parea.set_context("99601000-B")
-    _parea.set_context("21680000")
-finally:
-    _parea.st.session_state = _st_state
-at = reenter(at, **_sess)
-check("Реестр: A → в генераторе X → в Реестре B и снова A — генератор на A, а не на X",
-      at.selectbox(key="tg-gen-sku").value == "21680000")
-
-
-def registry_does(at, *calls):
-    """Действия в разделе «Паспорт SKU» настоящими колбэками passport_area — на ключах
-    сеанса, которые переживают переход между страницами."""
-    sess = {k: at.session_state[k] for k in ("pp-sku", "pp-sku-gen") if k in at.session_state}
-    real = _parea.st.session_state
-    _parea.st.session_state = sess
-    try:
-        for fn, *args in calls:
-            fn(*args)
-    finally:
-        _parea.st.session_state = real
-    return sess
-
-
-# Решение владельца 28.10.2026: кнопки карточки на том же товаре выбор в генераторе
-# не снимают; сброс — только при смене товара.
-at.selectbox(key="tg-gen-sku").set_value("99601000-B").run()
-at = reenter(at, **registry_does(at, (_parea._go, "registry", "21680000", None, "passport")))
-check("генератор X, в карточке A «Открыть Паспорт» того же A — генератор остаётся на X",
-      at.selectbox(key="tg-gen-sku").value == "99601000-B")
-at = reenter(at, **registry_does(at, (_parea._go, "create", "21680000")))
-check("генератор X, в карточке A «Создать» того же A — генератор остаётся на X",
-      at.selectbox(key="tg-gen-sku").value == "99601000-B")
-at = reenter(at, **registry_does(at, (_parea._go, "registry", "99601000-B", None, "passport"),
-                                 (_parea._go, "registry", "21680000", None, "passport")))
-check("переход из карточки на другой товар и обратно — смена товара, генератор на A",
-      at.selectbox(key="tg-gen-sku").value == "21680000")
-at = reenter(at, **{"tg-gen-choice": "00000000-X"})   # выбранная копия ушла (заменена или OLD)
-check("выбранной копии больше нет — без падения, на SKU контекста",
-      not at.exception and at.selectbox(key="tg-gen-sku").value == "21680000")
-_pp_svc.sku_type = lambda sku: (None, "листинги недоступны")
-at.run()
-check("тип не прочитался — причина названа, правила инструмента",
-      lab("tg.gen.type_error", err="листинги недоступны") in texts_of(at) and lab("tg.gen.type_unknown") in texts_of(at))
-_pp_svc.sku_type = _sku_type
-ai.task_config = _task_config
+check("повторный заход — тот же общий товар", picker(at)[0].value == "21680000")
+check("старых ключей своего выбора нет", not any(k in at.session_state for k in ("tg-gen-choice", "tg-gen-ctx")))
 
 print()
 print("ИТОГ:", "все проверки прошли" if not FAILS else f"{len(FAILS)} провалов: {FAILS}")
