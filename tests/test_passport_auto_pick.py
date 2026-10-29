@@ -234,6 +234,13 @@ tab(at, "registry")
 picker(at).set_value("21680000").run()
 check("выбор можно сменить в Реестре — подпись автовыбора уходит",
       ctx(at) == "21680000" and t("pp.auto_picked") not in texts_of(at))
+picker(at).set_value("99601000-B").run()
+tab(at, "create")
+check("человек снова выбрал тот же товар — это его выбор: подписи «автоматически» нет",
+      ctx(at) == "99601000-B" and t("pp.auto_picked") not in texts_of(at))
+at = app(**{"pp-tab": "verifier"})
+check("автовыбор и на «Взаимодействии с Верификатором» (сразу, без «Создания»), с подписью",
+      ctx(at) == "99601000-B" and t("pp.auto_picked") in texts_of(at))
 
 at = app(**{"pp-tab": "registry"})
 check("Реестр открывается без автовыбора — список пуст, как раньше (#178)",
@@ -255,10 +262,15 @@ COPY = pd.DataFrame([copy_row("99601000-B"), copy_row("21680000")])
 at = app(**{"pp-tab": "create"})
 check("два товара с паспортом — прежняя подсказка и «Перейти в Реестр»",
       ctx(at) is None and t("pp.create_pick") in texts_of(at) and any(b.key == "pp-to-reg" for b in at.button))
+# поиск и фильтр оставляют в Реестре одну строку — и всё равно на «Создании» выбора нет:
+# «один» считается по всем паспортам Реестра, а не по строкам под поиском
 at = app(**{"pp-tab": "registry", "pp-q": "99601000"})
-check("одна строка после поиска — не повод: поиск ничего не выбирает", ctx(at) is None)
-at = app(**{"pp-tab": "registry", "pp-type": "unknown"})
-check("и фильтр типа ничего не выбирает", ctx(at) is None)
+tab(at, "create")
+check("одна строка после поиска — не повод: поиск ничего не выбирает", ctx(at) is None
+      and t("pp.create_pick") in texts_of(at))
+at = app(**{"pp-tab": "registry", "pp-type": "unknown", "pp-states": ["NOT_READY"]})
+tab(at, "create")
+check("и фильтры ничего не выбирают", ctx(at) is None and t("pp.create_pick") in texts_of(at))
 COPY = pd.DataFrame([copy_row("99601000-B")])
 
 print("Реестр не прочитался — автовыбора нет")
