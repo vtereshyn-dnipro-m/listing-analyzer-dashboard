@@ -50,10 +50,10 @@ def _tbl(rows):
 
 
 
-def passport_docx(sku: str, ver: str = "2") -> bytes:
+def passport_docx(sku: str, ver: str = "2", state: str = "NOT_READY") -> bytes:
     body = (_p(f"Паспорт SKU {sku}", "Title")
             + _tbl([("Параметр", "Значення"), ("passport_id", f"PASS-{sku}-001"), ("passport_version", ver),
-                    ("state", "NOT_READY"), ("sku_id", sku)]))
+                    ("state", state), ("sku_id", sku)]))
     b = io.BytesIO()
     with zipfile.ZipFile(b, "w") as z:
         z.writestr("word/document.xml", '<w:document xmlns:w="http://schemas.openxmlformats.org/'
@@ -61,7 +61,8 @@ def passport_docx(sku: str, ver: str = "2") -> bytes:
     return b.getvalue()
 
 
-DOCS = {"99601000-B": passport_docx("99601000-B"), "21680000": passport_docx("21680000", "1")}
+# два паспорта различаются состоянием и типом: каждый фильтр Реестра оставляет одну строку
+DOCS = {"99601000-B": passport_docx("99601000-B"), "21680000": passport_docx("21680000", "1", "READY")}
 TS = pd.Timestamp("2026-10-21 18:05", tz="UTC")
 
 
@@ -77,7 +78,8 @@ DIRECTORY = pd.DataFrame([
     dict(sku="21680000", name="Насос поверхностный PW-14B", ean="", is_active=True, asins=""),
     dict(sku="55550000", name="Акумулятор BP-240", ean="", is_active=True, asins=""),
 ])
-LISTING = pd.DataFrame(columns=["asin", "sku_group", "title", "product_type", "mp", "competitor"])
+LISTING = pd.DataFrame([dict(asin="B0PUMP0001", sku_group="21680000", title="Bomba de superficie Dnipro-M PW-14B 1100W",
+                               product_type=None, mp="es", competitor=False)])
 FAILED_TITLE = {}
 MODE = {"dir_fail": False, "listing_fail": False, "reg_fail": False}
 
@@ -160,6 +162,8 @@ CONTENT, TEXTGEN = "pages/content.py", "pages/textgen.py"
 # генератор: учёт лимитов и последнее предложение — из журнала, здесь не проверяются
 tg.usage_now = lambda sku: (tg.Usage(), None)
 tg.latest = lambda sku, mp: (pd.DataFrame(), None)
+# ключи по типу — не предмет этого теста (их подмена — test_textgen_page.py)
+ps.same_type_asins = lambda tool_type, mp: ([], None)
 
 
 def app(**state):
@@ -268,9 +272,16 @@ at = app(**{"pp-tab": "registry", "pp-q": "99601000"})
 tab(at, "create")
 check("одна строка после поиска — не повод: поиск ничего не выбирает", ctx(at) is None
       and t("pp.create_pick") in texts_of(at))
-at = app(**{"pp-tab": "registry", "pp-type": "unknown", "pp-states": ["NOT_READY"]})
-tab(at, "create")
-check("и фильтры ничего не выбирают", ctx(at) is None and t("pp.create_pick") in texts_of(at))
+def table_skus(at):
+    return next((list(d.value["sku"]) for d in at.dataframe if "next" in getattr(d.value, "columns", [])), [])
+
+
+for flt, label in (({"pp-type": "unknown"}, "фильтр типа"), ({"pp-states": ["READY"]}, "фильтр состояния")):
+    at = app(**{"pp-tab": "registry", **flt})
+    rows = table_skus(at)
+    tab(at, "create")
+    check(f"{label} оставил в Реестре одну строку с паспортом ({rows}) — не повод: на «Создании» выбора нет",
+          len(rows) == 1 and ctx(at) is None and t("pp.create_pick") in texts_of(at))
 COPY = pd.DataFrame([copy_row("99601000-B")])
 
 print("Реестр не прочитался — автовыбора нет")
