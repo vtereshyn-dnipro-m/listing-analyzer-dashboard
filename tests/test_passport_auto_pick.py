@@ -7,7 +7,10 @@ tests/test_passport_auto_pick.py — выбор товара в разделе �
   · выбор из Реестра живёт при переходе по вкладкам («Создание Паспорта»,
     «Взаимодействие с Верификатором») и на страницу генератора и обратно;
   · выбора нет вовсе и в Реестре ровно один товар с паспортом — он выбран
-    автоматически, с подписью; выбор можно сменить в Реестре;
+    автоматически, с подписью, на «Создании», «Верификаторе», при открытии «Реестра
+    Паспортов» и на генераторе (роль пилота видит только его); выбор можно сменить;
+  · массовый выбор, поиск или фильтр — автовыбора нет; копия единственного паспорта
+    не читается — автовыбора нет, причина названа;
   · товаров с паспортом больше одного — прежняя подсказка и «Перейти в Реестр»;
   · одна строка после поиска или фильтра — не повод: поиск ничего не выбирает;
   · сделанный человеком выбор (в том числе явный сброс) автовыбор не перебивает;
@@ -146,7 +149,9 @@ import services.kdb as kdb  # noqa: E402
 kdb.get_conn = lambda: _KConn()
 from services import passport_copies as pc  # noqa: E402
 
-pc.volume_store = lambda: type("S", (), {"get": lambda self, loc: DOCS[loc.rsplit("/", 1)[1][:-5]]})()
+BROKEN = set()           # SKU, чья копия в томе испорчена (SHA не сходится)
+pc.volume_store = lambda: type("S", (), {"get": lambda self, loc: b"broken" if loc.rsplit("/", 1)[1][:-5] in BROKEN
+                                         else DOCS[loc.rsplit("/", 1)[1][:-5]]})()
 from services import product_specs as ps  # noqa: E402
 
 ps.load = lambda asin, mp: (None, "нет снапшота в тесте")
@@ -247,8 +252,45 @@ check("автовыбор и на «Взаимодействии с Верифи
       ctx(at) == "99601000-B" and t("pp.auto_picked") in texts_of(at))
 
 at = app(**{"pp-tab": "registry"})
-check("Реестр открывается без автовыбора — список пуст, как раньше (#178)",
-      ctx(at) is None and picker(at) is not None and picker(at).value == "")
+check("при открытии «Реестра Паспортов» — автовыбор, список на нём, подпись видна",
+      ctx(at) == "99601000-B" and picker(at).value == "99601000-B" and t("pp.auto_picked") in texts_of(at))
+
+print("генератор: роль пилота видит только его")
+_gen = AppTest.from_file(str(ROOT / TEXTGEN), default_timeout=240)
+st.cache_data.clear()
+_gen.run()
+check("открыли сразу генератор — автовыбор единственного товара с паспортом, с подписью",
+      not _gen.exception and "pp-sku" in _gen.session_state and _gen.session_state["pp-sku"] == "99601000-B"
+      and picker(_gen).value == "99601000-B" and t("pp.auto_picked") in texts_of(_gen))
+check("и ничего не создаёт и не генерирует: кнопка «Сгенерировать» не нажималась, вызовов модели нет",
+      not any("TG-" in str(x.value) for x in _gen.success))
+_gen = AppTest.from_file(str(ROOT / TEXTGEN), default_timeout=240)
+_gen.session_state["tg-q"] = "21680000"
+st.cache_data.clear()
+_gen.run()
+check("на генераторе поиск задан — автовыбора нет", "pp-sku" not in _gen.session_state)
+
+print("не автовыбирается: массовый выбор, поиск, фильтры, нечитаемая копия")
+for state, label in (({"pp-multi": ["21680000"]}, "массовый выбор"), ({"pp-q": "насос"}, "поиск в Реестре"),
+                     ({"pp-type": "unknown"}, "фильтр типа"), ({"pp-states": ["NOT_READY"]}, "фильтр состояния"),
+                     ({"pp-mine": "yes"}, "фильтр «Моё действие»")):
+    for tab_name in ("registry", "create"):
+        at = app(**{"pp-tab": tab_name, **state})
+        check(f"{label} — автовыбора нет ({tab_name})", ctx(at) is None and t("pp.auto_picked") not in texts_of(at))
+BROKEN.add("99601000-B")
+for tab_name in ("registry", "create"):
+    at = app(**{"pp-tab": tab_name})
+    check(f"копия единственного паспорта не читается — автовыбора нет, причина названа ({tab_name})",
+          ctx(at) is None and any(t("pp.auto_unread", sku="99601000-B", err=t("pp.view.err.SHA_MISMATCH"))
+                                  in str(w.value) for w in at.warning))
+_gen = AppTest.from_file(str(ROOT / TEXTGEN), default_timeout=240)
+st.cache_data.clear()
+_gen.run()
+check("и на генераторе — без выбора, с причиной",
+      "pp-sku" not in _gen.session_state
+      and any(t("pp.auto_unread", sku="99601000-B", err=t("pp.view.err.SHA_MISMATCH")) in str(w.value)
+              for w in _gen.warning))
+BROKEN.clear()
 
 print("не перебивать выбор человека")
 at = app(**{"pp-tab": "registry"})
@@ -269,6 +311,7 @@ check("два товара с паспортом — прежняя подска
 # поиск и фильтр оставляют в Реестре одну строку — и всё равно на «Создании» выбора нет:
 # «один» считается по всем паспортам Реестра, а не по строкам под поиском
 at = app(**{"pp-tab": "registry", "pp-q": "99601000"})
+check("две копии и поиск — в Реестре выбора нет", ctx(at) is None)
 tab(at, "create")
 check("одна строка после поиска — не повод: поиск ничего не выбирает", ctx(at) is None
       and t("pp.create_pick") in texts_of(at))

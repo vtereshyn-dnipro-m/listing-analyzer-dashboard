@@ -203,8 +203,12 @@ if query.strip():
     view, total = passport_svc.search(directory, reg.get("objects"), query)
     only = list(view["sku"].astype(str))
     say.caption(t("tg.b1.found", n=total, shown=len(only)))
+# Автовыбор единственного товара с паспортом — и здесь: роль пилота видит только
+# генератор и выбрать в Реестре не может (решение владельца 29.10.2026)
+passport_area.auto_unread(passport_area.auto_pick())
 passport_area.render_picker(directory, dir_err, reg.get("objects"), u, only=only)
 g_sku = st.session_state.get("pp-sku")
+passport_area.auto_note(g_sku)
 
 say.caption(t("tg.b1.mp_lang"))
 if not g_sku:
