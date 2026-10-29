@@ -120,6 +120,58 @@ def _change_product() -> None:
     st.session_state["pp-tab"] = "registry"
 
 
+def _searching() -> bool:
+    """Поиск и фильтры всех мест, где выбирается товар: пока хоть один задан,
+    автовыбора нет — поиск и фильтр сами ничего не выбирают (решение 29.10.2026)."""
+    defaults = {"pp-q": "", "pp-states": [], "pp-mine": "all", "pp-type": TYPE_ANY, "tg-q": ""}
+    for k, empty in defaults.items():
+        v = st.session_state.get(k, empty)
+        if (v.strip() if isinstance(v, str) else v) != empty and v not in (None, [], ""):
+            return True
+    return False
+
+
+def auto_pick() -> tuple[str, str] | None:
+    """Выбора нет вовсе — ни сделанного, ни сброшенного (поколение выбора pp-sku-gen
+    = 0), ни массового (pp-multi) — поиска и фильтров нет, и в Реестре ровно один товар
+    с паспортом: он и выбран (решения владельца 29.10.2026: «Создание», «Верификатор»,
+    «Реестр Паспортов», генератор). Считается по всем паспортам Реестра. Ничего не
+    создаёт и не сохраняет — только контекст. Реестр не прочитался — автовыбора нет:
+    по неполным данным «один» может оказаться неправдой. Копия единственного паспорта
+    не читается — автовыбора нет, а причина возвращается (sku, ошибка): страница её
+    называет, а не прячет за пустым выбором."""
+    if st.session_state.get("pp-sku") or st.session_state.get("pp-sku-gen", 0):
+        return None
+    if st.session_state.get("pp-multi") or _searching():
+        return None
+    data = pp.load_registry()
+    if data.get("error") or data.get("missing"):
+        return None
+    objs = data.get("objects")
+    skus = {txt(s) for s in objs["sku_id"]} - {""} if objs is not None and not objs.empty else set()
+    if len(skus) != 1:
+        return None
+    sku = next(iter(skus))
+    bad = [txt(o.get("copy_error")) for _, o in objs.iterrows()
+           if txt(o["sku_id"]) == sku and txt(o.get("copy_error"))]
+    if bad:
+        return sku, bad[0]
+    st.session_state["pp-sku"] = sku
+    st.session_state["pp-sku-auto"] = sku
+    return None
+
+
+def auto_note(sku: str | None) -> None:
+    """Подпись автовыбора — пока товар не выбран человеком."""
+    if sku and st.session_state.get("pp-sku-auto") == sku and not st.session_state.get("pp-sku-gen", 0):
+        st.caption(t("pp.auto_picked"))
+
+
+def auto_unread(res) -> None:
+    if res:
+        st.warning(t("pp.auto_unread", sku=pv.esc(res[0]), err=pv.esc(pv.copy_error_text(res[1]))[:200]))
+
+
 def context_header(r: dict) -> None:
     """Выбранный товар — в заголовке каждой вкладки (ТЗ §8)."""
     sku = st.session_state.get("pp-sku")
@@ -134,6 +186,7 @@ def context_header(r: dict) -> None:
         f'<span style="color:{MUTED};"> · {name}{" · " + html.escape(model) if model else ""}</span> '
         + chip(state_label(r.get("state")), bg, fg), unsafe_allow_html=True, width="content")
     bar.button(t("pp.change_product"), key="pp-change", type="tertiary", on_click=_change_product)
+    auto_note(sku)
 
 
 # ---------------------------------------------------------------- Реестр
@@ -954,6 +1007,9 @@ def render() -> None:
     tab = st.segmented_control(t("pp.area"), list(TABS), key="pp-tab", selection_mode="single",
                                format_func=lambda k: t(f"pp.tab.{k}"),
                                label_visibility="collapsed") or "registry"
+    # Автовыбор — на всех вкладках раздела, в том числе при открытии Реестра (решение
+    # владельца 29.10.2026), до вкладки: она и заголовок видят его сразу
+    auto_unread(auto_pick())
     head = st.container()
     if tab == "registry":
         render_registry()
