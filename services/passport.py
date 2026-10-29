@@ -245,43 +245,65 @@ def sku_photo(sku: str) -> dict:
     """Фото SKU для карточки: {url, asin, why, err}. url — только если ASIN с фото ровно
     один и справочник не даёт его другому SKU; иначе why: no_listing / shared / several /
     bad_url / error (подробность — в err)."""
+    return sku_photos([sku])[sku]
+
+
+def sku_photos(skus) -> dict:
+    """Фото нескольких SKU одним запросом (таблица массового выбора): по каждому — то
+    же, что `sku_photo`, по тем же правилам. Карточка зовёт этот же код с одним SKU,
+    поэтому карточка и таблица не расходятся."""
     out = {"url": None, "asin": None, "why": None, "err": None}
+    skus = list(dict.fromkeys(skus))
     directory, derr = sku_directory()
     if derr:
-        return {**out, "why": "error", "err": derr}
-    row = directory[directory["sku"].astype(str) == sku] if not directory.empty else directory
-    asins = tuple(sorted({a for a in (cell_text(row.iloc[0], "asins").split() if not row.empty else [])
-                          if re.match(ASIN_RE, a)}))
-    if not asins:
-        return {**out, "why": "no_listing"}
+        return {s: {**out, "why": "error", "err": derr} for s in skus}
+    wanted = set(skus)
+    owners: dict[str, set] = {}
+    mine: dict[str, tuple] = {}
+    for _, d in directory.iterrows():
+        d_sku, d_asins = cell_text(d, "sku"), cell_text(d, "asins").split()
+        for a in d_asins:
+            owners.setdefault(a, set()).add(d_sku)
+        if d_sku in wanted and d_sku not in mine:
+            mine[d_sku] = tuple(sorted({a for a in d_asins if re.match(ASIN_RE, a)}))
+    every = tuple(sorted({a for s in skus for a in mine.get(s, ())}))
+    res = {s: {**out, "why": "no_listing"} for s in skus if not mine.get(s)}
+    if not every:
+        return res
     try:
-        df = _photos_es(asins)
+        df = _photos_es(every)
     except _PhotoUnread as e:
-        return {**out, "why": "error", "err": str(e)}
-    if df.empty:
-        return {**out, "why": "no_listing"}
-    found = {}
+        return {**res, **{s: {**out, "why": "error", "err": str(e)} for s in skus if s not in res}}
+    seen = {cell_text(r, "asin") for _, r in df.iterrows()}
+    urls: dict[str, str] = {}
     for _, r in df.iterrows():
         url = photo_url(r.get("spec"))
         if url:
-            found.setdefault(cell_text(r, "asin"), url)
-    if not found:
-        return {**out, "why": "bad_url"}
-    # ASIN, который справочник даёт и другому SKU (наблюдаемые листинги Кабинета), —
-    # чей это товар, не знаем: такое фото не показываем (проверка #180)
-    owners: dict[str, set] = {}
-    for _, d in directory.iterrows():
-        for a in cell_text(d, "asins").split():
-            owners.setdefault(a, set()).add(cell_text(d, "sku"))
-    shared = {a: sorted(owners.get(a, set()) - {sku}) for a in found if owners.get(a, set()) - {sku}}
-    found = {a: u for a, u in found.items() if a not in shared}
-    if not found:
-        return {**out, "why": "shared",
-                "err": "; ".join(f"{a} — {', '.join(s)}" for a, s in sorted(shared.items()))}
-    if len(found) > 1:
-        return {**out, "why": "several", "err": ", ".join(sorted(found))}
-    asin, url = next(iter(found.items()))
-    return {**out, "url": url, "asin": asin}
+            urls.setdefault(cell_text(r, "asin"), url)
+    for s in skus:
+        if s in res:
+            continue
+        asins = mine[s]
+        if not any(a in seen for a in asins):
+            res[s] = {**out, "why": "no_listing"}
+            continue
+        found = {a: urls[a] for a in asins if a in urls}
+        if not found:
+            res[s] = {**out, "why": "bad_url"}
+            continue
+        # ASIN, который справочник даёт и другому SKU (наблюдаемые листинги Кабинета), —
+        # чей это товар, не знаем: такое фото не показываем (проверка #180)
+        shared = {a: sorted(owners.get(a, set()) - {s}) for a in found if owners.get(a, set()) - {s}}
+        found = {a: u for a, u in found.items() if a not in shared}
+        if not found:
+            res[s] = {**out, "why": "shared",
+                      "err": "; ".join(f"{a} — {', '.join(x)}" for a, x in sorted(shared.items()))}
+        elif len(found) > 1:
+            res[s] = {**out, "why": "several", "err": ", ".join(sorted(found))}
+        else:
+            asin, url = next(iter(found.items()))
+            res[s] = {**out, "url": url, "asin": asin}
+    return res
 
 
 def sku_type(sku: str) -> tuple[str | None, str | None]:

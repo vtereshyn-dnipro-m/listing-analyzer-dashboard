@@ -319,6 +319,36 @@ check("снапшоты не прочитались — карточка раб�
       and any(t("pp.photo.why.error", err="RuntimeError: снапшоты недоступны") in str(c.value) for c in at.caption))
 MODE["photo_fail"] = False
 
+print("фото в таблице массового выбора")
+SKUS = list(DIRECTORY["sku"])
+st.cache_data.clear()
+n0 = len(SEEN)
+batch = pp.sku_photos(SKUS)
+check("пакет — один запрос снапшотов на весь выбор", len(SEEN) - n0 == 1)
+check("пакет даёт по каждому SKU ровно то же, что карточка (sku_photo)",
+      all(batch[s] == photo(s) for s in SKUS))
+MODE["photo_fail"] = True
+st.cache_data.clear()
+check("сбой снапшотов в пакете — у SKU с ASIN причина error, без ASIN — no_listing",
+      pp.sku_photos(["99601000-B", "00000000"]) == {
+          "99601000-B": {"url": None, "asin": None, "why": "error", "err": "RuntimeError: снапшоты недоступны"},
+          "00000000": {"url": None, "asin": None, "why": "no_listing", "err": None}})
+MODE["photo_fail"] = False
+at = page(**{"pp-tab": "registry", "pp-type": "unknown"})
+want = ["99601000-B", "08087000", "33330000", "88880001", "88880003"]
+n0 = len(SEEN)
+next(m for m in at.multiselect if str(m.key).startswith("pp-multi-w-")).set_value(want).run()
+check("на странице фото всего выбора — одним запросом, а не по запросу на товар", len(SEEN) - n0 == 1)
+tbl = next((d.value for d in at.dataframe if "img" in getattr(d.value, "columns", [])), None)
+got = dict(zip(tbl["sku"], tbl["img"])) if tbl is not None else {}
+check("в таблице выбранных — колонка фото: у 99601000-B фото его ASIN, у своего ASIN рядом с общим — своё",
+      not at.exception and got.get("99601000-B") == IMG and got.get("88880003") == IMG3)
+# пустая ячейка в строковом столбце pandas 3 — NaN (null в Arrow, Streamlit рисует пусто): правило 4
+check("нет фото (нет листинга ES, два ASIN, ASIN у двух SKU) — пустая ячейка, не чужое фото",
+      all(s in got and pd.isna(got[s]) for s in ("08087000", "33330000", "88880001")))
+check("SKU без фото названы подписью под таблицей",
+      any(t("pp.multi.no_photo", n=3, skus="08087000, 33330000, 88880001") in str(c.value) for c in at.caption))
+
 print()
 print(f"ИТОГ: {'всё ок' if not FAILS else f'провалов {len(FAILS)}'}")
 sys.exit(1 if FAILS else 0)
