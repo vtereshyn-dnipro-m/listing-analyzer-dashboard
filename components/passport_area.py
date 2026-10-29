@@ -120,6 +120,26 @@ def _change_product() -> None:
     st.session_state["pp-tab"] = "registry"
 
 
+def auto_pick() -> None:
+    """Выбора нет вовсе — ни сделанного, ни сброшенного (поколение выбора pp-sku-gen
+    = 0) — и в Реестре ровно один товар с паспортом: он и выбран (поручение владельца
+    29.10.2026). Считается по всем паспортам Реестра, без поиска и фильтров: поиск
+    ничего не выбирает. Ничего не создаёт и не сохраняет — только контекст; выбор
+    человека (в том числе явный сброс) не перебивается. Реестр не прочитался —
+    автовыбора нет: по неполным данным «один» может оказаться неправдой."""
+    if st.session_state.get("pp-sku") or st.session_state.get("pp-sku-gen", 0):
+        return
+    data = pp.load_registry()
+    if data.get("error") or data.get("missing"):
+        return
+    objs = data.get("objects")
+    skus = {txt(s) for s in objs["sku_id"]} - {""} if objs is not None and not objs.empty else set()
+    if len(skus) == 1:
+        sku = next(iter(skus))
+        st.session_state["pp-sku"] = sku
+        st.session_state["pp-sku-auto"] = sku
+
+
 def context_header(r: dict) -> None:
     """Выбранный товар — в заголовке каждой вкладки (ТЗ §8)."""
     sku = st.session_state.get("pp-sku")
@@ -134,6 +154,8 @@ def context_header(r: dict) -> None:
         f'<span style="color:{MUTED};"> · {name}{" · " + html.escape(model) if model else ""}</span> '
         + chip(state_label(r.get("state")), bg, fg), unsafe_allow_html=True, width="content")
     bar.button(t("pp.change_product"), key="pp-change", type="tertiary", on_click=_change_product)
+    if st.session_state.get("pp-sku-auto") == sku and not st.session_state.get("pp-sku-gen", 0):
+        st.caption(t("pp.auto_picked"))
 
 
 # ---------------------------------------------------------------- Реестр
@@ -954,6 +976,10 @@ def render() -> None:
     tab = st.segmented_control(t("pp.area"), list(TABS), key="pp-tab", selection_mode="single",
                                format_func=lambda k: t(f"pp.tab.{k}"),
                                label_visibility="collapsed") or "registry"
+    if tab in ("create", "verifier"):
+        # Автовыбор — только там, где без товара делать нечего; Реестр открывается
+        # с пустым списком, как раньше (#178): там человек выбирает сам.
+        auto_pick()
     head = st.container()
     if tab == "registry":
         render_registry()
