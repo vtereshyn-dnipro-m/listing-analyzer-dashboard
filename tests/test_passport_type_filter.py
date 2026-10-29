@@ -357,6 +357,11 @@ check("товар карточки вне фильтра — карточка н
       not at.exception and t("pp.type.ctx_outside", sku="99601000-B", ty=t("tg.type.battery")) in texts_of(at)
       and any("pp-photo" in str(m.value) for m in at.markdown))
 
+at = page(**{"pp-sku": "NOPE-0001"})
+check("Реестр, «Любой», товар вне списка — прежняя подпись про тип, а не «очистите поиск» генератора",
+      t("pp.type.ctx_outside", sku="NOPE-0001", ty=pa.type_label("any")) in texts_of(at)
+      and t("pp.pick.ctx_outside_q", sku="NOPE-0001") not in texts_of(at))
+
 print("массовых действий нет")
 keys = {str(b.key) for b in page(**{"pp-type": "grinder"}).button}
 check("у выбора только «Выбрать все» и «Очистить»: ни генерации, ни принятия, ни отправки",
