@@ -166,11 +166,12 @@ def counter(n: int, limit: int) -> str:
     return f'<span style="color:{color};font-weight:600">{n} / {limit}</span>'
 
 
-def _upload() -> None:
+def _upload(sku: str | None) -> None:
     """Паспорт SKU (docx): копия — в томе UC, неизменная; SKU, id и версия — из шапки
-    файла (services/passport_copies.py). Права — в момент нажатия, как везде."""
+    файла (services/passport_copies.py). Права — в момент нажатия, как везде. Файл
+    другого SKU, чем выбранный, назван вслух (sku_hint, проверка #184)."""
     section(t("tg.pp.title"))
-    passport_upload.render("tg-pp", say)
+    passport_upload.render("tg-pp", say, sku_hint=sku)
 
 
 def load_keys(tool_type: str, marketplace: str, title: str):
@@ -187,6 +188,12 @@ def load_keys(tool_type: str, marketplace: str, title: str):
 # Генератор на свой SKU больше не уходит (решение владельца 29.10.2026).
 section(t("tg.b1.title"))
 reg = passport_svc.load_registry()
+# Реестр не прочитался — статусы паспортов в списке неверны («Паспорт отсутствует» у
+# всех): сбой называется, а не молчит (проверка #184)
+if reg.get("missing"):
+    say.warning(t("pp.migration_missing", path=passport_svc.MIGRATION))
+if reg.get("error"):
+    say.warning(t("tg.b1.reg_error", err=str(reg["error"])[:160]))
 link_dir, link_mx, link_errs = _links()
 directory, dir_err = passport_svc.sku_directory()
 u = passport_area.universe(directory, reg.get("objects"))
@@ -202,7 +209,7 @@ g_sku = st.session_state.get("pp-sku")
 say.caption(t("tg.b1.mp_lang"))
 if not g_sku:
     say.info(t("tg.b1.pick_first"))
-    _upload()
+    _upload(None)
     st.stop()
 
 # Тип товара — из данных листинга (как в Реестре): он определяет правила генерации
@@ -230,7 +237,7 @@ if g_asin:
     else:
         current_title = (raw or {}).get("title") or ""
 
-_upload()
+_upload(g_sku)
 
 # ------------------------------------------------------- генерация по паспорту
 # Модель — только по нажатию человека с правом ls.textgen.accept; лимиты и учёт
@@ -335,12 +342,15 @@ g_reason, g_detail = None, ""
 g_prov, g_model = ai.task_config(tg.TASK)
 g_maxtok = ai.task_limits(tg.TASK)[0]
 g_method, g_mver = "", 0
+g_merr = None
 try:
     g_method, g_mver, _ = _textgen_method()
-except _ReadFailed:
-    pass                                  # причина — ниже, вместе с лимитами
-# модель и методология названы ДО нажатия (решение владельца 29.10.2026)
-say.caption(t("tg.gen.model_method", model=g_model, ver=g_mver or "—"))
+except _ReadFailed as e:
+    g_merr = str(e)                       # причина — у модели и методологии, ниже — у лимитов
+# модель и методология названы ДО нажатия (решение владельца 29.10.2026); нет — с причиной
+say.caption(t("tg.gen.model_method", model=g_model, ver=g_mver) if g_mver
+            else t("tg.gen.model_no_method", model=g_model,
+                   why=g_merr[:160] if g_merr else t("tg.gen.err.NO_METHOD", detail=tg.SCOPE)))
 if copies_err:
     g_reason = "COPIES"
 elif g_copy is None:

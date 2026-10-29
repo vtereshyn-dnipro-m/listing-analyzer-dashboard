@@ -386,7 +386,7 @@ check("повтор того же файла после сбоя базы — RE
 # 28.10.2026): components/passport_upload.py, его зовут обе страницы.
 SRC = (ROOT / "components" / "passport_upload.py").read_text(encoding="utf-8")
 check("обе страницы зовут один блок загрузки",
-      'passport_upload.render("tg-pp", say)' in (ROOT / "pages" / "textgen.py").read_text(encoding="utf-8")
+      'passport_upload.render("tg-pp", say' in (ROOT / "pages" / "textgen.py").read_text(encoding="utf-8")
       and 'passport_upload.render("pp-up"' in (ROOT / "components" / "passport_area.py").read_text(encoding="utf-8"))
 check("блок: кнопка выключена без права и право проверяется в момент нажатия",
       'disabled=not may' in SRC and 'may = auth.can("ls.textgen.accept")' in SRC

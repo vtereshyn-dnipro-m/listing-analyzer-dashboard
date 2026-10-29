@@ -114,8 +114,8 @@ GEN = {"copies": (pd.DataFrame(), None), "usage": tg.Usage(), "calls": [], "late
 tg.active_copies = lambda: GEN["copies"]
 # учёт лимитов и последнее предложение — из журнала; подменены с самого начала: блок
 # генерации теперь виден у любого выбранного товара (решение владельца 29.10.2026)
-tg.usage_now = lambda sku: (GEN["usage"], None)
-tg.latest = lambda sku, mp: GEN["latest"]
+tg.usage_now = lambda sku: (STATE.__setitem__("usage_sku", sku), (GEN["usage"], None))[1]
+tg.latest = lambda sku, mp: (STATE.__setitem__("latest_for", (sku, mp)), GEN["latest"])[1]
 # Справочник SKU Кабинета: по умолчанию пуст (связь SKU ↔ ASIN — сценарии ниже).
 from services import passport as _passport_svc  # noqa: E402
 
@@ -145,6 +145,11 @@ def _fake_read(sql, params=None):
             return pd.DataFrame(), None
         return pd.DataFrame([{"skill_text": METHOD["text"], "version": METHOD["ver"]}]), None
     if "product_matrix" in sql:
+        # площадка — из САМОГО запроса: параметром или литералом (проверка #171, #184)
+        lit = re.search(r"marketplace = '([a-z.]+)'", sql)
+        mp = (params or {}).get("mp") if "%(mp)s" in sql else (lit.group(1) if lit else None)
+        if mp != "es":
+            return pd.DataFrame(columns=["asin", "sku_group"]), None
         return (pd.DataFrame(), MX["err"]) if MX["err"] else (MX["es"], None)
     return pd.DataFrame(), None
 
@@ -288,11 +293,21 @@ print("поиск по SKU, названию, модели, ASIN и EAN")
 at = run(sku="SKU-GRIND", **{"tg-q": "B0FZFCQN3H"})
 opts = [o.split(" · ")[0] for o in picker(at)[0].options if o != lab("pp.pick.none")]
 check("поиск по ASIN — в списке только товары с этим ASIN", sorted(opts) == ["SKU-CORDED", "SKU-TWO"])
+check("список под поиском — другой виджет, чем без поиска (правило 7б)",
+      str(picker(at)[0].key).startswith("pp-pick-q") and picker(at)[0].key != "pp-pick-SKU-GRIND")
 check("найдено и в списке — названо", lab("tg.b1.found", n=2, shown=2) in texts_of(at))
 check("выбранный товар вне поиска — выбор не меняется и сказано об этом",
       at.session_state["pp-sku"] == "SKU-GRIND" and lab("pp.pick.ctx_outside_q", sku="SKU-GRIND") in texts_of(at))
 at = run(sku="SKU-NONE", **{"tg-q": "4820000000011"})
 check("поиск по EAN", [o.split(" · ")[0] for o in picker(at)[0].options if o != lab("pp.pick.none")] == ["SKU-GRIND"])
+
+_lr = _passport_svc.load_registry
+_passport_svc.load_registry = lambda: {"objects": pd.DataFrame(), "error": "OperationalError: registry down",
+                                       "missing": False}
+at = run(sku="SKU-GRIND")
+check("Реестр не прочитан — сказано у списка, а не «Паспорт отсутствует» молча",
+      lab("tg.b1.reg_error", err="OperationalError: registry down") in _warn(at))
+_passport_svc.load_registry = _lr
 
 print("общий выбор в обе стороны")
 at = run(sku="SKU-GRIND")
@@ -376,6 +391,14 @@ check("ключи размечены по нынешнему тайтлу сна
 _st_mod.cache_data.clear()
 at = run(sku="SKU-TWO")
 check("ASIN ES не один — тайтла снапшота нет, ключи без него (не по чужому ASIN)", STATE.get("keys_title") == "")
+_st_mod.cache_data.clear()
+run(sku="SKU-CORDED")
+check("ключи и снапшот — по ASIN ES выбранного товара (B0FZFCQN3H), не по пилотному",
+      STATE.get("keys_title") == PILOT["B0FZFCQN3H"]["title"])
+check("последнее предложение — по выбранному SKU и ES", STATE.get("latest_for") == ("SKU-CORDED", "es"))
+STATE["usage_sku"] = None
+run(sku="SKU-GRIND")                  # учёт лимитов считается только у товара с паспортом
+check("учёт лимитов — по выбранному SKU", STATE.get("usage_sku") == "SKU-GRIND")
 
 # ================================================================ сбои
 import streamlit as st  # noqa: E402
@@ -428,7 +451,7 @@ check("страница сама SQL не пишет и в Amazon не ходи�
 # генератора и раздела «Паспорт SKU», решение владельца 28.10.2026).
 UP = (ROOT / "components" / "passport_upload.py").read_text(encoding="utf-8")
 check("единственная запись — register() паспорта под ls.textgen.accept, в общем блоке загрузки",
-      SRC.count("pc.register(") == 0 and 'passport_upload.render("tg-pp", say)' in SRC
+      SRC.count("pc.register(") == 0 and 'passport_upload.render("tg-pp", say, sku_hint=sku)' in SRC
       and UP.count("pc.register(") == 1 and UP.count("get_conn()") == 1
       and UP.index('auth.require("ls.textgen.accept"') < UP.index("get_conn()") < UP.index("pc.register(")
       and not re.search(r"\bINSERT\b|\bUPDATE\b|spapi", UP))
@@ -599,6 +622,11 @@ at.button(key="tg-pp-save").click().run()
 FLOW["file"] = _docx("PASS-99601000-B-004")
 at.run()
 check("сменили файл — вопрос снят", not any(A[0] in str(w.value) for w in at.warning) and _rkey(A) not in _keys(at))
+FLOW["script"] = [("ok",)]
+at = run(sku="SKU-GRIND")
+check("файл паспорта другого SKU, чем выбранный, назван вслух (sku_hint)",
+      any(lab("pp.up.other_sku", file_sku="99601000-B", sku="SKU-GRIND").split(":")[0] in str(w.value)
+          for w in at.warning))
 # без права — кнопки выключены, а нажатие (в обход) отказано в момент записи
 _can, _req = auth.can, auth.require
 auth.can = lambda a: False
@@ -618,8 +646,8 @@ GEN["copies"] = (pd.DataFrame([{"source_artifact_id": "DOCX-PASS-99601000-B-001-
                                 "archived_locator": "/Volumes/dnipro_m/listing_data/passports/x.docx",
                                 "recorded_at": "2026-10-21"}]), None)
 GEN.update(usage=tg.Usage(), calls=[], latest=(pd.DataFrame(), None))
-tg.usage_now = lambda sku: (GEN["usage"], None)
-tg.latest = lambda sku, mp: GEN["latest"]
+tg.usage_now = lambda sku: (STATE.__setitem__("usage_sku", sku), (GEN["usage"], None))[1]
+tg.latest = lambda sku, mp: (STATE.__setitem__("latest_for", (sku, mp)), GEN["latest"])[1]
 
 
 GEN["stamped"] = True
@@ -700,6 +728,9 @@ _st.cache_data.clear()       # методология кэшируется ст�
 at = run()
 check("методологии textgen нет — кнопка выключена и названо, где заполнить",
       at.button(key="tg-gen-go").disabled and lab("tg.gen.err.NO_METHOD", detail="textgen") in _warn(at))
+check("и у модели до нажатия — «методологии нет» с причиной, а не «v—»",
+      lab("tg.gen.model_no_method", model="claude-sonnet-5", why=lab("tg.gen.err.NO_METHOD", detail="textgen"))
+      in texts_of(at))
 METHOD["text"] = "методология textgen"
 _st.cache_data.clear()
 ai.task_config = lambda task: ("anthropic", "model-without-price")
@@ -736,6 +767,12 @@ check("у выбранного SKU — его ASIN ES (справочник по
 at.button(key="tg-gen-go").click().run()
 check("генерация получает ASIN товара ES",
       GEN["calls"] and GEN["calls"][-1]["asins"] == ["B0GTRY26HB"] and GEN["calls"][-1]["marketplace"] == "es")
+check("до нажатия видно, какой ASIN уйдёт в черновики", lab("tg.link.draft_asin", mp="ES", asin="B0GTRY26HB")
+      in texts_of(at))
+at = run(sku="SKU-TWO")
+check("два ASIN — до нажатия сказано, что черновики будут без ASIN и почему",
+      lab("tg.link.draft_no_asin", mp="ES", why=lab("tg.code.ASIN_AMBIGUOUS") + " (B0FZFCQN3H, B0H75P364R)")
+      in texts_of(at))
 check("вариант 99601000-B не сопоставляется с базовым 99601000 матрицы по догадке",
       tg.asins_for_sku("99601000-B", None, MX["es"]) == [])
 

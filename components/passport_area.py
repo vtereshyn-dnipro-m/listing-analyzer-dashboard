@@ -254,8 +254,10 @@ def render_picker(directory: pd.DataFrame, dir_err, objects: pd.DataFrame, u: di
                  format_func=lambda s: _option_label(s, names, types, passports),
                  on_change=_pick_from_list, args=(key,), help=t("pp.pick.help"))
     if ctx and ctx not in options:
-        st.caption(t("pp.type.ctx_outside", sku=pv.esc(ctx), ty=type_label(ftype)) if ftype != TYPE_ANY
-                   else t("pp.pick.ctx_outside_q", sku=pv.esc(ctx)))
+        # «не подходит под поиск» — только когда список сузил поиск страницы (only);
+        # иначе прежняя подпись про тип, как в Реестре (проверка #184)
+        st.caption(t("pp.pick.ctx_outside_q", sku=pv.esc(ctx)) if only is not None and ftype == TYPE_ANY
+                   else t("pp.type.ctx_outside", sku=pv.esc(ctx), ty=type_label(ftype)))
 
 
 # ---------------------------------------------------------------- массовый выбор
