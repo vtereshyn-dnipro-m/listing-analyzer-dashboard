@@ -264,7 +264,9 @@ def sku_photos(skus) -> dict:
         d_sku, d_asins = cell_text(d, "sku"), cell_text(d, "asins").split()
         for a in d_asins:
             owners.setdefault(a, set()).add(d_sku)
-        if d_sku in wanted and d_sku not in mine:
+        # пустой код (NULL в ячейке) — не SKU выбора: sku_master.sku — первичный ключ,
+        # но NaN → "" через cell_text не должен совпасть ни с чем (проверка #183)
+        if d_sku and d_sku in wanted and d_sku not in mine:
             mine[d_sku] = tuple(sorted({a for a in d_asins if re.match(ASIN_RE, a)}))
     every = tuple(sorted({a for s in skus for a in mine.get(s, ())}))
     res = {s: {**out, "why": "no_listing"} for s in skus if not mine.get(s)}

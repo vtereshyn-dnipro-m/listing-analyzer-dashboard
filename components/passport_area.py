@@ -322,7 +322,9 @@ def render_multi(u: dict, ftype: str, dir_err=None) -> None:
     p = u["passports"]
     st.caption(t("pp.multi.count", n=len(sel)))
     # Фото — тем же кодом и по тем же правилам, что в карточке (#180), одним запросом
-    # на весь выбор. Нет фото — пустая ячейка, а список таких SKU — подписью ниже.
+    # на весь выбор. Нет фото — пустая ячейка (placeholder="": без него Streamlit
+    # пишет в пустой ячейке «None» мимо t()), а список таких SKU — подписью ниже.
+    # Сбой чтения — не «фото нет»: он назван отдельно, с причиной (проверка #183).
     photos = pp.sku_photos(sel)
     st.dataframe(pd.DataFrame({
         "img": [photos[s]["url"] for s in sel],
@@ -330,14 +332,19 @@ def render_multi(u: dict, ftype: str, dir_err=None) -> None:
         "name": [u["names"].get(s) or "—" for s in sel],
         "type": [type_label(type_code(s, u["types"])) for s in sel],
         "passport": [_status_label(s, p) for s in sel],
-    }), key="pp-multi-table", hide_index=True, width="stretch", column_config={
+    }), key="pp-multi-table", hide_index=True, width="stretch", placeholder="", column_config={
         "img": st.column_config.ImageColumn(t("pp.multi.col_photo"), width="small"),
         "sku": st.column_config.TextColumn(t("pp.col.sku")),
         "name": st.column_config.TextColumn(t("pp.col.product")),
         "type": st.column_config.TextColumn(t("pp.multi.col_type")),
         "passport": st.column_config.TextColumn(t("pp.col.state")),
     })
-    no_photo = [s for s in sel if not photos[s]["url"]]
+    unread = [s for s in sel if photos[s]["why"] == "error"]
+    if unread:
+        st.caption(t("pp.multi.photo_error", n=len(unread),
+                     skus=pv.esc(", ".join(unread[:20]) + (" …" if len(unread) > 20 else "")),
+                     err=pv.esc(str(photos[unread[0]]["err"] or "")[:160])))
+    no_photo = [s for s in sel if not photos[s]["url"] and photos[s]["why"] != "error"]
     if no_photo:
         st.caption(t("pp.multi.no_photo", n=len(no_photo),
                      skus=pv.esc(", ".join(no_photo[:20]) + (" …" if len(no_photo) > 20 else ""))))
